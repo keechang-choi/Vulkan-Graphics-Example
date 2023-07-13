@@ -83,17 +83,34 @@ src/base/CMakeFiles/base.dir/vge_base.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/base.dir/vge_base.cpp.s"
 	cd /d C:\Users\rlckd\Desktop\kc-surface\Vulkan-Graphics-Example\build\src\base && C:\PROGRA~1\MINGW-~1\X86_64~1.0-R\mingw64\bin\G__~1.EXE $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S C:\Users\rlckd\Desktop\kc-surface\Vulkan-Graphics-Example\src\base\vge_base.cpp -o CMakeFiles\base.dir\vge_base.cpp.s
 
+src/base/CMakeFiles/base.dir/vgeu_window.cpp.obj: src/base/CMakeFiles/base.dir/flags.make
+src/base/CMakeFiles/base.dir/vgeu_window.cpp.obj: src/base/CMakeFiles/base.dir/includes_CXX.rsp
+src/base/CMakeFiles/base.dir/vgeu_window.cpp.obj: C:/Users/rlckd/Desktop/kc-surface/Vulkan-Graphics-Example/src/base/vgeu_window.cpp
+src/base/CMakeFiles/base.dir/vgeu_window.cpp.obj: src/base/CMakeFiles/base.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=C:\Users\rlckd\Desktop\kc-surface\Vulkan-Graphics-Example\build\CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object src/base/CMakeFiles/base.dir/vgeu_window.cpp.obj"
+	cd /d C:\Users\rlckd\Desktop\kc-surface\Vulkan-Graphics-Example\build\src\base && C:\PROGRA~1\MINGW-~1\X86_64~1.0-R\mingw64\bin\G__~1.EXE $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/base/CMakeFiles/base.dir/vgeu_window.cpp.obj -MF CMakeFiles\base.dir\vgeu_window.cpp.obj.d -o CMakeFiles\base.dir\vgeu_window.cpp.obj -c C:\Users\rlckd\Desktop\kc-surface\Vulkan-Graphics-Example\src\base\vgeu_window.cpp
+
+src/base/CMakeFiles/base.dir/vgeu_window.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/base.dir/vgeu_window.cpp.i"
+	cd /d C:\Users\rlckd\Desktop\kc-surface\Vulkan-Graphics-Example\build\src\base && C:\PROGRA~1\MINGW-~1\X86_64~1.0-R\mingw64\bin\G__~1.EXE $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E C:\Users\rlckd\Desktop\kc-surface\Vulkan-Graphics-Example\src\base\vgeu_window.cpp > CMakeFiles\base.dir\vgeu_window.cpp.i
+
+src/base/CMakeFiles/base.dir/vgeu_window.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/base.dir/vgeu_window.cpp.s"
+	cd /d C:\Users\rlckd\Desktop\kc-surface\Vulkan-Graphics-Example\build\src\base && C:\PROGRA~1\MINGW-~1\X86_64~1.0-R\mingw64\bin\G__~1.EXE $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S C:\Users\rlckd\Desktop\kc-surface\Vulkan-Graphics-Example\src\base\vgeu_window.cpp -o CMakeFiles\base.dir\vgeu_window.cpp.s
+
 # Object files for target base
 base_OBJECTS = \
-"CMakeFiles/base.dir/vge_base.cpp.obj"
+"CMakeFiles/base.dir/vge_base.cpp.obj" \
+"CMakeFiles/base.dir/vgeu_window.cpp.obj"
 
 # External object files for target base
 base_EXTERNAL_OBJECTS =
 
 src/base/libbase.a: src/base/CMakeFiles/base.dir/vge_base.cpp.obj
+src/base/libbase.a: src/base/CMakeFiles/base.dir/vgeu_window.cpp.obj
 src/base/libbase.a: src/base/CMakeFiles/base.dir/build.make
 src/base/libbase.a: src/base/CMakeFiles/base.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=C:\Users\rlckd\Desktop\kc-surface\Vulkan-Graphics-Example\build\CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX static library libbase.a"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=C:\Users\rlckd\Desktop\kc-surface\Vulkan-Graphics-Example\build\CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Linking CXX static library libbase.a"
 	cd /d C:\Users\rlckd\Desktop\kc-surface\Vulkan-Graphics-Example\build\src\base && $(CMAKE_COMMAND) -P CMakeFiles\base.dir\cmake_clean_target.cmake
 	cd /d C:\Users\rlckd\Desktop\kc-surface\Vulkan-Graphics-Example\build\src\base && $(CMAKE_COMMAND) -E cmake_link_script CMakeFiles\base.dir\link.txt --verbose=$(VERBOSE)
 

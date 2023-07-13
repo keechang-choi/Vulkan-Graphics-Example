@@ -198,7 +198,10 @@ src/examples/CMakeFiles/triangle.dir/triangle/triangle.cpp.obj: C:/Users/rlckd/D
   C:/Program\ Files/mingw-w64/x86_64-13.1.0-release-posix-seh-ucrt-rt_v11-rev1/mingw64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/pstl/glue_memory_defs.h \
   C:/Program\ Files/mingw-w64/x86_64-13.1.0-release-posix-seh-ucrt-rt_v11-rev1/mingw64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/utility \
   C:/Program\ Files/mingw-w64/x86_64-13.1.0-release-posix-seh-ucrt-rt_v11-rev1/mingw64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/bits/stl_relops.h \
-  C:/VulkanSDK/1.3.250.1/Include/vulkan/vulkan.hpp
+  C:/VulkanSDK/1.3.250.1/Include/vulkan/vulkan.hpp \
+  C:/Users/rlckd/Desktop/kc-surface/Vulkan-Graphics-Example/src/base/vgeu_window.hpp \
+  C:/Users/rlckd/Desktop/kc-surface/Vulkan-Graphics-Example/external/glfw/include/GLFW/glfw3.h \
+  C:/Program\ Files/mingw-w64/x86_64-13.1.0-release-posix-seh-ucrt-rt_v11-rev1/mingw64/x86_64-w64-mingw32/include/GL/gl.h
 
 
 C:/Program\ Files/mingw-w64/x86_64-13.1.0-release-posix-seh-ucrt-rt_v11-rev1/mingw64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/bits/stl_tempbuf.h:
@@ -256,6 +259,8 @@ C:/Program\ Files/mingw-w64/x86_64-13.1.0-release-posix-seh-ucrt-rt_v11-rev1/min
 C:/Program\ Files/mingw-w64/x86_64-13.1.0-release-posix-seh-ucrt-rt_v11-rev1/mingw64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/debug/assertions.h:
 
 C:/Program\ Files/mingw-w64/x86_64-13.1.0-release-posix-seh-ucrt-rt_v11-rev1/mingw64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/mm_malloc.h:
+
+C:/Program\ Files/mingw-w64/x86_64-13.1.0-release-posix-seh-ucrt-rt_v11-rev1/mingw64/x86_64-w64-mingw32/include/GL/gl.h:
 
 C:/Program\ Files/mingw-w64/x86_64-13.1.0-release-posix-seh-ucrt-rt_v11-rev1/mingw64/x86_64-w64-mingw32/include/_mingw_mac.h:
 
@@ -559,6 +564,8 @@ C:/Program\ Files/mingw-w64/x86_64-13.1.0-release-posix-seh-ucrt-rt_v11-rev1/min
 
 C:/Program\ Files/mingw-w64/x86_64-13.1.0-release-posix-seh-ucrt-rt_v11-rev1/mingw64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/bits/ostream.tcc:
 
+C:/Users/rlckd/Desktop/kc-surface/Vulkan-Graphics-Example/src/base/vgeu_window.hpp:
+
 C:/Program\ Files/mingw-w64/x86_64-13.1.0-release-posix-seh-ucrt-rt_v11-rev1/mingw64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/bits/istream.tcc:
 
 C:/Program\ Files/mingw-w64/x86_64-13.1.0-release-posix-seh-ucrt-rt_v11-rev1/mingw64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/bits/sstream.tcc:
@@ -596,3 +603,5 @@ C:/Program\ Files/mingw-w64/x86_64-13.1.0-release-posix-seh-ucrt-rt_v11-rev1/min
 C:/Program\ Files/mingw-w64/x86_64-13.1.0-release-posix-seh-ucrt-rt_v11-rev1/mingw64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/backward/auto_ptr.h:
 
 C:/Program\ Files/mingw-w64/x86_64-13.1.0-release-posix-seh-ucrt-rt_v11-rev1/mingw64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/utility:
+
+C:/Users/rlckd/Desktop/kc-surface/Vulkan-Graphics-Example/external/glfw/include/GLFW/glfw3.h:

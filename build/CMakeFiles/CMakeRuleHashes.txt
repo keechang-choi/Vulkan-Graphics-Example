@@ -2,3 +2,5 @@
 dbb38a8ea487aeba85425abe032b13e6 C:/Users/rlckd/Desktop/kc-surface/Vulkan-Graphics-Example/shaders/simple_shader.frag.spv
 2237c7e74e1eea8dcc31969830f5de08 C:/Users/rlckd/Desktop/kc-surface/Vulkan-Graphics-Example/shaders/simple_shader.vert.spv
 e76060d185acbeabb672bc41f2448919 CMakeFiles/Shaders
+397e02f938b22bac0e6a0c8615d46545 external/glfw/CMakeFiles/uninstall
+80fda81e36031e2632cfe1e225518aea external/glfw/src/CMakeFiles/update_mappings

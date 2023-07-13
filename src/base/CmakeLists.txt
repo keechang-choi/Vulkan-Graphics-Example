@@ -3,6 +3,12 @@ file(GLOB_RECURSE BASE_HEADER ${PROJECT_SOURCE_DIR}/src/base/*.hpp)
 
 add_library(base STATIC ${BASE_SRC})
 
-target_link_libraries(base 
-    ${Vulkan_LIBRARIES} 
+target_link_directories(base
+    PUBLIC ${Vulkan_LIBRARIES}
+)
+
+target_link_libraries(base
+    glfw
+
+    # vulkan-1
 )

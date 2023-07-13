@@ -1,6 +1,8 @@
 file(REMOVE_RECURSE
   "CMakeFiles/base.dir/vge_base.cpp.obj"
   "CMakeFiles/base.dir/vge_base.cpp.obj.d"
+  "CMakeFiles/base.dir/vgeu_window.cpp.obj"
+  "CMakeFiles/base.dir/vgeu_window.cpp.obj.d"
   "libbase.a"
   "libbase.pdb"
 )

@@ -1,2 +1,2 @@
-C:\PROGRA~1\MINGW-~1\X86_64~1.0-R\mingw64\bin\ar.exe qc libbase.a CMakeFiles/base.dir/vge_base.cpp.obj
+C:\PROGRA~1\MINGW-~1\X86_64~1.0-R\mingw64\bin\ar.exe qc libbase.a CMakeFiles/base.dir/vge_base.cpp.obj CMakeFiles/base.dir/vgeu_window.cpp.obj
 C:\PROGRA~1\MINGW-~1\X86_64~1.0-R\mingw64\bin\ranlib.exe libbase.a

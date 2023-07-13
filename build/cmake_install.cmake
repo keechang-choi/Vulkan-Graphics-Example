@@ -39,6 +39,7 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for each subdirectory.
+  include("C:/Users/rlckd/Desktop/kc-surface/Vulkan-Graphics-Example/build/external/glfw/cmake_install.cmake")
   include("C:/Users/rlckd/Desktop/kc-surface/Vulkan-Graphics-Example/build/src/base/cmake_install.cmake")
   include("C:/Users/rlckd/Desktop/kc-surface/Vulkan-Graphics-Example/build/src/examples/cmake_install.cmake")
 

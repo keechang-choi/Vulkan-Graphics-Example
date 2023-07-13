@@ -1,3 +1,11 @@
 #include "vge_base.hpp"
 
-VULKAN_EXAMPLE_BASE()
+namespace vge {
+class VgeExample : public VgeBase {
+ public:
+  VgeExample() : VgeBase() {}
+  ~VgeExample() {}
+};
+}  // namespace vge
+
+VULKAN_EXAMPLE_MAIN()
