@@ -1,0 +1,4 @@
+# Hashes of file build rules.
+dbb38a8ea487aeba85425abe032b13e6 C:/Users/rlckd/Desktop/kc-surface/Vulkan-Graphics-Example/shaders/simple_shader.frag.spv
+2237c7e74e1eea8dcc31969830f5de08 C:/Users/rlckd/Desktop/kc-surface/Vulkan-Graphics-Example/shaders/simple_shader.vert.spv
+e76060d185acbeabb672bc41f2448919 CMakeFiles/Shaders

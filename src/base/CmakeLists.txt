@@ -1,0 +1,8 @@
+file(GLOB_RECURSE BASE_SRC ${PROJECT_SOURCE_DIR}/src/base/*.cpp)
+file(GLOB_RECURSE BASE_HEADER ${PROJECT_SOURCE_DIR}/src/base/*.hpp)
+
+add_library(base STATIC ${BASE_SRC})
+
+target_link_libraries(base 
+    ${Vulkan_LIBRARIES} 
+)
