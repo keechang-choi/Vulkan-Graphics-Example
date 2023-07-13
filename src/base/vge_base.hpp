@@ -14,6 +14,11 @@ class VgeBase {
   VgeBase();
   ~VgeBase();
 
+  // TODO:
+  // initVulkan
+  // virtual prepare
+  // renderLoop
+
   std::string title = "Vulkan Example KC";
   std::string name = "vulkanExample";
 
