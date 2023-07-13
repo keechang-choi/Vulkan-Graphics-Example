@@ -1,0 +1,12 @@
+[submodule "external/glm"]
+	path = external/glm
+	url = https://github.com/g-truc/glm
+[submodule "external/glfw"]
+	path = external/glfw
+	url = https://github.com/glfw/glfw
+[submodule "external/Vulkan-Hpp"]
+	path = external/Vulkan-Hpp
+	url = https://github.com/KhronosGroup/Vulkan-Hpp
+[submodule "external/imgui"]
+	path = external/imgui
+	url = https://github.com/ocornut/imgui
