@@ -13,22 +13,24 @@
 namespace vgeu {
 class VgeuWindow {
  public:
-  VgeuWindow(uint32_t w, uint32_t h, std::string name);
+  VgeuWindow(int w, int h, std::string name);
   ~VgeuWindow();
 
   VgeuWindow(const VgeuWindow&) = delete;
   VgeuWindow& operator=(const VgeuWindow&) = delete;
 
   bool shouldClose() { return glfwWindowShouldClose(window); }
-  vk::Extent2D getExtent() { return {width, height}; }
+  vk::Extent2D getExtent() {
+    return {static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
+  }
 
  private:
-  static void framebufferResizeCallback(GLFWwindow* window, uint32_t width,
-                                        uint32_t height);
+  static void framebufferResizeCallback(GLFWwindow* window, int width,
+                                        int height);
   void initWindow();
   std::string windowName;
   GLFWwindow* window;
-  uint32_t width, height;
+  int width, height;
   bool framebufferResized = false;
 };
 }  // namespace vgeu

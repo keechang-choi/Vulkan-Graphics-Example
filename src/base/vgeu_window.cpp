@@ -1,7 +1,7 @@
 #include "vgeu_window.hpp"
 
 namespace vgeu {
-VgeuWindow::VgeuWindow(uint32_t w, uint32_t h, std::string name)
+VgeuWindow::VgeuWindow(int w, int h, std::string name)
     : width{w}, height{h}, windowName{name} {
   initWindow();
 }
@@ -11,10 +11,19 @@ VgeuWindow::~VgeuWindow() {
   glfwTerminate();
 }
 
-void VgeuWindow::initWindow() {}
+void VgeuWindow::initWindow() {
+  glfwInit();
+  glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+  glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
-void VgeuWindow::framebufferResizeCallback(GLFWwindow* window, uint32_t width,
-                                           uint32_t height) {
+  window =
+      glfwCreateWindow(width, height, windowName.c_str(), nullptr, nullptr);
+  glfwSetWindowUserPointer(window, this);
+  glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
+}
+
+void VgeuWindow::framebufferResizeCallback(GLFWwindow* window, int width,
+                                           int height) {
   auto vgeuWindow =
       reinterpret_cast<VgeuWindow*>(glfwGetWindowUserPointer(window));
   vgeuWindow->framebufferResized = true;
