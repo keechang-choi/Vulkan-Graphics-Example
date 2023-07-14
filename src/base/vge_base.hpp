@@ -15,8 +15,12 @@ class VgeBase {
   ~VgeBase();
 
   // TODO:
-  // initVulkan
-  // virtual prepare
+
+  // initVulkan vk instance
+  // device, queue, sema
+  bool initVulkan();
+  // virtual prepare vk resources
+  // virtual void prepare();
   // renderLoop
 
   std::string title = "Vulkan Example KC";
@@ -30,5 +34,6 @@ class VgeBase {
 #define VULKAN_EXAMPLE_MAIN()       \
   int main(int argc, char** argv) { \
     vge::VgeExample vgeExample{};   \
+    vgeExample.initVulkan();        \
     return 0;                       \
   }
