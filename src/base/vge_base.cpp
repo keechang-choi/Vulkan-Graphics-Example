@@ -8,6 +8,7 @@
 
 // std
 #include <iostream>
+#include <memory>
 namespace vge {
 VgeBase::VgeBase() { std::cout << "Created: Vulkan Example Base" << std::endl; }
 VgeBase::~VgeBase() {}
@@ -15,6 +16,10 @@ VgeBase::~VgeBase() {}
 bool VgeBase::initVulkan() {
   vk::raii::Context context;
   vk::raii::Instance instance = vgeu::createInstance(context, title, title);
+  if (vgeu::enableValidationLayers) {
+    debugUtilsMessenger = vgeu::setupDebugMessenger(instance);
+  }
   return true;
 }
+
 }  // namespace vge

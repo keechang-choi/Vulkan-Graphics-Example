@@ -28,6 +28,7 @@ class VgeBase {
 
  private:
   vgeu::VgeuWindow vgeuWindow{WIDTH, HEIGHT, title};
+  std::unique_ptr<vk::raii::DebugUtilsMessengerEXT> debugUtilsMessenger;
 };
 }  // namespace vge
 

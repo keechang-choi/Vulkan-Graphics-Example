@@ -37,19 +37,9 @@ vk::raii::Instance createInstance(vk::raii::Context const& context,
     vk::InstanceCreateInfo instanceCreateInfo({}, &applicationInfo,
                                               validationLayers, extensions);
 
-    vk::DebugUtilsMessageSeverityFlagsEXT severityFlags(
-        vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
-        vk::DebugUtilsMessageSeverityFlagBitsEXT::eError);
-    vk::DebugUtilsMessageTypeFlagsEXT messageTypeFlags(
-        vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
-        vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance |
-        vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation);
-
-    vk::DebugUtilsMessengerCreateInfoEXT debugCreateInfo(
-        {}, severityFlags, messageTypeFlags, debugCallback);
     vk::StructureChain<vk::InstanceCreateInfo,
                        vk::DebugUtilsMessengerCreateInfoEXT>
-        structureChain(instanceCreateInfo, debugCreateInfo);
+        structureChain(instanceCreateInfo, createDebugCreateInfo());
     createInfo = structureChain.get<vk::InstanceCreateInfo>();
   } else {
     vk::InstanceCreateInfo instanceCreateInfo({}, &applicationInfo, {},
@@ -94,6 +84,26 @@ std::vector<const char*> getRequiredExtensions() {
   }
 
   return extensions;
+}
+
+vk::DebugUtilsMessengerCreateInfoEXT createDebugCreateInfo() {
+  vk::DebugUtilsMessageSeverityFlagsEXT severityFlags(
+      vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
+      vk::DebugUtilsMessageSeverityFlagBitsEXT::eError);
+  vk::DebugUtilsMessageTypeFlagsEXT messageTypeFlags(
+      vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
+      vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance |
+      vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation);
+
+  vk::DebugUtilsMessengerCreateInfoEXT debugCreateInfo(
+      {}, severityFlags, messageTypeFlags, debugCallback);
+  return debugCreateInfo;
+}
+
+std::unique_ptr<vk::raii::DebugUtilsMessengerEXT> setupDebugMessenger(
+    vk::raii::Instance& instance) {
+  return std::make_unique<vk::raii::DebugUtilsMessengerEXT>(
+      instance, vgeu::createDebugCreateInfo());
 }
 
 }  // namespace vgeu
