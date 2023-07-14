@@ -24,6 +24,8 @@ class VgeuWindow {
     return {static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
   }
 
+  void createWindowSurface(VkInstance instance, VkSurfaceKHR* surface);
+
  private:
   static void framebufferResizeCallback(GLFWwindow* window, int width,
                                         int height);

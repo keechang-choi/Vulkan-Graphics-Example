@@ -29,5 +29,14 @@ void VgeuWindow::framebufferResizeCallback(GLFWwindow* window, int width,
   vgeuWindow->framebufferResized = true;
   vgeuWindow->width = width;
   vgeuWindow->height = height;
-}  // namespace lve
+}
+
+void VgeuWindow::createWindowSurface(VkInstance instance,
+                                     VkSurfaceKHR* surface) {
+  if (glfwCreateWindowSurface(instance, window, nullptr, surface) !=
+      VK_SUCCESS) {
+    throw std::runtime_error("failed to create window surface");
+  }
+}
+
 }  // namespace vgeu

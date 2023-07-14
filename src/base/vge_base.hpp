@@ -4,6 +4,7 @@
 #include <Vulkan-Hpp/vulkan/vulkan.hpp>
 #include <Vulkan-Hpp/vulkan/vulkan_raii.hpp>
 
+#include "vgeu_utils.hpp"
 #include "vgeu_window.hpp"
 namespace vge {
 class VgeBase {
@@ -19,16 +20,28 @@ class VgeBase {
   // initVulkan vk instance
   // device, queue, sema
   bool initVulkan();
+  virtual void getEnabledExtensions();
+
   // virtual prepare vk resources
-  // virtual void prepare();
+  virtual void prepare();
   // renderLoop
 
   std::string title = "Vulkan Example KC";
   std::string name = "vulkanExample";
 
  private:
-  vgeu::VgeuWindow vgeuWindow{WIDTH, HEIGHT, title};
-  std::unique_ptr<vk::raii::DebugUtilsMessengerEXT> debugUtilsMessenger;
+  std::unique_ptr<vk::raii::Context> context;
+  vk::raii::Instance instance = nullptr;
+  vk::raii::DebugUtilsMessengerEXT debugUtilsMessenger = nullptr;
+  vk::raii::PhysicalDevice physicalDevice = nullptr;
+  vk::PhysicalDeviceFeatures enabledFeatures{};
+  std::vector<const char*> enabledDeviceExtensions;
+  vk::raii::Device device = nullptr;
+  vgeu::QueueFamilyIndices queueFamilyIndices;
+  void* deviceCreatepNextChain = nullptr;
+
+  vk::raii::SurfaceKHR surface = nullptr;
+  std::unique_ptr<vgeu::VgeuWindow> vgeuWindow;
 };
 }  // namespace vge
 
@@ -36,5 +49,6 @@ class VgeBase {
   int main(int argc, char** argv) { \
     vge::VgeExample vgeExample{};   \
     vgeExample.initVulkan();        \
+    vgeExample.prepare();           \
     return 0;                       \
   }
