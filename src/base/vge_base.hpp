@@ -53,6 +53,9 @@ class VgeBase {
 
   vk::raii::SurfaceKHR surface = nullptr;
   std::unique_ptr<vgeu::VgeuWindow> vgeuWindow;
+
+  // prepare
+  std::unique_ptr<vgeu::SwapChainData> swapChainData;
 };
 }  // namespace vge
 

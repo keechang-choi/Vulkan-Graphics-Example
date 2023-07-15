@@ -36,12 +36,12 @@ struct QueueFamilyIndices {
   uint32_t transfer;
 };
 
-vk::raii::Instance createInstance(vk::raii::Context const& context,
-                                  std::string const& appName,
-                                  std::string const& engineName,
+vk::raii::Instance createInstance(const vk::raii::Context& context,
+                                  const std::string& appName,
+                                  const std::string& engineName,
                                   uint32_t apiVersion = VK_API_VERSION_1_0);
 vk::DebugUtilsMessengerCreateInfoEXT createDebugCreateInfo();
-bool checkValidationLayerSupport(vk::raii::Context const& context);
+bool checkValidationLayerSupport(const vk::raii::Context& context);
 std::vector<const char*> getRequiredExtensions();
 vk::raii::DebugUtilsMessengerEXT setupDebugMessenger(
     vk::raii::Instance& instance);
@@ -66,4 +66,29 @@ uint32_t getQueueFamilyIndex(
 vk::Format pickDepthFormat(const vk::raii::PhysicalDevice& physicalDevice,
                            bool requiresStencil);
 
+struct SwapChainData {
+  SwapChainData(const vk::raii::PhysicalDevice& physicalDevice,
+                const vk::raii::Device& device,
+                const vk::raii::SurfaceKHR& surface, const vk::Extent2D& extent,
+                vk::ImageUsageFlags usage,
+                const vk::raii::SwapchainKHR* pOldSwapchain,
+                uint32_t graphicsQueueFamilyIndex,
+                uint32_t presentQueueFamilyIndex);
+
+  vk::Format colorFormat;
+  vk::raii::SwapchainKHR swapChain = nullptr;
+  std::vector<vk::Image> images;
+  std::vector<vk::raii::ImageView> imageViews;
+};
+
+template <class T>
+VULKAN_HPP_INLINE constexpr const T& clamp(const T& v, const T& lo,
+                                           const T& hi) {
+  return v < lo ? lo : hi < v ? hi : v;
+}
+
+vk::SurfaceFormatKHR pickSurfaceFormat(
+    std::vector<vk::SurfaceFormatKHR> const& formats);
+vk::PresentModeKHR pickPresentMode(
+    std::vector<vk::PresentModeKHR> const& presentModes);
 }  // namespace vgeu

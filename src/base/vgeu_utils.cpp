@@ -5,6 +5,7 @@
 
 // std
 #include <iostream>
+#include <limits>
 
 namespace vgeu {
 // local callback functions
@@ -17,9 +18,9 @@ debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
 
   return VK_FALSE;
 }
-vk::raii::Instance createInstance(vk::raii::Context const& context,
-                                  std::string const& appName,
-                                  std::string const& engineName,
+vk::raii::Instance createInstance(const vk::raii::Context& context,
+                                  const std::string& appName,
+                                  const std::string& engineName,
                                   uint32_t apiVersion) {
   vk::ApplicationInfo applicationInfo(appName.c_str(), 1, engineName.c_str(), 1,
                                       apiVersion);
@@ -50,7 +51,7 @@ vk::raii::Instance createInstance(vk::raii::Context const& context,
   return vk::raii::Instance(context, createInfo);
 }
 
-bool checkValidationLayerSupport(vk::raii::Context const& context) {
+bool checkValidationLayerSupport(const vk::raii::Context& context) {
   auto availableLayers = context.enumerateInstanceLayerProperties();
 
   for (const char* layerName : validationLayers) {
@@ -75,7 +76,6 @@ std::vector<const char*> getRequiredExtensions() {
   uint32_t glfwExtensionCount = 0;
   const char** glfwExtensions;
   glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-  std::cout << glfwExtensionCount;
   std::vector<const char*> extensions(glfwExtensions,
                                       glfwExtensions + glfwExtensionCount);
 
@@ -102,8 +102,7 @@ vk::DebugUtilsMessengerCreateInfoEXT createDebugCreateInfo() {
 
 vk::raii::DebugUtilsMessengerEXT setupDebugMessenger(
     vk::raii::Instance& instance) {
-  return vk::raii::DebugUtilsMessengerEXT(instance,
-                                          vgeu::createDebugCreateInfo());
+  return vk::raii::DebugUtilsMessengerEXT(instance, createDebugCreateInfo());
 }
 
 vk::raii::Device createLogicalDevice(
@@ -240,6 +239,133 @@ vk::Format pickDepthFormat(const vk::raii::PhysicalDevice& physicalDevice,
     }
   }
   throw std::runtime_error("failed to find supported format!");
+}
+
+SwapChainData::SwapChainData(const vk::raii::PhysicalDevice& physicalDevice,
+                             const vk::raii::Device& device,
+                             const vk::raii::SurfaceKHR& surface,
+                             const vk::Extent2D& extent,
+                             vk::ImageUsageFlags usage,
+                             const vk::raii::SwapchainKHR* pOldSwapchain,
+                             uint32_t graphicsQueueFamilyIndex,
+                             uint32_t presentQueueFamilyIndex) {
+  vk::SurfaceFormatKHR surfaceFormat =
+      pickSurfaceFormat(physicalDevice.getSurfaceFormatsKHR(*surface));
+  colorFormat = surfaceFormat.format;
+
+  vk::SurfaceCapabilitiesKHR surfaceCapabilities =
+      physicalDevice.getSurfaceCapabilitiesKHR(*surface);
+  vk::Extent2D swapchainExtent;
+  if (surfaceCapabilities.currentExtent.width ==
+      std::numeric_limits<uint32_t>::max()) {
+    // If the surface size is undefined, the size is set to the size of the
+    // images requested.
+    swapchainExtent.width =
+        clamp(extent.width, surfaceCapabilities.minImageExtent.width,
+              surfaceCapabilities.maxImageExtent.width);
+    swapchainExtent.height =
+        clamp(extent.height, surfaceCapabilities.minImageExtent.height,
+              surfaceCapabilities.maxImageExtent.height);
+  } else {
+    // If the surface size is defined, the swap chain size must match
+    swapchainExtent = surfaceCapabilities.currentExtent;
+  }
+  vk::SurfaceTransformFlagBitsKHR preTransform =
+      (surfaceCapabilities.supportedTransforms &
+       vk::SurfaceTransformFlagBitsKHR::eIdentity)
+          ? vk::SurfaceTransformFlagBitsKHR::eIdentity
+          : surfaceCapabilities.currentTransform;
+  vk::CompositeAlphaFlagBitsKHR compositeAlpha =
+      (surfaceCapabilities.supportedCompositeAlpha &
+       vk::CompositeAlphaFlagBitsKHR::ePreMultiplied)
+          ? vk::CompositeAlphaFlagBitsKHR::ePreMultiplied
+      : (surfaceCapabilities.supportedCompositeAlpha &
+         vk::CompositeAlphaFlagBitsKHR::ePostMultiplied)
+          ? vk::CompositeAlphaFlagBitsKHR::ePostMultiplied
+      : (surfaceCapabilities.supportedCompositeAlpha &
+         vk::CompositeAlphaFlagBitsKHR::eInherit)
+          ? vk::CompositeAlphaFlagBitsKHR::eInherit
+          : vk::CompositeAlphaFlagBitsKHR::eOpaque;
+  vk::PresentModeKHR presentMode =
+      pickPresentMode(physicalDevice.getSurfacePresentModesKHR(*surface));
+  vk::SwapchainCreateInfoKHR swapChainCreateInfo(
+      {}, *surface, surfaceCapabilities.minImageCount, colorFormat,
+      surfaceFormat.colorSpace, swapchainExtent, 1, usage,
+      vk::SharingMode::eExclusive, {}, preTransform, compositeAlpha,
+      presentMode, true, pOldSwapchain ? **pOldSwapchain : nullptr);
+  if (graphicsQueueFamilyIndex != presentQueueFamilyIndex) {
+    uint32_t queueFamilyIndices[2] = {graphicsQueueFamilyIndex,
+                                      presentQueueFamilyIndex};
+    // If the graphics and present queues are from different queue families,
+    // we either have to explicitly transfer ownership of images between the
+    // queues, or we have to create the swapchain with imageSharingMode as
+    // vk::SharingMode::eConcurrent
+    swapChainCreateInfo.imageSharingMode = vk::SharingMode::eConcurrent;
+    swapChainCreateInfo.queueFamilyIndexCount = 2;
+    swapChainCreateInfo.pQueueFamilyIndices = queueFamilyIndices;
+  }
+  swapChain = vk::raii::SwapchainKHR(device, swapChainCreateInfo);
+
+  images = swapChain.getImages();
+
+  imageViews.reserve(images.size());
+  vk::ImageViewCreateInfo imageViewCreateInfo(
+      {}, {}, vk::ImageViewType::e2D, colorFormat, {},
+      {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1});
+  for (auto image : images) {
+    imageViewCreateInfo.image = image;
+    imageViews.emplace_back(device, imageViewCreateInfo);
+  }
+}
+
+vk::SurfaceFormatKHR pickSurfaceFormat(
+    std::vector<vk::SurfaceFormatKHR> const& formats) {
+  assert(!formats.empty());
+  vk::SurfaceFormatKHR pickedFormat = formats[0];
+  if (formats.size() == 1) {
+    if (formats[0].format == vk::Format::eUndefined) {
+      pickedFormat.format = vk::Format::eB8G8R8A8Unorm;
+      pickedFormat.colorSpace = vk::ColorSpaceKHR::eSrgbNonlinear;
+    }
+  } else {
+    // request several formats, the first found will be used
+    vk::Format requestedFormats[] = {
+        vk::Format::eB8G8R8A8Unorm, vk::Format::eR8G8B8A8Unorm,
+        vk::Format::eB8G8R8Unorm, vk::Format::eR8G8B8Unorm};
+    vk::ColorSpaceKHR requestedColorSpace = vk::ColorSpaceKHR::eSrgbNonlinear;
+    for (size_t i = 0;
+         i < sizeof(requestedFormats) / sizeof(requestedFormats[0]); i++) {
+      vk::Format requestedFormat = requestedFormats[i];
+      auto it = std::find_if(formats.begin(), formats.end(),
+                             [requestedFormat, requestedColorSpace](
+                                 vk::SurfaceFormatKHR const& f) {
+                               return (f.format == requestedFormat) &&
+                                      (f.colorSpace == requestedColorSpace);
+                             });
+      if (it != formats.end()) {
+        pickedFormat = *it;
+        break;
+      }
+    }
+  }
+  assert(pickedFormat.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear);
+  return pickedFormat;
+}
+
+vk::PresentModeKHR pickPresentMode(
+    std::vector<vk::PresentModeKHR> const& presentModes) {
+  vk::PresentModeKHR pickedMode = vk::PresentModeKHR::eFifo;
+  for (const auto& presentMode : presentModes) {
+    if (presentMode == vk::PresentModeKHR::eMailbox) {
+      pickedMode = presentMode;
+      break;
+    }
+
+    if (presentMode == vk::PresentModeKHR::eImmediate) {
+      pickedMode = presentMode;
+    }
+  }
+  return pickedMode;
 }
 
 }  // namespace vgeu

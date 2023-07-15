@@ -16,11 +16,13 @@ VgeBase::~VgeBase() {}
 bool VgeBase::initVulkan() {
   // NOTE: shoud be created before instance for getting required extensions;
   vgeuWindow = std::make_unique<vgeu::VgeuWindow>(WIDTH, HEIGHT, title);
+
   context = std::make_unique<vk::raii::Context>();
   instance = vgeu::createInstance(*context, title, title);
   if (vgeu::enableValidationLayers) {
     debugUtilsMessenger = vgeu::setupDebugMessenger(instance);
   }
+
   // select gpu
   physicalDevice = vk::raii::PhysicalDevices(instance).front();
   getEnabledExtensions();
@@ -48,16 +50,23 @@ bool VgeBase::initVulkan() {
   semaphores.renderComplete =
       vk::raii::Semaphore(device, vk::SemaphoreCreateInfo());
 
+  // surface
+  VkSurfaceKHR surface_;
+  vgeuWindow->createWindowSurface(static_cast<VkInstance>(*instance),
+                                  &surface_);
+  surface = vk::raii::SurfaceKHR(instance, surface_);
+
   return true;
 }
 
 void VgeBase::getEnabledExtensions(){};
 void VgeBase::prepare() {
-  VkSurfaceKHR surface_;
-
-  vgeuWindow->createWindowSurface(static_cast<VkInstance>(*instance),
-                                  &surface_);
-  surface = vk::raii::SurfaceKHR(instance, surface_);
+  // NOTE: first graphicsQueue supports present?
+  swapChainData = std::make_unique<vgeu::SwapChainData>(
+      physicalDevice, device, surface, vgeuWindow->getExtent(),
+      vk::ImageUsageFlagBits::eColorAttachment |
+          vk::ImageUsageFlagBits::eTransferSrc,
+      nullptr, queueFamilyIndices.graphics, queueFamilyIndices.graphics);
 }
 
 }  // namespace vge
