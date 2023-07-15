@@ -41,6 +41,8 @@ class VgeBase {
   void* deviceCreatepNextChain = nullptr;
   vk::raii::Queue queue = nullptr;
   vk::raii::CommandPool commandPool = nullptr;
+  bool requiresStencil{false};
+  vk::Format depthFormat;
 
   vk::raii::SurfaceKHR surface = nullptr;
   std::unique_ptr<vgeu::VgeuWindow> vgeuWindow;

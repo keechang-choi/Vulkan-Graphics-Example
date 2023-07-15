@@ -63,4 +63,7 @@ uint32_t getQueueFamilyIndex(
     const std::vector<vk::QueueFamilyProperties>& queueFamilyProperties,
     vk::QueueFlagBits queueFlag);
 
+vk::Format pickDepthFormat(const vk::raii::PhysicalDevice& physicalDevice,
+                           bool requiresStencil);
+
 }  // namespace vgeu

@@ -212,4 +212,34 @@ uint32_t getQueueFamilyIndex(
   throw std::runtime_error("Could not find a matching queue family index");
 }
 
+vk::Format pickDepthFormat(const vk::raii::PhysicalDevice& physicalDevice,
+                           bool requiresStencil) {
+  std::vector<vk::Format> candidates;
+  if (requiresStencil) {
+    std::vector<vk::Format> candidatesStencil{
+        vk::Format::eD32SfloatS8Uint,
+        vk::Format::eD24UnormS8Uint,
+        vk::Format::eD16UnormS8Uint,
+    };
+    candidates = candidatesStencil;
+  } else {
+    std::vector<vk::Format> candidatesDepth{
+        vk::Format::eD32SfloatS8Uint, vk::Format::eD32Sfloat,
+        vk::Format::eD24UnormS8Uint,  vk::Format::eD16UnormS8Uint,
+        vk::Format::eD16Unorm,
+    };
+    candidates = candidatesDepth;
+  }
+
+  for (vk::Format format : candidates) {
+    vk::FormatProperties props = physicalDevice.getFormatProperties(format);
+
+    if (props.optimalTilingFeatures &
+        vk::FormatFeatureFlagBits::eDepthStencilAttachment) {
+      return format;
+    }
+  }
+  throw std::runtime_error("failed to find supported format!");
+}
+
 }  // namespace vgeu

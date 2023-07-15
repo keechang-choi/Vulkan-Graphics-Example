@@ -41,6 +41,8 @@ bool VgeBase::initVulkan() {
       vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
       queueFamilyIndices.graphics);
   commandPool = vk::raii::CommandPool(device, cmdPoolCI);
+  depthFormat = vgeu::pickDepthFormat(physicalDevice, requiresStencil);
+
   return true;
 }
 

@@ -74,7 +74,17 @@
         "xstring": "cpp",
         "xtr1common": "cpp",
         "xtree": "cpp",
-        "xutility": "cpp"
+        "xutility": "cpp",
+        "*.tcc": "cpp",
+        "bitset": "cpp",
+        "cwctype": "cpp",
+        "deque": "cpp",
+        "memory_resource": "cpp",
+        "string_view": "cpp",
+        "numbers": "cpp",
+        "semaphore": "cpp",
+        "cinttypes": "cpp",
+        "variant": "cpp"
     },
     "C_Cpp.intelliSenseEngineFallback": "disabled",
     "cmake.configureOnOpen": false
