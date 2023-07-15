@@ -8,8 +8,6 @@ https://github.com/KhronosGroup/Vulkan-Hpp
 
 */
 
-// forward declaration?
-
 // libs
 #include <Vulkan-Hpp/vulkan/vulkan.hpp>
 #include <Vulkan-Hpp/vulkan/vulkan_raii.hpp>

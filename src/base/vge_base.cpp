@@ -3,8 +3,8 @@
 #include "vgeu_utils.hpp"
 
 // libs
-#include <Vulkan-Hpp/vulkan/vulkan.hpp>
-#include <Vulkan-Hpp/vulkan/vulkan_raii.hpp>
+// #include <Vulkan-Hpp/vulkan/vulkan.hpp>
+// #include <Vulkan-Hpp/vulkan/vulkan_raii.hpp>
 
 // std
 #include <iostream>
@@ -35,6 +35,12 @@ bool VgeBase::initVulkan() {
       physicalDevice, queueFamilyIndices, enabledDeviceExtensions,
       &enabledFeatures, deviceCreatepNextChain, true,
       vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute);
+
+  queue = vk::raii::Queue(device, queueFamilyIndices.graphics, 0);
+  vk::CommandPoolCreateInfo cmdPoolCI(
+      vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+      queueFamilyIndices.graphics);
+  commandPool = vk::raii::CommandPool(device, cmdPoolCI);
   return true;
 }
 

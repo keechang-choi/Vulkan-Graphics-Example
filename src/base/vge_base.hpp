@@ -39,6 +39,8 @@ class VgeBase {
   vk::raii::Device device = nullptr;
   vgeu::QueueFamilyIndices queueFamilyIndices;
   void* deviceCreatepNextChain = nullptr;
+  vk::raii::Queue queue = nullptr;
+  vk::raii::CommandPool commandPool = nullptr;
 
   vk::raii::SurfaceKHR surface = nullptr;
   std::unique_ptr<vgeu::VgeuWindow> vgeuWindow;
