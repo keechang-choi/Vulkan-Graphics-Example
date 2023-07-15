@@ -23,6 +23,9 @@ class VgeBase {
   virtual void getEnabledExtensions();
 
   // virtual prepare vk resources
+  // swapchain, commandPool, commandBuffers, Synch Primitives
+  // DepthStencil, RenderPass, PipelineCache, FrameBuffer
+  // UI overlay
   virtual void prepare();
   // renderLoop
 
@@ -43,6 +46,10 @@ class VgeBase {
   vk::raii::CommandPool commandPool = nullptr;
   bool requiresStencil{false};
   vk::Format depthFormat;
+  struct {
+    vk::raii::Semaphore presentComplete = nullptr;
+    vk::raii::Semaphore renderComplete = nullptr;
+  } semaphores;
 
   vk::raii::SurfaceKHR surface = nullptr;
   std::unique_ptr<vgeu::VgeuWindow> vgeuWindow;

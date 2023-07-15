@@ -43,6 +43,11 @@ bool VgeBase::initVulkan() {
   commandPool = vk::raii::CommandPool(device, cmdPoolCI);
   depthFormat = vgeu::pickDepthFormat(physicalDevice, requiresStencil);
 
+  semaphores.presentComplete =
+      vk::raii::Semaphore(device, vk::SemaphoreCreateInfo());
+  semaphores.renderComplete =
+      vk::raii::Semaphore(device, vk::SemaphoreCreateInfo());
+
   return true;
 }
 
