@@ -91,4 +91,30 @@ vk::SurfaceFormatKHR pickSurfaceFormat(
     std::vector<vk::SurfaceFormatKHR> const& formats);
 vk::PresentModeKHR pickPresentMode(
     std::vector<vk::PresentModeKHR> const& presentModes);
+
+struct ImageData {
+  ImageData(vk::raii::PhysicalDevice const& physicalDevice,
+            vk::raii::Device const& device, vk::Format format_,
+            vk::Extent2D const& extent, vk::ImageTiling tiling,
+            vk::ImageUsageFlags usage, vk::ImageLayout initialLayout,
+            vk::MemoryPropertyFlags memoryProperties,
+            vk::ImageAspectFlags aspectMask);
+
+  ImageData(std::nullptr_t) {}
+
+  vk::Format format;
+  vk::raii::Image image = nullptr;
+  vk::raii::DeviceMemory deviceMemory = nullptr;
+  vk::raii::ImageView imageView = nullptr;
+};
+
+vk::raii::DeviceMemory allocateDeviceMemory(
+    const vk::raii::Device& device,
+    const vk::PhysicalDeviceMemoryProperties& memoryProperties,
+    const vk::MemoryRequirements& memoryRequirements,
+    vk::MemoryPropertyFlags memoryPropertyFlags);
+
+uint32_t findMemoryType(
+    const vk::PhysicalDeviceMemoryProperties& memoryProperties,
+    uint32_t typeBits, vk::MemoryPropertyFlags requirementsMask);
 }  // namespace vgeu

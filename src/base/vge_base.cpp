@@ -78,6 +78,19 @@ void VgeBase::prepare() {
       *cmdPool, vk::CommandBufferLevel::ePrimary,
       static_cast<uint32_t>(swapChainData->images.size()));
   drawCmdBuffers = vk::raii::CommandBuffers(device, cmdBufferAI);
+
+  // synch primitives
+  vk::FenceCreateInfo fenceCI(vk::FenceCreateFlagBits::eSignaled);
+  waitFences.reserve(drawCmdBuffers.size());
+  for (int i = 0; i < drawCmdBuffers.size(); i++) {
+    waitFences.emplace_back(device, fenceCI);
+  }
+  depthStencil = vgeu::ImageData(
+      physicalDevice, device, depthFormat, vgeuWindow->getExtent(),
+      vk::ImageTiling::eOptimal,
+      vk::ImageUsageFlagBits::eDepthStencilAttachment,
+      vk::ImageLayout::eUndefined, vk::MemoryPropertyFlagBits::eDeviceLocal,
+      vk::ImageAspectFlagBits::eDepth);
 }
 
 }  // namespace vge

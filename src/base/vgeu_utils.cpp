@@ -368,4 +368,60 @@ vk::PresentModeKHR pickPresentMode(
   return pickedMode;
 }
 
+ImageData::ImageData(vk::raii::PhysicalDevice const& physicalDevice,
+                     vk::raii::Device const& device, vk::Format format_,
+                     vk::Extent2D const& extent, vk::ImageTiling tiling,
+                     vk::ImageUsageFlags usage, vk::ImageLayout initialLayout,
+                     vk::MemoryPropertyFlags memoryProperties,
+                     vk::ImageAspectFlags aspectMask)
+    : format(format_),
+      image(device, {vk::ImageCreateFlags(),
+                     vk::ImageType::e2D,
+                     format,
+                     vk::Extent3D(extent, 1),
+                     1,
+                     1,
+                     vk::SampleCountFlagBits::e1,
+                     tiling,
+                     usage | vk::ImageUsageFlagBits::eSampled,
+                     vk::SharingMode::eExclusive,
+                     {},
+                     initialLayout}),
+      deviceMemory(vgeu::allocateDeviceMemory(
+          device, physicalDevice.getMemoryProperties(),
+          image.getMemoryRequirements(), memoryProperties)) {
+  image.bindMemory(*deviceMemory, 0);
+  imageView = vk::raii::ImageView(
+      device, vk::ImageViewCreateInfo({}, *image, vk::ImageViewType::e2D,
+                                      format, {}, {aspectMask, 0, 1, 0, 1}));
+}
+
+vk::raii::DeviceMemory allocateDeviceMemory(
+    const vk::raii::Device& device,
+    const vk::PhysicalDeviceMemoryProperties& memoryProperties,
+    const vk::MemoryRequirements& memoryRequirements,
+    vk::MemoryPropertyFlags memoryPropertyFlags) {
+  uint32_t memoryTypeIndex = vgeu::findMemoryType(
+      memoryProperties, memoryRequirements.memoryTypeBits, memoryPropertyFlags);
+  vk::MemoryAllocateInfo memoryAllocateInfo(memoryRequirements.size,
+                                            memoryTypeIndex);
+  return vk::raii::DeviceMemory(device, memoryAllocateInfo);
+}
+
+uint32_t findMemoryType(
+    const vk::PhysicalDeviceMemoryProperties& memoryProperties,
+    uint32_t typeBits, vk::MemoryPropertyFlags requirementsMask) {
+  uint32_t typeIndex = uint32_t(~0);
+  for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++) {
+    if ((typeBits & 1) && ((memoryProperties.memoryTypes[i].propertyFlags &
+                            requirementsMask) == requirementsMask)) {
+      typeIndex = i;
+      break;
+    }
+    typeBits >>= 1;
+  }
+  assert(typeIndex != uint32_t(~0));
+  return typeIndex;
+}
+
 }  // namespace vgeu
