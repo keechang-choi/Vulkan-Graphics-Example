@@ -126,4 +126,10 @@ vk::raii::RenderPass createRenderPass(
     vk::Format depthFormat,
     vk::AttachmentLoadOp loadOp = vk::AttachmentLoadOp::eClear,
     vk::ImageLayout colorFinalLayout = vk::ImageLayout::ePresentSrcKHR);
+
+std::vector<vk::raii::Framebuffer> createFramebuffers(
+    const vk::raii::Device& device, const vk::raii::RenderPass& renderPass,
+    const std::vector<vk::raii::ImageView>& imageViews,
+    const vk::raii::ImageView* pDepthImageView, const vk::Extent2D& extent);
+
 }  // namespace vgeu

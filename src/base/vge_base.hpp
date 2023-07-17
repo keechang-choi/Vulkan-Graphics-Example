@@ -57,12 +57,15 @@ class VgeBase {
   // prepare
   std::unique_ptr<vgeu::SwapChainData> swapChainData;
   vk::raii::CommandPool cmdPool = nullptr;
+  // vector
   vk::raii::CommandBuffers drawCmdBuffers = nullptr;
   // TOOD: swapchain related resources need to be recreated.
   // when window resize.
   std::vector<vk::raii::Fence> waitFences;
   vgeu::ImageData depthStencil = nullptr;
   vk::raii::RenderPass renderPass = nullptr;
+  vk::raii::PipelineCache pipelineCache = nullptr;
+  std::vector<vk::raii::Framebuffer> frameBuffers;
 };
 }  // namespace vge
 

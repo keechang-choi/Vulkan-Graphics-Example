@@ -483,4 +483,25 @@ vk::raii::RenderPass createRenderPass(const vk::raii::Device& device,
   return vk::raii::RenderPass(device, renderPassCreateInfo);
 }
 
+std::vector<vk::raii::Framebuffer> createFramebuffers(
+    const vk::raii::Device& device, const vk::raii::RenderPass& renderPass,
+    const std::vector<vk::raii::ImageView>& imageViews,
+    const vk::raii::ImageView* pDepthImageView, const vk::Extent2D& extent) {
+  vk::ImageView attachments[2];
+  attachments[1] = pDepthImageView ? **pDepthImageView : vk::ImageView();
+
+  vk::FramebufferCreateInfo framebufferCreateInfo(
+      vk::FramebufferCreateFlags(), *renderPass, pDepthImageView ? 2 : 1,
+      attachments, extent.width, extent.height, 1);
+  std::vector<vk::raii::Framebuffer> framebuffers;
+  framebuffers.reserve(imageViews.size());
+  for (auto const& imageView : imageViews) {
+    attachments[0] = *imageView;
+    framebuffers.push_back(
+        vk::raii::Framebuffer(device, framebufferCreateInfo));
+  }
+
+  return framebuffers;
+}
+
 }  // namespace vgeu

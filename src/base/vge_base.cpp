@@ -93,6 +93,14 @@ void VgeBase::prepare() {
       vk::ImageAspectFlagBits::eDepth);
   renderPass =
       vgeu::createRenderPass(device, swapChainData->colorFormat, depthFormat);
+
+  pipelineCache =
+      vk::raii::PipelineCache(device, vk::PipelineCacheCreateInfo());
+
+  // CHECK: vector move assigment operator and validity
+  frameBuffers = vgeu::createFramebuffers(
+      device, renderPass, swapChainData->imageViews, &depthStencil.imageView,
+      vgeuWindow->getExtent());
 }
 
 }  // namespace vge
