@@ -134,8 +134,13 @@ vk::raii::Device createLogicalDevice(
     queueCreateInfos.push_back(deviceQueueCreateInfo);
   }
 
+  std::vector<const char*> deviceExtensions(extensions);
+  if (useSwapChain) {
+    deviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+  }
+
   vk::DeviceCreateInfo deviceCreateInfo(vk::DeviceCreateFlags(),
-                                        queueCreateInfos, {}, extensions,
+                                        queueCreateInfos, {}, deviceExtensions,
                                         physicalDeviceFeatures, pNext);
   return vk::raii::Device(physicalDevice, deviceCreateInfo);
 }
@@ -306,10 +311,8 @@ SwapChainData::SwapChainData(const vk::raii::PhysicalDevice& physicalDevice,
     swapChainCreateInfo.queueFamilyIndexCount = 2;
     swapChainCreateInfo.pQueueFamilyIndices = queueFamilyIndices;
   }
-  std::cout << "swapchainData1" << std::endl;
 
   swapChain = vk::raii::SwapchainKHR(device, swapChainCreateInfo);
-  std::cout << "swapchainData2" << std::endl;
 
   images = swapChain.getImages();
 

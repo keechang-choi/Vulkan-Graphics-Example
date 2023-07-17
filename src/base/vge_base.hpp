@@ -89,4 +89,4 @@ class VgeBase {
       return EXIT_FAILURE;                \
     }                                     \
     return 0;                             \
-  }\
+  }
