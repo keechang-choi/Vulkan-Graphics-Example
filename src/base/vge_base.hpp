@@ -56,6 +56,10 @@ class VgeBase {
 
   // prepare
   std::unique_ptr<vgeu::SwapChainData> swapChainData;
+  vk::raii::CommandPool cmdPool = nullptr;
+  vk::raii::CommandBuffers drawCmdBuffers = nullptr;
+
+  std::vector<vk::raii::Fence> waitFences;
 };
 }  // namespace vge
 

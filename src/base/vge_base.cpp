@@ -67,6 +67,17 @@ void VgeBase::prepare() {
       vk::ImageUsageFlagBits::eColorAttachment |
           vk::ImageUsageFlagBits::eTransferSrc,
       nullptr, queueFamilyIndices.graphics, queueFamilyIndices.graphics);
+  // create command pool
+  vk::CommandPoolCreateInfo cmdPoolCI(
+      vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+      queueFamilyIndices.graphics);
+  cmdPool = vk::raii::CommandPool(device, cmdPoolCI);
+
+  // create command buffer
+  vk::CommandBufferAllocateInfo cmdBufferAI(
+      *cmdPool, vk::CommandBufferLevel::ePrimary,
+      static_cast<uint32_t>(swapChainData->images.size()));
+  drawCmdBuffers = vk::raii::CommandBuffers(device, cmdBufferAI);
 }
 
 }  // namespace vge
