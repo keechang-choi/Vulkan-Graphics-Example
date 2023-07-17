@@ -6,6 +6,9 @@
 
 #include "vgeu_utils.hpp"
 #include "vgeu_window.hpp"
+
+// std
+#include <stdexcept>
 namespace vge {
 class VgeBase {
  public:
@@ -28,6 +31,11 @@ class VgeBase {
   // UI overlay
   virtual void prepare();
   // renderLoop
+  // msg handle if necessary
+  // resize and frameTime
+  // view update
+  // render, camera update, UI update,
+  void renderLoop();
 
   std::string title = "Vulkan Example KC";
   std::string name = "vulkanExample";
@@ -69,10 +77,16 @@ class VgeBase {
 };
 }  // namespace vge
 
-#define VULKAN_EXAMPLE_MAIN()       \
-  int main(int argc, char** argv) { \
-    vge::VgeExample vgeExample{};   \
-    vgeExample.initVulkan();        \
-    vgeExample.prepare();           \
-    return 0;                       \
-  }
+#define VULKAN_EXAMPLE_MAIN()             \
+  int main(int argc, char** argv) {       \
+    try {                                 \
+      vge::VgeExample vgeExample{};       \
+      vgeExample.initVulkan();            \
+      vgeExample.prepare();               \
+      vgeExample.renderLoop();            \
+    } catch (const std::exception& e) {   \
+      std::cerr << e.what() << std::endl; \
+      return EXIT_FAILURE;                \
+    }                                     \
+    return 0;                             \
+  }\

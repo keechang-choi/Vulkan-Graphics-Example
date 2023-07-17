@@ -270,6 +270,7 @@ SwapChainData::SwapChainData(const vk::raii::PhysicalDevice& physicalDevice,
     // If the surface size is defined, the swap chain size must match
     swapchainExtent = surfaceCapabilities.currentExtent;
   }
+
   vk::SurfaceTransformFlagBitsKHR preTransform =
       (surfaceCapabilities.supportedTransforms &
        vk::SurfaceTransformFlagBitsKHR::eIdentity)
@@ -293,6 +294,7 @@ SwapChainData::SwapChainData(const vk::raii::PhysicalDevice& physicalDevice,
       surfaceFormat.colorSpace, swapchainExtent, 1, usage,
       vk::SharingMode::eExclusive, {}, preTransform, compositeAlpha,
       presentMode, true, pOldSwapchain ? **pOldSwapchain : nullptr);
+
   if (graphicsQueueFamilyIndex != presentQueueFamilyIndex) {
     uint32_t queueFamilyIndices[2] = {graphicsQueueFamilyIndex,
                                       presentQueueFamilyIndex};
@@ -304,7 +306,10 @@ SwapChainData::SwapChainData(const vk::raii::PhysicalDevice& physicalDevice,
     swapChainCreateInfo.queueFamilyIndexCount = 2;
     swapChainCreateInfo.pQueueFamilyIndices = queueFamilyIndices;
   }
+  std::cout << "swapchainData1" << std::endl;
+
   swapChain = vk::raii::SwapchainKHR(device, swapChainCreateInfo);
+  std::cout << "swapchainData2" << std::endl;
 
   images = swapChain.getImages();
 

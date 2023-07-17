@@ -61,12 +61,15 @@ bool VgeBase::initVulkan() {
 
 void VgeBase::getEnabledExtensions(){};
 void VgeBase::prepare() {
+  std::cout << "prepare call" << std::endl;
   // NOTE: first graphicsQueue supports present?
   swapChainData = std::make_unique<vgeu::SwapChainData>(
       physicalDevice, device, surface, vgeuWindow->getExtent(),
       vk::ImageUsageFlagBits::eColorAttachment |
           vk::ImageUsageFlagBits::eTransferSrc,
       nullptr, queueFamilyIndices.graphics, queueFamilyIndices.graphics);
+  std::cout << "swapchain" << std::endl;
+
   // create command pool
   vk::CommandPoolCreateInfo cmdPoolCI(
       vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
@@ -101,6 +104,18 @@ void VgeBase::prepare() {
   frameBuffers = vgeu::createFramebuffers(
       device, renderPass, swapChainData->imageViews, &depthStencil.imageView,
       vgeuWindow->getExtent());
+
+  // UI overlay
+}
+
+void VgeBase::renderLoop() {
+  std::cout << "render loop call" << std::endl;
+
+  while (!vgeuWindow->shouldClose()) {
+    glfwPollEvents();
+    std::cout << "render loop" << std::endl;
+  }
+  device.waitIdle();
 }
 
 }  // namespace vge

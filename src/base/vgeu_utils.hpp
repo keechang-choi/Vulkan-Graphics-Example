@@ -16,6 +16,7 @@ class SubpassDependency;
 #include <Vulkan-Hpp/vulkan/vulkan_raii.hpp>
 
 // std
+#include <iostream>
 #include <memory>
 #include <string>
 #include <vector>
