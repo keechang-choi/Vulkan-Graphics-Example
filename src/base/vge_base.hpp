@@ -10,7 +10,7 @@ namespace vge {
 class VgeBase {
  public:
   static constexpr uint32_t WIDTH = 1280;
-  static constexpr uint32_t HEIGHT = 720;
+  static constexpr uint32_t HEIGHT = 1080;
 
   VgeBase();
   ~VgeBase();
@@ -62,6 +62,7 @@ class VgeBase {
   // when window resize.
   std::vector<vk::raii::Fence> waitFences;
   vgeu::ImageData depthStencil = nullptr;
+  vk::raii::RenderPass renderPass = nullptr;
 };
 }  // namespace vge
 

@@ -7,6 +7,9 @@ https://github.com/KhronosGroup/Vulkan-Hpp
 
 
 */
+namespace vk {
+class SubpassDependency;
+}
 
 // libs
 #include <Vulkan-Hpp/vulkan/vulkan.hpp>
@@ -117,4 +120,10 @@ vk::raii::DeviceMemory allocateDeviceMemory(
 uint32_t findMemoryType(
     const vk::PhysicalDeviceMemoryProperties& memoryProperties,
     uint32_t typeBits, vk::MemoryPropertyFlags requirementsMask);
+
+vk::raii::RenderPass createRenderPass(
+    const vk::raii::Device& device, vk::Format colorFormat,
+    vk::Format depthFormat,
+    vk::AttachmentLoadOp loadOp = vk::AttachmentLoadOp::eClear,
+    vk::ImageLayout colorFinalLayout = vk::ImageLayout::ePresentSrcKHR);
 }  // namespace vgeu

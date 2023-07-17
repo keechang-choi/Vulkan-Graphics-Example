@@ -91,6 +91,8 @@ void VgeBase::prepare() {
       vk::ImageUsageFlagBits::eDepthStencilAttachment,
       vk::ImageLayout::eUndefined, vk::MemoryPropertyFlagBits::eDeviceLocal,
       vk::ImageAspectFlagBits::eDepth);
+  renderPass =
+      vgeu::createRenderPass(device, swapChainData->colorFormat, depthFormat);
 }
 
 }  // namespace vge

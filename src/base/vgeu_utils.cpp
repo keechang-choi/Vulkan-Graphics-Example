@@ -424,4 +424,63 @@ uint32_t findMemoryType(
   return typeIndex;
 }
 
+vk::raii::RenderPass createRenderPass(const vk::raii::Device& device,
+                                      vk::Format colorFormat,
+                                      vk::Format depthFormat,
+                                      vk::AttachmentLoadOp loadOp,
+                                      vk::ImageLayout colorFinalLayout) {
+  std::vector<vk::AttachmentDescription> attachmentDescriptions;
+  assert(colorFormat != vk::Format::eUndefined);
+  attachmentDescriptions.emplace_back(
+      vk::AttachmentDescriptionFlags(), colorFormat,
+      vk::SampleCountFlagBits::e1, loadOp, vk::AttachmentStoreOp::eStore,
+      vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
+      vk::ImageLayout::eUndefined, colorFinalLayout);
+  if (depthFormat != vk::Format::eUndefined) {
+    attachmentDescriptions.emplace_back(
+        vk::AttachmentDescriptionFlags(), depthFormat,
+        vk::SampleCountFlagBits::e1, loadOp, vk::AttachmentStoreOp::eDontCare,
+        vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
+        vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eDepthStencilAttachmentOptimal);
+  }
+  vk::AttachmentReference colorAttachment(
+      0, vk::ImageLayout::eColorAttachmentOptimal);
+  vk::AttachmentReference depthAttachment(
+      1, vk::ImageLayout::eDepthStencilAttachmentOptimal);
+  vk::SubpassDescription subpassDescription(
+      vk::SubpassDescriptionFlags(), vk::PipelineBindPoint::eGraphics, {},
+      colorAttachment, {},
+      (depthFormat != vk::Format::eUndefined) ? &depthAttachment : nullptr);
+
+  // subpass dependencies for layout transition
+  std::vector<vk::SubpassDependency> dependencies;
+  // for depth attachment
+  dependencies.emplace_back(VK_SUBPASS_EXTERNAL, 0u,
+                            vk::PipelineStageFlagBits::eEarlyFragmentTests |
+                                vk::PipelineStageFlagBits::eLateFragmentTests,
+                            vk::PipelineStageFlagBits::eEarlyFragmentTests |
+                                vk::PipelineStageFlagBits::eLateFragmentTests,
+                            vk::AccessFlagBits::eDepthStencilAttachmentWrite,
+                            vk::AccessFlagBits::eDepthStencilAttachmentWrite |
+                                vk::AccessFlagBits::eDepthStencilAttachmentRead,
+                            vk::DependencyFlags()  // 0 for framebuffer-global
+  );
+
+  // for color attachment
+  dependencies.emplace_back(VK_SUBPASS_EXTERNAL, 0u,
+                            vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                            vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                            vk::AccessFlags(),
+                            vk::AccessFlagBits::eColorAttachmentWrite |
+                                vk::AccessFlagBits::eColorAttachmentRead,
+                            vk::DependencyFlags()  // 0 for framebuffer-global
+  );
+
+  vk::RenderPassCreateInfo renderPassCreateInfo(
+      vk::RenderPassCreateFlags(), attachmentDescriptions, subpassDescription,
+      dependencies);
+  return vk::raii::RenderPass(device, renderPassCreateInfo);
+}
+
 }  // namespace vgeu
