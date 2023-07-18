@@ -7,6 +7,7 @@
 // #include <Vulkan-Hpp/vulkan/vulkan_raii.hpp>
 
 // std
+#include <chrono>
 #include <iostream>
 #include <memory>
 namespace vge {
@@ -113,6 +114,34 @@ void VgeBase::renderLoop() {
   destHeight = height;
   while (!vgeuWindow->shouldClose()) {
     glfwPollEvents();
+    auto tStart = std::chrono::high_resolution_clock::now();
+    if (viewUpdated) {
+      viewUpdated = false;
+      viewChanged();
+    }
+    render();
+    frameCounter++;
+    auto tEnd = std::chrono::high_resolution_clock::now();
+    auto tDiff =
+        std::chrono::duration<double, std::milli>(tEnd - tStart).count();
+    frameTimer = tDiff / 1000.0f;
+    // TODO: camera update
+
+    // Convert to clamped timer value
+    if (!paused) {
+      timer += timerSpeed * frameTimer;
+      if (timer > 1.0) {
+        timer -= 1.0f;
+      }
+    }
+    float fpsTimer =
+        std::chrono::duration<double, std::milli>(tEnd - lastTimestamp).count();
+    if (fpsTimer > 1000.0f) {
+      lastFPS = (float)frameCounter * (1000.0f / fpsTimer);
+      frameCounter = 0;
+      lastTimestamp = tEnd;
+    }
+    // TODO: UI overlay update
   }
   device.waitIdle();
 }

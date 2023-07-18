@@ -40,12 +40,17 @@ class VgeBase {
 
   virtual void windowResized();
   virtual void viewChanged();
+  virtual void render() = 0;
 
   std::string title = "Vulkan Example KC";
   std::string name = "vulkanExample";
   float frameTimer = 1.0f;
   bool prepared = false;
   bool resized = false;
+  bool viewUpdated = false;
+  float timer = 0.0f;
+  float timerSpeed = 0.25f;
+  bool paused = false;
 
  protected:
   std::unique_ptr<vk::raii::Context> context;
