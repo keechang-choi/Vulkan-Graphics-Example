@@ -10,6 +10,7 @@
 // std
 #include <chrono>
 #include <stdexcept>
+
 namespace vge {
 class VgeBase {
  public:

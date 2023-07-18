@@ -5,6 +5,7 @@ class VgeExample : public VgeBase {
  public:
   VgeExample() : VgeBase() {}
   ~VgeExample() {}
+  void render() {}
 };
 }  // namespace vge
 
