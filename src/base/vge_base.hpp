@@ -1,11 +1,13 @@
 #pragma once
 
+#include "vgeu_camera.hpp"
+#include "vgeu_keyboard_movement_controller.hpp"
+#include "vgeu_utils.hpp"
+#include "vgeu_window.hpp"
+
 // libs
 #include <Vulkan-Hpp/vulkan/vulkan.hpp>
 #include <Vulkan-Hpp/vulkan/vulkan_raii.hpp>
-
-#include "vgeu_utils.hpp"
-#include "vgeu_window.hpp"
 
 // std
 #include <chrono>
@@ -52,6 +54,7 @@ class VgeBase {
   float timer = 0.0f;
   float timerSpeed = 0.25f;
   bool paused = false;
+  vgeu::VgeuCamera camera;
 
  protected:
   std::unique_ptr<vk::raii::Context> context;

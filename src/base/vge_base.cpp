@@ -112,6 +112,12 @@ void VgeBase::renderLoop() {
   std::cout << "Call: render loop" << std::endl;
   destWidth = width;
   destHeight = height;
+  camera.setViewTarget({0.f, -1.f, -1.f}, {0.f, 0.f, 0.f});
+
+  vgeu::TransformComponent viewerTransform{};
+  viewerTransform.translation = camera.getPosition();
+  viewerTransform.rotation = camera.getRotationYXZ();
+
   while (!vgeuWindow->shouldClose()) {
     glfwPollEvents();
     auto tStart = std::chrono::high_resolution_clock::now();
