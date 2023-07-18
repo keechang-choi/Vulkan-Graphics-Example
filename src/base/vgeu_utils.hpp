@@ -76,6 +76,7 @@ struct SwapChainData {
                 const vk::raii::SwapchainKHR* pOldSwapchain,
                 uint32_t graphicsQueueFamilyIndex,
                 uint32_t presentQueueFamilyIndex);
+  SwapChainData(std::nullptr_t) {}
 
   vk::Format colorFormat;
   vk::raii::SwapchainKHR swapChain = nullptr;

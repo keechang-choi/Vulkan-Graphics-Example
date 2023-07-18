@@ -8,12 +8,13 @@
 #include "vgeu_window.hpp"
 
 // std
+#include <chrono>
 #include <stdexcept>
 namespace vge {
 class VgeBase {
  public:
-  static constexpr uint32_t WIDTH = 1280;
-  static constexpr uint32_t HEIGHT = 1080;
+  uint32_t width = 1280;
+  uint32_t height = 1080;
 
   VgeBase();
   ~VgeBase();
@@ -37,10 +38,16 @@ class VgeBase {
   // render, camera update, UI update,
   void renderLoop();
 
+  virtual void windowResized();
+  virtual void viewChanged();
+
   std::string title = "Vulkan Example KC";
   std::string name = "vulkanExample";
+  float frameTimer = 1.0f;
+  bool prepared = false;
+  bool resized = false;
 
- private:
+ protected:
   std::unique_ptr<vk::raii::Context> context;
   vk::raii::Instance instance = nullptr;
   vk::raii::DebugUtilsMessengerEXT debugUtilsMessenger = nullptr;
@@ -74,6 +81,16 @@ class VgeBase {
   vk::raii::RenderPass renderPass = nullptr;
   vk::raii::PipelineCache pipelineCache = nullptr;
   std::vector<vk::raii::Framebuffer> frameBuffers;
+
+  uint32_t frameCounter = 0;
+  uint32_t lastFPS = 0;
+  std::chrono::time_point<std::chrono::high_resolution_clock> lastTimestamp,
+      tPrevEnd;
+
+ private:
+  uint32_t destWidth;
+  uint32_t destHeight;
+  void windowResize();
 };
 }  // namespace vge
 

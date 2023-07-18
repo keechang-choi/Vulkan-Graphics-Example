@@ -15,7 +15,7 @@ VgeBase::~VgeBase() {}
 
 bool VgeBase::initVulkan() {
   // NOTE: shoud be created before instance for getting required extensions;
-  vgeuWindow = std::make_unique<vgeu::VgeuWindow>(WIDTH, HEIGHT, title);
+  vgeuWindow = std::make_unique<vgeu::VgeuWindow>(width, height, title);
 
   context = std::make_unique<vk::raii::Context>();
   instance = vgeu::createInstance(*context, title, title);
@@ -109,11 +109,67 @@ void VgeBase::prepare() {
 
 void VgeBase::renderLoop() {
   std::cout << "Call: render loop" << std::endl;
-
+  destWidth = width;
+  destHeight = height;
   while (!vgeuWindow->shouldClose()) {
     glfwPollEvents();
   }
   device.waitIdle();
 }
+
+void VgeBase::windowResize() {
+  if (!prepared) {
+    return;
+  }
+  prepared = false;
+  resized = true;
+  device.waitIdle();
+
+  // TODO: dest size shoud be handled earier
+  vk::Extent2D extent = vgeuWindow->getExtent();
+  destWidth = extent.width;
+  destWidth = extent.height;
+
+  // recreate swpchain
+  // NOTE: unique_ptr move assignment
+  swapChainData = std::make_unique<vgeu::SwapChainData>(
+      physicalDevice, device, surface, vgeuWindow->getExtent(),
+      vk::ImageUsageFlagBits::eColorAttachment |
+          vk::ImageUsageFlagBits::eTransferSrc,
+      &(swapChainData->swapChain), queueFamilyIndices.graphics,
+      queueFamilyIndices.graphics);
+  // recreate framebuffers
+  depthStencil = vgeu::ImageData(
+      physicalDevice, device, depthFormat, vgeuWindow->getExtent(),
+      vk::ImageTiling::eOptimal,
+      vk::ImageUsageFlagBits::eDepthStencilAttachment,
+      vk::ImageLayout::eUndefined, vk::MemoryPropertyFlagBits::eDeviceLocal,
+      vk::ImageAspectFlagBits::eDepth);
+  frameBuffers = vgeu::createFramebuffers(
+      device, renderPass, swapChainData->imageViews, &depthStencil.imageView,
+      vgeuWindow->getExtent());
+
+  // TODO: UI overlay resize
+
+  // recreate Command buffers
+  vk::CommandBufferAllocateInfo cmdBufferAI(
+      *cmdPool, vk::CommandBufferLevel::ePrimary,
+      static_cast<uint32_t>(swapChainData->images.size()));
+  drawCmdBuffers = vk::raii::CommandBuffers(device, cmdBufferAI);
+
+  // recreate synchobjects
+  waitFences.clear();
+  vk::FenceCreateInfo fenceCI(vk::FenceCreateFlagBits::eSignaled);
+  waitFences.reserve(drawCmdBuffers.size());
+  for (int i = 0; i < drawCmdBuffers.size(); i++) {
+    waitFences.emplace_back(device, fenceCI);
+  }
+
+  device.waitIdle();
+
+  // TODO: camera aspect ratio update
+}
+void VgeBase::windowResized() {}
+void VgeBase::viewChanged() {}
 
 }  // namespace vge
