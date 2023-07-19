@@ -92,6 +92,7 @@ class VgeBase {
   vk::raii::RenderPass renderPass = nullptr;
   vk::raii::PipelineCache pipelineCache = nullptr;
   std::vector<vk::raii::Framebuffer> frameBuffers;
+  vk::raii::DescriptorPool descriptorPool = nullptr;
 
   uint32_t frameCounter = 0;
   uint32_t lastFPS = 0;

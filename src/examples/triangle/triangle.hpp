@@ -21,8 +21,17 @@ class VgeExample : public VgeBase {
   void render();
   void prepare();
   void createUniformBuffers();
+  void createVertexBuffer();
+  void createDescriptorSetLayout();
+  void createDescriptorPool();
+  void createDescriptorSets();
+  void createPipelines();
 
   std::vector<vgeu::VgeuBuffer> uniformBuffers;
   std::unique_ptr<vgeu::VgeuBuffer> vertexBuffer;
+  vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
+  vk::raii::PipelineLayout pipelineLayout = nullptr;
+  vk::raii::Pipeline pipeline = nullptr;
+  vk::raii::DescriptorSet descriptorSet = nullptr;
 };
 }  // namespace vge

@@ -12,6 +12,7 @@ VgeExample::~VgeExample() {}
 void VgeExample::render() {}
 void VgeExample::prepare() {
   VgeBase::prepare();
+
   std::vector<Vertex> vertices{
       {{1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}},
       {{-1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}},
@@ -36,6 +37,18 @@ void VgeExample::createUniformBuffers() {
             VMA_ALLOCATION_CREATE_MAPPED_BIT);
   }
 }
+
+void VgeExample::createDescriptorSetLayout() {
+  vk::DescriptorSetLayoutBinding layoutBinding(
+      0, vk::DescriptorType::eUniformBuffer, 1,
+      vk::ShaderStageFlagBits::eVertex);
+  vk::DescriptorSetLayoutCreateInfo layoutCI({}, 1, &layoutBinding);
+  descriptorSetLayout = vk::raii::DescriptorSetLayout(device, layoutCI);
+
+  vk::PipelineLayoutCreateInfo pipelineLayoutCI({}, *descriptorSetLayout);
+  pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutCI);
+}
+
 }  // namespace vge
 
 VULKAN_EXAMPLE_MAIN()
