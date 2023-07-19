@@ -5,7 +5,7 @@
 
 namespace vgeu {
 
-void KeyBoardMovementController::moveInPlaneXZ(GLFWwindow* window, float dt,
+bool KeyBoardMovementController::moveInPlaneXZ(GLFWwindow* window, float dt,
                                                TransformComponent& transform) {
   glm::vec3 rotate{0};
   if (glfwGetKey(window, keys.lookRight) == GLFW_PRESS) rotate.y += 1.f;
@@ -38,5 +38,9 @@ void KeyBoardMovementController::moveInPlaneXZ(GLFWwindow* window, float dt,
   if (glm::dot(moveDir, moveDir) > std::numeric_limits<float>::epsilon()) {
     transform.translation += moveSpeed * dt * glm::normalize(moveDir);
   }
+  if (rotate == glm::vec3{0.f} && moveDir == glm::vec3{0.f}) {
+    return false;
+  }
+  return true;
 }
 }  // namespace vgeu

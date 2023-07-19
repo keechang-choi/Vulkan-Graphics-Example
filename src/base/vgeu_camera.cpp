@@ -19,6 +19,7 @@ void VgeuCamera::setOrthographicProjection(float left, float right, float top,
 void VgeuCamera::setPerspectiveProjection(float fovy, float aspect, float near,
                                           float far) {
   assert(glm::abs(aspect - std::numeric_limits<float>::epsilon()) > 0.0f);
+  // NOTE: Zero-One, Left Hand
   projectionMatrix = glm::perspective(glm::radians(fovy), aspect, near, far);
   return;
   const float tanHalfFovy = tan(fovy / 2.f);

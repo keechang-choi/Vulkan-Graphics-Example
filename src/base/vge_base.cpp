@@ -117,6 +117,7 @@ void VgeBase::renderLoop() {
   vgeu::TransformComponent viewerTransform{};
   viewerTransform.translation = camera.getPosition();
   viewerTransform.rotation = camera.getRotationYXZ();
+  vgeu::KeyBoardMovementController cameraController{};
 
   while (!vgeuWindow->shouldClose()) {
     glfwPollEvents();
@@ -131,7 +132,12 @@ void VgeBase::renderLoop() {
     auto tDiff =
         std::chrono::duration<double, std::milli>(tEnd - tStart).count();
     frameTimer = tDiff / 1000.0f;
-    // TODO: camera update
+    // camera update
+    if (cameraController.moveInPlaneXZ(vgeuWindow->getGLFWwindow(), frameTimer,
+                                       viewerTransform)) {
+      viewUpdated = true;
+    }
+    camera.setViewYXZ(viewerTransform.translation, viewerTransform.rotation);
 
     // Convert to clamped timer value
     if (!paused) {
@@ -147,6 +153,7 @@ void VgeBase::renderLoop() {
       frameCounter = 0;
       lastTimestamp = tEnd;
     }
+    tPrevEnd = tEnd;
     // TODO: UI overlay update
   }
   device.waitIdle();

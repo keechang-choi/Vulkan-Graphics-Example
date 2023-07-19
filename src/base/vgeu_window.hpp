@@ -25,6 +25,7 @@ class VgeuWindow {
   }
 
   void createWindowSurface(VkInstance instance, VkSurfaceKHR* surface);
+  GLFWwindow* getGLFWwindow() const { return window; };
 
  private:
   static void framebufferResizeCallback(GLFWwindow* window, int width,
