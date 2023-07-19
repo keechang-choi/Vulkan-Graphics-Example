@@ -18,6 +18,9 @@ class VgeBase {
  public:
   uint32_t width = 1280;
   uint32_t height = 1080;
+  const float near = 0.1f;
+  const float far = 100.0f;
+  const float fovy = 50.0;
 
   VgeBase();
   ~VgeBase();

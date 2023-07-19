@@ -112,6 +112,9 @@ void VgeBase::renderLoop() {
   std::cout << "Call: render loop" << std::endl;
   destWidth = width;
   destHeight = height;
+
+  camera.setPerspectiveProjection(glm::radians(fovy), width / height, near,
+                                  far);
   camera.setViewTarget({0.f, -1.f, -1.f}, {0.f, 0.f, 0.f});
 
   vgeu::TransformComponent viewerTransform{};
@@ -160,6 +163,11 @@ void VgeBase::renderLoop() {
 }
 
 void VgeBase::windowResize() {
+  // TODO: dest size shoud be handled earier
+  vk::Extent2D extent = vgeuWindow->getExtent();
+  destWidth = extent.width;
+  destWidth = extent.height;
+
   if (!prepared) {
     return;
   }
@@ -167,11 +175,8 @@ void VgeBase::windowResize() {
   resized = true;
   device.waitIdle();
 
-  // TODO: dest size shoud be handled earier
-  vk::Extent2D extent = vgeuWindow->getExtent();
-  destWidth = extent.width;
-  destWidth = extent.height;
-
+  width = destWidth;
+  height = destHeight;
   // recreate swpchain
   // NOTE: unique_ptr move assignment
   swapChainData = std::make_unique<vgeu::SwapChainData>(
@@ -209,7 +214,11 @@ void VgeBase::windowResize() {
 
   device.waitIdle();
 
-  // TODO: camera aspect ratio update
+  // camera aspect ratio update
+  if (width > 0.f && height > 0.f) {
+    camera.setPerspectiveProjection(glm::radians(fovy), width / height, near,
+                                    far);
+  }
 }
 void VgeBase::windowResized() {}
 void VgeBase::viewChanged() {}
