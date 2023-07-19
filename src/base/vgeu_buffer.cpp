@@ -6,6 +6,7 @@
 
 #include <Vulkan-Hpp/vulkan/vulkan.hpp>
 #include <Vulkan-Hpp/vulkan/vulkan_raii.hpp>
+#include <cassert>
 namespace vgeu {
 
 VgeuBuffer::VgeuBuffer(VmaAllocator allocator, vk::DeviceSize instanceSize,
@@ -30,6 +31,7 @@ VgeuBuffer::VgeuBuffer(VmaAllocator allocator, vk::DeviceSize instanceSize,
   VmaAllocationInfo allocInfo{};
   VkResult result = vmaCreateBuffer(allocator, &vkBufferCI, &allocCI, &vkBuffer,
                                     &alloc, &allocInfo);
+  assert(result == VK_SUCCESS && "VMA ERROR: failed to create buffer.");
   buffer = vk::Buffer(vkBuffer);
 }
 VgeuBuffer::~VgeuBuffer() {
