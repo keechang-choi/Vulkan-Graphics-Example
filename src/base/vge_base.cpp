@@ -6,6 +6,8 @@
 // #include <Vulkan-Hpp/vulkan/vulkan.hpp>
 // #include <Vulkan-Hpp/vulkan/vulkan_raii.hpp>
 
+#include <vulkan/vulkan_core.h>
+
 // std
 #include <cassert>
 #include <chrono>
@@ -27,6 +29,7 @@ bool VgeBase::initVulkan() {
 
   context = std::make_unique<vk::raii::Context>();
   instance = vgeu::createInstance(*context, title, title, apiVersion);
+
   if (vgeu::enableValidationLayers) {
     debugUtilsMessenger = vgeu::setupDebugMessenger(instance);
   }
@@ -71,8 +74,14 @@ bool VgeBase::initVulkan() {
   allocatorCI.instance = VkInstance(*instance);
   allocatorCI.vulkanApiVersion = apiVersion;
   // TOOD: check vma flags
+  // for higher version Vulkan API
+  VmaVulkanFunctions vulkanFunctions = {};
+  vulkanFunctions.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
+  vulkanFunctions.vkGetDeviceProcAddr = vkGetDeviceProcAddr;
+  allocatorCI.pVulkanFunctions = &vulkanFunctions;
+
   VkResult result = vmaCreateAllocator(&allocatorCI, &globalAllocator);
-  assert(result && "VMA allocator create Error");
+  assert(result == VK_SUCCESS && "VMA allocator create Error");
 
   return true;
 }

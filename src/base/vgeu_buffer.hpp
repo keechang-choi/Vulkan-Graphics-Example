@@ -1,8 +1,12 @@
 #pragma once
 
 // libs
-#include <vk_mem_alloc.h>
 #include <vulkan/vulkan.h>
+//
+// #define VMA_VULKAN_VERSION 1003000
+#define VMA_STATIC_VULKAN_FUNCTIONS 0
+#define VMA_DYNAMIC_VULKAN_FUNCTIONS 1
+#include <vk_mem_alloc.h>
 
 #include <Vulkan-Hpp/vulkan/vulkan.hpp>
 #include <Vulkan-Hpp/vulkan/vulkan_raii.hpp>

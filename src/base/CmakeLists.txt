@@ -1,15 +1,13 @@
 file(GLOB_RECURSE BASE_SRC ${PROJECT_SOURCE_DIR}/src/base/*.cpp)
-file(GLOB_RECURSE BASE_HEADER ${PROJECT_SOURCE_DIR}/src/base/*.hpp)
+file(GLOB_RECURSE BASE_HEADER ${PROJECT_SOURCE_DIR}/src/base/*.hpp external/VulkanMemoryAllocator/include/*.h)
 
 add_library(base STATIC ${BASE_SRC})
 
 target_link_directories(base
     PUBLIC ${Vulkan_LIBRARIES}
 )
-find_package(VulkanMemoryAllocator CONFIG REQUIRED)
+
 target_link_libraries(base
     glfw
-    PRIVATE GPUOpen::VulkanMemoryAllocator
-
-    # vulkan-1
+    vulkan-1 # dynamic link? some functions raise undefined reference.
 )

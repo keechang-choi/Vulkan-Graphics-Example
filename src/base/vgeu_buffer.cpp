@@ -1,3 +1,4 @@
+#define VMA_IMPLEMENTATION
 #include "vgeu_buffer.hpp"
 
 // libs
@@ -16,7 +17,7 @@ VgeuBuffer::VgeuBuffer(VmaAllocator allocator, vk::DeviceSize instanceSize,
       instanceCount(instanceCount),
       bufferSize(instanceCount * instanceSize) {
   VkBufferCreateInfo vkBufferCI{};
-  vkBufferCI.flags = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+  vkBufferCI.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
   vkBufferCI.size = bufferSize;
   vkBufferCI.usage = static_cast<VkBufferUsageFlags>(usageFlags);
   vkBufferCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;

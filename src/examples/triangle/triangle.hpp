@@ -13,6 +13,7 @@ class VgeExample : public VgeBase {
   VgeExample();
   ~VgeExample();
   void render();
+  void prepare();
   std::unique_ptr<vgeu::VgeuBuffer> vertexBuffer;
 };
 }  // namespace vge
