@@ -113,10 +113,6 @@ void VgeBase::renderLoop() {
   destWidth = width;
   destHeight = height;
 
-  camera.setPerspectiveProjection(glm::radians(fovy), width / height, near,
-                                  far);
-  camera.setViewTarget({0.f, -1.f, -1.f}, {0.f, 0.f, 0.f});
-
   vgeu::TransformComponent viewerTransform{};
   viewerTransform.translation = camera.getPosition();
   viewerTransform.rotation = camera.getRotationYXZ();
@@ -214,13 +210,16 @@ void VgeBase::windowResize() {
 
   device.waitIdle();
 
-  // camera aspect ratio update
-  if (width > 0.f && height > 0.f) {
-    camera.setPerspectiveProjection(glm::radians(fovy), width / height, near,
-                                    far);
-  }
+  windowResized();
+  viewChanged();
+  prepared = true;
 }
 void VgeBase::windowResized() {}
-void VgeBase::viewChanged() {}
+void VgeBase::viewChanged() {
+  // camera aspect ratio update
+  if (width > 0.f && height > 0.f) {
+    camera.setAspectRatio(width / height);
+  }
+}
 
 }  // namespace vge

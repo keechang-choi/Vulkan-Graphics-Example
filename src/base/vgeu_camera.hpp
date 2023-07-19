@@ -14,6 +14,9 @@ class VgeuCamera {
                                  float botton, float near, float far);
   void setPerspectiveProjection(float fovy, float aspect, float near,
                                 float far);
+  void setAspectRatio(float aspect) {
+    setPerspectiveProjection(fovy_, aspect, near_, far_);
+  }
 
   void setViewDirection(glm::vec3 position, glm::vec3 direction,
                         glm::vec3 up = glm::vec3{0.f, -1.f, -0.f});
@@ -40,6 +43,9 @@ class VgeuCamera {
   glm::mat4 projectionMatrix{1.f};
   glm::mat4 viewMatrix{1.f};
   glm::mat4 inverseViewMatrix{1.f};
+  float near_ = 0.1f;
+  float far_ = 100.0f;
+  float fovy_ = 50.0;
 };
 
 // TODO: camera view, projection getter and setter
