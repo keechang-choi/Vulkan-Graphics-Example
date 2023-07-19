@@ -59,6 +59,7 @@ include_directories(
   external/glfw/include
   external/Vulkan-Hpp
   external/imgui
+  external/VulkanMemoryAllocator/include
   src/base
 )
 

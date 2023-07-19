@@ -15,6 +15,7 @@ Prerequisites
 - CMake tools
 - MinGW-w64
 - Vulkan SDK
+- VMA 
 
 ```
 git submodule init

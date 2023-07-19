@@ -1,5 +1,6 @@
 #pragma once
 
+#include "vgeu_buffer.hpp"
 #include "vgeu_camera.hpp"
 #include "vgeu_keyboard_movement_controller.hpp"
 #include "vgeu_utils.hpp"
@@ -16,9 +17,6 @@
 namespace vge {
 class VgeBase {
  public:
-  uint32_t width = 1280;
-  uint32_t height = 1080;
-
   VgeBase();
   ~VgeBase();
 
@@ -45,8 +43,11 @@ class VgeBase {
   virtual void viewChanged();
   virtual void render() = 0;
 
+  uint32_t width = 1280;
+  uint32_t height = 1080;
   std::string title = "Vulkan Example KC";
   std::string name = "vulkanExample";
+  uint32_t apiVersion = VK_API_VERSION_1_3;
   float frameTimer = 1.0f;
   bool prepared = false;
   bool resized = false;
@@ -57,6 +58,7 @@ class VgeBase {
   vgeu::VgeuCamera camera;
 
  protected:
+  VmaAllocator globalAllocator;
   std::unique_ptr<vk::raii::Context> context;
   vk::raii::Instance instance = nullptr;
   vk::raii::DebugUtilsMessengerEXT debugUtilsMessenger = nullptr;

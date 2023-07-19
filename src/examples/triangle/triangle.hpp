@@ -1,5 +1,7 @@
 #include "vge_base.hpp"
 
+// std
+#include <memory>
 namespace vge {
 struct Vertex {
   float position[3];
@@ -11,5 +13,6 @@ class VgeExample : public VgeBase {
   VgeExample();
   ~VgeExample();
   void render();
+  std::unique_ptr<vgeu::VgeuBuffer> vertexBuffer;
 };
 }  // namespace vge

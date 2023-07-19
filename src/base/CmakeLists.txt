@@ -6,9 +6,10 @@ add_library(base STATIC ${BASE_SRC})
 target_link_directories(base
     PUBLIC ${Vulkan_LIBRARIES}
 )
-
+find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 target_link_libraries(base
     glfw
+    PRIVATE GPUOpen::VulkanMemoryAllocator
 
     # vulkan-1
 )

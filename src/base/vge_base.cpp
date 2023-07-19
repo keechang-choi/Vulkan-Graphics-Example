@@ -7,19 +7,26 @@
 // #include <Vulkan-Hpp/vulkan/vulkan_raii.hpp>
 
 // std
+#include <cassert>
 #include <chrono>
 #include <iostream>
 #include <memory>
 namespace vge {
 VgeBase::VgeBase() { std::cout << "Created: Vulkan Example Base" << std::endl; }
-VgeBase::~VgeBase() {}
+VgeBase::~VgeBase() {
+  // need to destroy non-RAII object created
+  if (globalAllocator != VK_NULL_HANDLE) {
+    vmaDestroyAllocator(globalAllocator);
+    globalAllocator = VK_NULL_HANDLE;
+  }
+}
 
 bool VgeBase::initVulkan() {
   // NOTE: shoud be created before instance for getting required extensions;
   vgeuWindow = std::make_unique<vgeu::VgeuWindow>(width, height, title);
 
   context = std::make_unique<vk::raii::Context>();
-  instance = vgeu::createInstance(*context, title, title);
+  instance = vgeu::createInstance(*context, title, title, apiVersion);
   if (vgeu::enableValidationLayers) {
     debugUtilsMessenger = vgeu::setupDebugMessenger(instance);
   }
@@ -56,6 +63,16 @@ bool VgeBase::initVulkan() {
   vgeuWindow->createWindowSurface(static_cast<VkInstance>(*instance),
                                   &surface_);
   surface = vk::raii::SurfaceKHR(instance, surface_);
+
+  // create VMA global allocator
+  VmaAllocatorCreateInfo allocatorCI{};
+  allocatorCI.physicalDevice = VkPhysicalDevice(*physicalDevice);
+  allocatorCI.device = VkDevice(*device);
+  allocatorCI.instance = VkInstance(*instance);
+  allocatorCI.vulkanApiVersion = apiVersion;
+  // TOOD: check vma flags
+  VkResult result = vmaCreateAllocator(&allocatorCI, &globalAllocator);
+  assert(result && "VMA allocator create Error");
 
   return true;
 }

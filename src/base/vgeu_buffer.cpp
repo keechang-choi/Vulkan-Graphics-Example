@@ -1,36 +1,41 @@
 #include "vgeu_buffer.hpp"
 
+// libs
+#include <vulkan/vulkan.h>
+
+#include <Vulkan-Hpp/vulkan/vulkan.hpp>
+#include <Vulkan-Hpp/vulkan/vulkan_raii.hpp>
 namespace vgeu {
 
-VgeuBuffer::VgeuBuffer(const vk::raii::PhysicalDevice& physicalDevice,
-                       const vk::raii::Device& device,
-                       vk::DeviceSize instanceSize, uint32_t instanceCount,
-                       vk::BufferUsageFlags usageFlags,
-                       vk::MemoryPropertyFlags propertyFlags,
-                       vk::DeviceSize minOffsetAligment)
-    : instanceSize(instanceSize),
+VgeuBuffer::VgeuBuffer(VmaAllocator allocator, vk::DeviceSize instanceSize,
+                       uint32_t instanceCount, vk::BufferUsageFlags usageFlags,
+                       VmaMemoryUsage memUsage,
+                       VmaAllocationCreateFlags allocCreateFlags)
+    : allocator(allocator),
+      instanceSize(instanceSize),
       instanceCount(instanceCount),
-      alignmentSize(getAlignment(instanceSize, minOffsetAligment)),
-      bufferSize(instanceCount * alignmentSize),
-      buffer(device, vk::BufferCreateInfo({}, bufferSize, usageFlags)),
-      usageFlags(usageFlags),
-      memoryPropertyFlags(memoryPropertyFlags) {
-  buffer.bindMemory(*memory, 0);
+      bufferSize(instanceCount * instanceSize) {
+  VkBufferCreateInfo vkBufferCI{};
+  vkBufferCI.flags = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+  vkBufferCI.size = bufferSize;
+  vkBufferCI.usage = static_cast<VkBufferUsageFlags>(usageFlags);
+  vkBufferCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+  VmaAllocationCreateInfo allocCI{};
+  allocCI.usage = memUsage;
+  allocCI.flags = allocCreateFlags;
+
+  VkBuffer vkBuffer = VK_NULL_HANDLE;
+  VmaAllocationInfo allocInfo{};
+  VkResult result = vmaCreateBuffer(allocator, &vkBufferCI, &allocCI, &vkBuffer,
+                                    &alloc, &allocInfo);
+  buffer = vk::Buffer(vkBuffer);
 }
-
-VgeuBuffer::~VgeuBuffer() { unmap(); }
-
-void VgeuBuffer::map(vk::DeviceSize size, vk::DeviceSize offset) {
-  // TODO: assert buffer and memory created.
-  // need to check empty or not -> unique_ptr or optioanl;
-  assert(VkBuffer(*buffer) && VkDeviceMemory(*memory) &&
-         "Called map on buffer before create");
-  mapped = memory.mapMemory(offset, size, {});
+VgeuBuffer::~VgeuBuffer() {
+  vmaDestroyBuffer(allocator, VkBuffer(buffer), alloc);
 }
-
-vk::Result VgeuBuffer::flush(vk::DeviceSize size, vk::DeviceSize offset) {
-  buffer.getDevice().flushMappedMemoryRanges(1, nullptr);
-  VkBuffer b;
-  vk::Buffer bb(b);
+vk::DescriptorBufferInfo VgeuBuffer::descriptorInfo(vk::DeviceSize size,
+                                                    vk::DeviceSize offset) {
+  return vk::DescriptorBufferInfo(buffer, offset, size);
 }
 }  // namespace vgeu
