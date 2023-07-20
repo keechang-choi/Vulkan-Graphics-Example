@@ -15,20 +15,15 @@ VgeExample::~VgeExample() {}
 void VgeExample::render() {}
 void VgeExample::prepare() {
   VgeBase::prepare();
-
-  std::vector<Vertex> vertices{
-      {{1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}},
-      {{-1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}},
-      {{0.0f, -1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}},
-  };
-
-  vertexBuffer = std::make_unique<vgeu::VgeuBuffer>(
-      globalAllocator, sizeof(Vertex), static_cast<uint32_t>(vertices.size()),
-      vk::BufferUsageFlagBits::eVertexBuffer |
-          vk::BufferUsageFlagBits::eTransferDst,
-      VMA_MEMORY_USAGE_AUTO,
-      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-          VMA_ALLOCATION_CREATE_MAPPED_BIT);
+  createVertexBuffer();
+  createIndexBuffer();
+  createUniformBuffers();
+  createDescriptorSetLayout();
+  // TODO:
+  // createDescriptorPool();
+  // createDescriptorSets();
+  createPipelines();
+  prepared = true;
 }
 
 void VgeExample::createUniformBuffers() {
@@ -41,6 +36,43 @@ void VgeExample::createUniformBuffers() {
         VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
             VMA_ALLOCATION_CREATE_MAPPED_BIT));
   }
+}
+
+void VgeExample::createVertexBuffer() {
+  std::vector<Vertex> vertices{
+      {{1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}},
+      {{-1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}},
+      {{0.0f, -1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}},
+  };
+
+  vgeu::VgeuBuffer stagingBuffer(
+      globalAllocator, sizeof(Vertex), static_cast<uint32_t>(vertices.size()),
+      vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_AUTO,
+      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+          VMA_ALLOCATION_CREATE_MAPPED_BIT);
+
+  memcpy(stagingBuffer.getMappedData(), vertices.data(),
+         stagingBuffer.getBufferSize());
+
+  vertexBuffer = std::make_unique<vgeu::VgeuBuffer>(
+      globalAllocator, sizeof(Vertex), static_cast<uint32_t>(vertices.size()),
+      vk::BufferUsageFlagBits::eVertexBuffer |
+          vk::BufferUsageFlagBits::eTransferDst,
+      VMA_MEMORY_USAGE_AUTO,
+      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+          VMA_ALLOCATION_CREATE_MAPPED_BIT);
+
+  // TODO: single Time command begin, copy buffer, end
+}
+
+void VgeExample::createIndexBuffer() {
+  std::vector<uint32_t> indices{0, 1, 2};
+
+  vgeu::VgeuBuffer stagingBuffer(
+      globalAllocator, sizeof(uint32_t), static_cast<uint32_t>(indices.size()),
+      vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_AUTO,
+      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+          VMA_ALLOCATION_CREATE_MAPPED_BIT);
 }
 
 void VgeExample::createDescriptorSetLayout() {
@@ -56,9 +88,9 @@ void VgeExample::createDescriptorSetLayout() {
 
 void VgeExample::createPipelines() {
   auto vertCode =
-      vgeu::readFile(getShadersPath() + "triangle/triangle.vert.spv");
+      vgeu::readFile(getShadersPath() + "/triangle/simple_shader.vert.spv");
   auto fragCode =
-      vgeu::readFile(getShadersPath() + "triangle/triangle.frag.spv");
+      vgeu::readFile(getShadersPath() + "/triangle/simple_shader.frag.spv");
   // NOTE: after pipeline creation, shader modules can be destroyed.
   vk::raii::ShaderModule vertShaderModule =
       vgeu::createShaderModule(device, vertCode);

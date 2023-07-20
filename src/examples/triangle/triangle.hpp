@@ -22,6 +22,7 @@ class VgeExample : public VgeBase {
   void prepare();
   void createUniformBuffers();
   void createVertexBuffer();
+  void createIndexBuffer();
   void createDescriptorSetLayout();
   void createDescriptorPool();
   void createDescriptorSets();
@@ -30,6 +31,7 @@ class VgeExample : public VgeBase {
   // NOTE: movable element;
   std::vector<std::unique_ptr<vgeu::VgeuBuffer>> uniformBuffers;
   std::unique_ptr<vgeu::VgeuBuffer> vertexBuffer;
+  std::unique_ptr<vgeu::VgeuBuffer> indexBuffer;
   vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
   vk::raii::PipelineLayout pipelineLayout = nullptr;
   vk::raii::Pipeline pipeline = nullptr;

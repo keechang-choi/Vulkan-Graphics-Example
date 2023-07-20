@@ -28,6 +28,8 @@ class VgeuBuffer {
                                           vk::DeviceSize offset = 0);
 
   vk::Buffer getBuffer() const { return buffer; }
+  void* getMappedData() const { return allocInfo.pMappedData; }
+  vk::DeviceSize getBufferSize() const { return bufferSize; }
 
  private:
   VmaAllocator allocator = VK_NULL_HANDLE;
@@ -36,6 +38,7 @@ class VgeuBuffer {
   vk::DeviceSize bufferSize;
   vk::Buffer buffer = nullptr;
   VmaAllocation alloc = VK_NULL_HANDLE;
+  VmaAllocationInfo allocInfo{};
 };
 
 }  // namespace vgeu

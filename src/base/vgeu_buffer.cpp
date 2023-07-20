@@ -31,7 +31,6 @@ VgeuBuffer::VgeuBuffer(VmaAllocator allocator, vk::DeviceSize instanceSize,
   allocCI.flags = allocCreateFlags;
 
   VkBuffer vkBuffer = VK_NULL_HANDLE;
-  VmaAllocationInfo allocInfo{};
   VkResult result = vmaCreateBuffer(allocator, &vkBufferCI, &allocCI, &vkBuffer,
                                     &alloc, &allocInfo);
   assert(result == VK_SUCCESS && "VMA ERROR: failed to create buffer.");
