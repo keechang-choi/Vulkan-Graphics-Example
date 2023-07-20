@@ -42,6 +42,7 @@ class VgeBase {
   virtual void windowResized();
   virtual void viewChanged();
   virtual void render() = 0;
+  std::string getShadersPath() { return "../shaders"; }
 
   uint32_t width = 1280;
   uint32_t height = 1080;

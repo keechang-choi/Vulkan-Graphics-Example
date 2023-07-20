@@ -5,19 +5,17 @@
 refence: sample util code in vulkan-hpp
 https://github.com/KhronosGroup/Vulkan-Hpp
 
-
 */
-namespace vk {
-class SubpassDependency;
-}
 
 // libs
 #include <Vulkan-Hpp/vulkan/vulkan.hpp>
 #include <Vulkan-Hpp/vulkan/vulkan_raii.hpp>
 
 // std
+#include <fstream>
 #include <iostream>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -132,4 +130,7 @@ std::vector<vk::raii::Framebuffer> createFramebuffers(
     const std::vector<vk::raii::ImageView>& imageViews,
     const vk::raii::ImageView* pDepthImageView, const vk::Extent2D& extent);
 
+std::vector<char> readFile(const std::string& filepath);
+vk::raii::ShaderModule createShaderModule(const vk::raii::Device& device,
+                                          std::vector<char>& code);
 }  // namespace vgeu

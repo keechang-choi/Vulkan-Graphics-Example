@@ -32,6 +32,9 @@ if(WIN32)
     set(USE_MINGW "True")
     set(CMAKE_C_COMPILER ${MINGW_PATH}/bin/gcc.exe)
     set(CMAKE_CXX_COMPILER ${MINGW_PATH}/bin/g++.exe)
+
+    # mingw runtime issue
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D__USE_MINGW_ANSI_STDIO=1")
   endif()
 endif()
 

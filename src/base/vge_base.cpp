@@ -207,6 +207,8 @@ void VgeBase::windowResize() {
           vk::ImageUsageFlagBits::eTransferSrc,
       &(swapChainData->swapChain), queueFamilyIndices.graphics,
       queueFamilyIndices.graphics);
+  std::cout << "SwapChaing image count: " << swapChainData->images.size()
+            << std::endl;
   // recreate framebuffers
   depthStencil = vgeu::ImageData(
       physicalDevice, device, depthFormat, vgeuWindow->getExtent(),

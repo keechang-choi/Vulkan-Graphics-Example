@@ -512,4 +512,28 @@ std::vector<vk::raii::Framebuffer> createFramebuffers(
   return framebuffers;
 }
 
+std::vector<char> readFile(const std::string& filepath) {
+  std::ifstream file(filepath.c_str(), std::ios::ate | std::ios::binary);
+
+  if (!file.is_open()) {
+    throw std::runtime_error("failed to open file: " + filepath);
+  }
+
+  size_t fileSize = static_cast<size_t>(file.tellg());
+  std::vector<char> buffer(fileSize);
+
+  file.seekg(0);
+  file.read(buffer.data(), fileSize);
+  file.close();
+
+  return buffer;
+}
+
+vk::raii::ShaderModule createShaderModule(const vk::raii::Device& device,
+                                          std::vector<char>& code) {
+  vk::ShaderModuleCreateInfo shaderModuleCI(
+      {}, code.size(), reinterpret_cast<const uint32_t*>(code.data()));
+  return vk::raii::ShaderModule(device, shaderModuleCI);
+}
+
 }  // namespace vgeu
