@@ -65,13 +65,81 @@ void VgeExample::createPipelines() {
   vk::raii::ShaderModule fragShaderModule =
       vgeu::createShaderModule(device, fragCode);
 
-  std::array<vk::PipelineShaderStageCreateInfo, 2> pipelineShaderStage = {
-      vk::PipelineShaderStageCreateInfo({}, vk::ShaderStageFlagBits::eVertex,
+  std::array<vk::PipelineShaderStageCreateInfo, 2> shaderStageCIs{
+      vk::PipelineShaderStageCreateInfo(vk::PipelineShaderStageCreateFlags(),
+                                        vk::ShaderStageFlagBits::eVertex,
                                         *vertShaderModule, "main", nullptr),
-      vk::PipelineShaderStageCreateInfo({}, vk::ShaderStageFlagBits::eVertex,
-                                        *vertShaderModule, "main", nullptr),
+      vk::PipelineShaderStageCreateInfo(vk::PipelineShaderStageCreateFlags(),
+                                        vk::ShaderStageFlagBits::eFragment,
+                                        *fragShaderModule, "main", nullptr),
   };
-  // vk::GraphicsPipelineCreateInfo pipelineCI();
+  //   // NOTE: brace init list flags may cause template argument deducing fail
+  //   std::vector<vk::PipelineShaderStageCreateInfo> pipelineShaderStageCI;
+  //   pipelineShaderStageCI.emplace_back(vk::PipelineShaderStageCreateFlags{},
+  //                                      vk::ShaderStageFlagBits::eVertex,
+  //                                      *vertShaderModule, "main");
+  //   pipelineShaderStageCI.push_back(vk::PipelineShaderStageCreateInfo(
+  //       {}, vk::ShaderStageFlagBits::eVertex, *vertShaderModule, "main"));
+
+  vk::VertexInputBindingDescription vertexInputBindingDescription(
+      0, sizeof(Vertex));
+
+  std::vector<vk::VertexInputAttributeDescription>
+      vertexInputAttributeDescriptions;
+  vertexInputAttributeDescriptions.emplace_back(
+      0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, position));
+  vertexInputAttributeDescriptions.emplace_back(
+      1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color));
+
+  vk::PipelineVertexInputStateCreateInfo vertexInputSCI(
+      vk::PipelineVertexInputStateCreateFlags(), vertexInputBindingDescription,
+      vertexInputAttributeDescriptions);
+
+  vk::PipelineInputAssemblyStateCreateInfo inputAssemblySCI(
+      vk::PipelineInputAssemblyStateCreateFlags(),
+      vk::PrimitiveTopology::eTriangleList);
+
+  vk::PipelineViewportStateCreateInfo viewportSCI(
+      vk::PipelineViewportStateCreateFlags(), 1, nullptr, 1, nullptr);
+
+  vk::PipelineRasterizationStateCreateInfo rasterizationSCI(
+      vk::PipelineRasterizationStateCreateFlags(), false, false,
+      vk::PolygonMode::eFill, vk::CullModeFlagBits::eNone,
+      vk::FrontFace::eCounterClockwise, false, 0.0f, 0.0f, 0.0f, 1.0f);
+
+  vk::PipelineMultisampleStateCreateInfo multisampleSCI(
+      vk::PipelineMultisampleStateCreateFlags(), vk::SampleCountFlagBits::e1);
+
+  vk::StencilOpState stencilOpState(vk::StencilOp::eKeep, vk::StencilOp::eKeep,
+                                    vk::StencilOp::eKeep,
+                                    vk::CompareOp::eAlways);
+  vk::PipelineDepthStencilStateCreateInfo depthStencilSCI(
+      vk::PipelineDepthStencilStateCreateFlags(), true, true,
+      vk::CompareOp::eLessOrEqual, false, false, stencilOpState,
+      stencilOpState);
+
+  vk::PipelineColorBlendAttachmentState colorBlendAttachmentState(
+      false, vk::BlendFactor::eZero, vk::BlendFactor::eZero, vk::BlendOp::eAdd,
+      vk::BlendFactor::eZero, vk::BlendFactor::eZero, vk::BlendOp::eAdd,
+      vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+          vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA);
+
+  vk::PipelineColorBlendStateCreateInfo colorBlendSCI(
+      vk::PipelineColorBlendStateCreateFlags(), false, vk::LogicOp::eNoOp,
+      colorBlendAttachmentState, {{1.0f, 1.0f, 1.0f, 1.0f}});
+
+  std::array<vk::DynamicState, 2> dynamicStates = {vk::DynamicState::eViewport,
+                                                   vk::DynamicState::eScissor};
+  vk::PipelineDynamicStateCreateInfo dynamicSCI(
+      vk::PipelineDynamicStateCreateFlags(), dynamicStates);
+
+  vk::GraphicsPipelineCreateInfo graphicsPipelineCI(
+      vk::PipelineCreateFlags(), shaderStageCIs, &vertexInputSCI,
+      &inputAssemblySCI, nullptr, &viewportSCI, &rasterizationSCI,
+      &multisampleSCI, &depthStencilSCI, &colorBlendSCI, &dynamicSCI,
+      *pipelineLayout, *renderPass);
+
+  pipeline = vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
 }
 
 }  // namespace vge
