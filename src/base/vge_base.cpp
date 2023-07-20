@@ -26,7 +26,8 @@ VgeBase::~VgeBase() {
 bool VgeBase::initVulkan() {
   // NOTE: shoud be created before instance for getting required extensions;
   vgeuWindow = std::make_unique<vgeu::VgeuWindow>(width, height, title);
-
+  // NOTE: all vk::raii class have no copy assignment operator.
+  // -> omit std::move
   context = std::make_unique<vk::raii::Context>();
   instance = vgeu::createInstance(*context, title, title, apiVersion);
 

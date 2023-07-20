@@ -87,6 +87,7 @@ class VgeBase {
 
   // prepare
   std::unique_ptr<vgeu::SwapChainData> swapChainData;
+  // NOTE: order matters cmd pool and cmd buffers
   vk::raii::CommandPool cmdPool = nullptr;
   // vector
   vk::raii::CommandBuffers drawCmdBuffers = nullptr;

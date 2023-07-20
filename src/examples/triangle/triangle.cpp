@@ -19,9 +19,8 @@ void VgeExample::prepare() {
   createIndexBuffer();
   createUniformBuffers();
   createDescriptorSetLayout();
-  // TODO:
-  // createDescriptorPool();
-  // createDescriptorSets();
+  createDescriptorPool();
+  createDescriptorSets();
   createPipelines();
   prepared = true;
 }
@@ -76,6 +75,7 @@ void VgeExample::createIndexBuffer() {
 }
 
 void VgeExample::createDescriptorSetLayout() {
+  // binding 0
   vk::DescriptorSetLayoutBinding layoutBinding(
       0, vk::DescriptorType::eUniformBuffer, 1,
       vk::ShaderStageFlagBits::eVertex);
@@ -84,6 +84,43 @@ void VgeExample::createDescriptorSetLayout() {
 
   vk::PipelineLayoutCreateInfo pipelineLayoutCI({}, *descriptorSetLayout);
   pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutCI);
+}
+
+void VgeExample::createDescriptorPool() {
+  std::vector<vk::DescriptorPoolSize> poolSizes;
+  poolSizes.emplace_back(vk::DescriptorType::eUniformBuffer, 1);
+  // NOTE: need to check flag
+  vk::DescriptorPoolCreateInfo descriptorPoolCI(
+      vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+      MAX_CONCURRENT_FRAMES, poolSizes);
+  descriptorPool = vk::raii::DescriptorPool(device, descriptorPoolCI);
+}
+
+void VgeExample::createDescriptorSets() {
+  vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
+                                          *descriptorSetLayout);
+
+  descriptorSets.reserve(MAX_CONCURRENT_FRAMES);
+  for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    // NOTE: move descriptor set
+    descriptorSets.push_back(
+        std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
+  }
+
+  std::vector<vk::DescriptorBufferInfo> bufferInfos;
+  bufferInfos.reserve(uniformBuffers.size());
+
+  std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
+  writeDescriptorSets.reserve(uniformBuffers.size());
+  for (int i = 0; i < uniformBuffers.size(); i++) {
+    // copy
+    bufferInfos.push_back(uniformBuffers[i]->descriptorInfo());
+    // NOTE: ArrayProxyNoTemporaries has no T rvalue constructor.
+    writeDescriptorSets.emplace_back(*descriptorSets[i], 0, 0,
+                                     vk::DescriptorType::eUniformBuffer,
+                                     nullptr, bufferInfos.back());
+  }
+  device.updateDescriptorSets(writeDescriptorSets, nullptr);
 }
 
 void VgeExample::createPipelines() {
