@@ -8,7 +8,7 @@ struct Vertex {
   float color[3];
 };
 
-struct Ubo {
+struct GlobalUbo {
   glm::mat4 projection;
   glm::mat4 model;
   glm::mat4 view;

@@ -31,7 +31,7 @@ void VgeExample::createUniformBuffers() {
   uniformBuffers.reserve(MAX_CONCURRENT_FRAMES);
   for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
     uniformBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
-        globalAllocator, sizeof(Ubo), 1,
+        globalAllocator, sizeof(GlobalUbo), 1,
         vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_AUTO,
         VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
             VMA_ALLOCATION_CREATE_MAPPED_BIT));
