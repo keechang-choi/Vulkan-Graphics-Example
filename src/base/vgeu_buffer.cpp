@@ -1,5 +1,3 @@
-// mingw runtime issue
-#define __USE_MINGW_ANSI_STDIO 1
 // from vma docs
 #define VMA_IMPLEMENTATION
 #include "vgeu_buffer.hpp"

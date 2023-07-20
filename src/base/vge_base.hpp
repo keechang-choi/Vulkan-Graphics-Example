@@ -17,6 +17,8 @@
 namespace vge {
 class VgeBase {
  public:
+  const uint32_t MAX_CONCURRENT_FRAMES = 2;
+
   VgeBase();
   ~VgeBase();
 
@@ -73,10 +75,12 @@ class VgeBase {
   vk::raii::CommandPool commandPool = nullptr;
   bool requiresStencil{false};
   vk::Format depthFormat;
-  struct {
-    vk::raii::Semaphore presentComplete = nullptr;
-    vk::raii::Semaphore renderComplete = nullptr;
-  } semaphores;
+
+  // synchronization objects
+
+  std::vector<vk::raii::Semaphore> presentCompleteSemaphores;
+  std::vector<vk::raii::Semaphore> renderCompleteSemaphores;
+  std::vector<vk::raii::Fence> waitFences;
 
   vk::raii::SurfaceKHR surface = nullptr;
   std::unique_ptr<vgeu::VgeuWindow> vgeuWindow;
@@ -86,9 +90,6 @@ class VgeBase {
   vk::raii::CommandPool cmdPool = nullptr;
   // vector
   vk::raii::CommandBuffers drawCmdBuffers = nullptr;
-  // TOOD: swapchain related resources need to be recreated.
-  // when window resize.
-  std::vector<vk::raii::Fence> waitFences;
   vgeu::ImageData depthStencil = nullptr;
   vk::raii::RenderPass renderPass = nullptr;
   vk::raii::PipelineCache pipelineCache = nullptr;

@@ -15,7 +15,6 @@ struct Ubo {
 };
 class VgeExample : public VgeBase {
  public:
-  const uint32_t MAX_CONCURRENT_FRAMES = 2;
   VgeExample();
   ~VgeExample();
   void render();

@@ -56,11 +56,6 @@ bool VgeBase::initVulkan() {
   commandPool = vk::raii::CommandPool(device, cmdPoolCI);
   depthFormat = vgeu::pickDepthFormat(physicalDevice, requiresStencil);
 
-  semaphores.presentComplete =
-      vk::raii::Semaphore(device, vk::SemaphoreCreateInfo());
-  semaphores.renderComplete =
-      vk::raii::Semaphore(device, vk::SemaphoreCreateInfo());
-
   // surface
   VkSurfaceKHR surface_;
   vgeuWindow->createWindowSurface(static_cast<VkInstance>(*instance),
@@ -95,31 +90,16 @@ void VgeBase::prepare() {
       vk::ImageUsageFlagBits::eColorAttachment |
           vk::ImageUsageFlagBits::eTransferSrc,
       nullptr, queueFamilyIndices.graphics, queueFamilyIndices.graphics);
+  std::cout << "SwapChain image count: " << swapChainData->images.size()
+            << std::endl;
 
-  // create command pool
-  vk::CommandPoolCreateInfo cmdPoolCI(
-      vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
-      queueFamilyIndices.graphics);
-  cmdPool = vk::raii::CommandPool(device, cmdPoolCI);
-
-  // create command buffer
-  vk::CommandBufferAllocateInfo cmdBufferAI(
-      *cmdPool, vk::CommandBufferLevel::ePrimary,
-      static_cast<uint32_t>(swapChainData->images.size()));
-  drawCmdBuffers = vk::raii::CommandBuffers(device, cmdBufferAI);
-
-  // synch primitives
-  vk::FenceCreateInfo fenceCI(vk::FenceCreateFlagBits::eSignaled);
-  waitFences.reserve(drawCmdBuffers.size());
-  for (int i = 0; i < drawCmdBuffers.size(); i++) {
-    waitFences.emplace_back(device, fenceCI);
-  }
   depthStencil = vgeu::ImageData(
       physicalDevice, device, depthFormat, vgeuWindow->getExtent(),
       vk::ImageTiling::eOptimal,
       vk::ImageUsageFlagBits::eDepthStencilAttachment,
       vk::ImageLayout::eUndefined, vk::MemoryPropertyFlagBits::eDeviceLocal,
       vk::ImageAspectFlagBits::eDepth);
+
   renderPass =
       vgeu::createRenderPass(device, swapChainData->colorFormat, depthFormat);
 
@@ -130,6 +110,34 @@ void VgeBase::prepare() {
   frameBuffers = vgeu::createFramebuffers(
       device, renderPass, swapChainData->imageViews, &depthStencil.imageView,
       vgeuWindow->getExtent());
+
+  // create command pool
+  vk::CommandPoolCreateInfo cmdPoolCI(
+      vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+      queueFamilyIndices.graphics);
+  cmdPool = vk::raii::CommandPool(device, cmdPoolCI);
+
+  // NOTE: using frames in flight ,not the image count
+
+  // create command buffer
+  vk::CommandBufferAllocateInfo cmdBufferAI(
+      *cmdPool, vk::CommandBufferLevel::ePrimary, MAX_CONCURRENT_FRAMES);
+  drawCmdBuffers = vk::raii::CommandBuffers(device, cmdBufferAI);
+
+  // synch primitives
+
+  presentCompleteSemaphores.reserve(MAX_CONCURRENT_FRAMES);
+  renderCompleteSemaphores.reserve(MAX_CONCURRENT_FRAMES);
+  for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    presentCompleteSemaphores.emplace_back(device, vk::SemaphoreCreateInfo());
+    renderCompleteSemaphores.emplace_back(device, vk::SemaphoreCreateInfo());
+  }
+
+  vk::FenceCreateInfo fenceCI(vk::FenceCreateFlagBits::eSignaled);
+  waitFences.reserve(MAX_CONCURRENT_FRAMES);
+  for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    waitFences.emplace_back(device, fenceCI);
+  }
 
   // UI overlay
 }
@@ -207,8 +215,7 @@ void VgeBase::windowResize() {
           vk::ImageUsageFlagBits::eTransferSrc,
       &(swapChainData->swapChain), queueFamilyIndices.graphics,
       queueFamilyIndices.graphics);
-  std::cout << "SwapChaing image count: " << swapChainData->images.size()
-            << std::endl;
+
   // recreate framebuffers
   depthStencil = vgeu::ImageData(
       physicalDevice, device, depthFormat, vgeuWindow->getExtent(),
@@ -221,20 +228,6 @@ void VgeBase::windowResize() {
       vgeuWindow->getExtent());
 
   // TODO: UI overlay resize
-
-  // recreate Command buffers
-  vk::CommandBufferAllocateInfo cmdBufferAI(
-      *cmdPool, vk::CommandBufferLevel::ePrimary,
-      static_cast<uint32_t>(swapChainData->images.size()));
-  drawCmdBuffers = vk::raii::CommandBuffers(device, cmdBufferAI);
-
-  // recreate synchobjects
-  waitFences.clear();
-  vk::FenceCreateInfo fenceCI(vk::FenceCreateFlagBits::eSignaled);
-  waitFences.reserve(drawCmdBuffers.size());
-  for (int i = 0; i < drawCmdBuffers.size(); i++) {
-    waitFences.emplace_back(device, fenceCI);
-  }
 
   device.waitIdle();
 

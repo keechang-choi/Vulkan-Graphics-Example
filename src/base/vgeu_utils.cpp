@@ -294,11 +294,14 @@ SwapChainData::SwapChainData(const vk::raii::PhysicalDevice& physicalDevice,
           : vk::CompositeAlphaFlagBitsKHR::eOpaque;
   vk::PresentModeKHR presentMode =
       pickPresentMode(physicalDevice.getSurfacePresentModesKHR(*surface));
+  // NOTE: min image count
+  uint32_t minImageCount = std::min(surfaceCapabilities.minImageCount + 1,
+                                    surfaceCapabilities.maxImageCount);
   vk::SwapchainCreateInfoKHR swapChainCreateInfo(
-      {}, *surface, surfaceCapabilities.minImageCount, colorFormat,
-      surfaceFormat.colorSpace, swapchainExtent, 1, usage,
-      vk::SharingMode::eExclusive, {}, preTransform, compositeAlpha,
-      presentMode, true, pOldSwapchain ? **pOldSwapchain : nullptr);
+      {}, *surface, minImageCount, colorFormat, surfaceFormat.colorSpace,
+      swapchainExtent, 1, usage, vk::SharingMode::eExclusive, {}, preTransform,
+      compositeAlpha, presentMode, true,
+      pOldSwapchain ? **pOldSwapchain : nullptr);
 
   if (graphicsQueueFamilyIndex != presentQueueFamilyIndex) {
     uint32_t queueFamilyIndices[2] = {graphicsQueueFamilyIndex,
@@ -314,6 +317,7 @@ SwapChainData::SwapChainData(const vk::raii::PhysicalDevice& physicalDevice,
 
   swapChain = vk::raii::SwapchainKHR(device, swapChainCreateInfo);
 
+  // NOTE: In implementation, reduce image count if the request not succeed.
   images = swapChain.getImages();
 
   imageViews.reserve(images.size());
