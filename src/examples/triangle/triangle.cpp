@@ -61,7 +61,15 @@ void VgeExample::createVertexBuffer() {
       VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
           VMA_ALLOCATION_CREATE_MAPPED_BIT);
 
-  // TODO: single Time command begin, copy buffer, end
+  // single Time command
+  // begin, copy , end, submit, waitIdle queue.
+  vgeu::oneTimeSubmit(
+      device, commandPool, queue,
+      [&](const vk::raii::CommandBuffer& cmdBuffer) {
+        cmdBuffer.copyBuffer(
+            stagingBuffer.getBuffer(), vertexBuffer->getBuffer(),
+            vk::BufferCopy(0, 0, stagingBuffer.getBufferSize()));
+      });
 }
 
 void VgeExample::createIndexBuffer() {
@@ -72,6 +80,26 @@ void VgeExample::createIndexBuffer() {
       vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_AUTO,
       VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
           VMA_ALLOCATION_CREATE_MAPPED_BIT);
+
+  memcpy(stagingBuffer.getMappedData(), indices.data(),
+         stagingBuffer.getBufferSize());
+
+  indexBuffer = std::make_unique<vgeu::VgeuBuffer>(
+      globalAllocator, sizeof(uint32_t), static_cast<uint32_t>(indices.size()),
+      vk::BufferUsageFlagBits::eIndexBuffer |
+          vk::BufferUsageFlagBits::eTransferDst,
+      VMA_MEMORY_USAGE_AUTO,
+      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+          VMA_ALLOCATION_CREATE_MAPPED_BIT);
+
+  // single Time command copy
+  vgeu::oneTimeSubmit(
+      device, commandPool, queue,
+      [&](const vk::raii::CommandBuffer& cmdBuffer) {
+        cmdBuffer.copyBuffer(
+            stagingBuffer.getBuffer(), vertexBuffer->getBuffer(),
+            vk::BufferCopy(0, 0, stagingBuffer.getBufferSize()));
+      });
 }
 
 void VgeExample::createDescriptorSetLayout() {

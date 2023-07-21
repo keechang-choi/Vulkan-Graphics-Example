@@ -133,4 +133,26 @@ std::vector<vk::raii::Framebuffer> createFramebuffers(
 std::vector<char> readFile(const std::string& filepath);
 vk::raii::ShaderModule createShaderModule(const vk::raii::Device& device,
                                           std::vector<char>& code);
+
+template <typename Func>
+void oneTimeSubmit(const vk::raii::CommandBuffer& commandBuffer,
+                   const vk::raii::Queue& queue, const Func& func) {
+  commandBuffer.begin(vk::CommandBufferBeginInfo(
+      vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
+  func(commandBuffer);
+  commandBuffer.end();
+  vk::SubmitInfo submitInfo(nullptr, nullptr, *commandBuffer);
+  queue.submit(submitInfo, nullptr);
+  queue.waitIdle();
+}
+
+template <typename Func>
+void oneTimeSubmit(const vk::raii::Device& device,
+                   const vk::raii::CommandPool& commandPool,
+                   const vk::raii::Queue& queue, const Func& func) {
+  vk::raii::CommandBuffers commandBuffers(
+      device, {*commandPool, vk::CommandBufferLevel::ePrimary, 1});
+  oneTimeSubmit(commandBuffers.front(), queue, func);
+}
+
 }  // namespace vgeu
