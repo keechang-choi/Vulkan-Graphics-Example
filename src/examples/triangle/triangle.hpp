@@ -10,9 +10,9 @@ struct Vertex {
 };
 
 struct GlobalUbo {
-  glm::mat4 projection;
-  glm::mat4 model;
-  glm::mat4 view;
+  glm::mat4 projection{1.f};
+  glm::mat4 model{1.f};
+  glm::mat4 view{1.f};
 };
 class VgeExample : public VgeBase {
  public:
@@ -27,9 +27,12 @@ class VgeExample : public VgeBase {
   void createDescriptorPool();
   void createDescriptorSets();
   void createPipelines();
+  void draw();
+  void buildCommandBuffers();
 
   // NOTE: movable element;
   std::vector<std::unique_ptr<vgeu::VgeuBuffer>> uniformBuffers;
+  GlobalUbo globalUbo;
   // vk::raii::DescriptorSets?
   std::vector<vk::raii::DescriptorSet> descriptorSets;
 

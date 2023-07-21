@@ -12,7 +12,9 @@
 #include <cassert>
 #include <chrono>
 #include <iostream>
+#include <limits>
 #include <memory>
+#include <tuple>
 namespace vge {
 VgeBase::VgeBase() { std::cout << "Created: Vulkan Example Base" << std::endl; }
 VgeBase::~VgeBase() {
@@ -243,5 +245,44 @@ void VgeBase::viewChanged() {
     camera.setAspectRatio(width / height);
   }
 }
+void VgeBase::prepareFrame() {
+  vk::Result result;
+
+  std::tie(result, currentImageIndex) =
+      swapChainData->swapChain.acquireNextImage(
+          std::numeric_limits<uint64_t>::max(),
+          *presentCompleteSemaphores[currentFrameIndex]);
+  if ((result == vk::Result::eErrorOutOfDateKHR) ||
+      (result == vk::Result::eSuboptimalKHR)) {
+    if (result == vk::Result::eErrorOutOfDateKHR) {
+      windowResize();
+    }
+    return;
+  } else {
+    assert((result == vk::Result::eSuccess) &&
+           "failed to acquire swap chain image!");
+  }
+}
+
+// submit presentation queue
+void VgeBase::submitFrame() {
+  vk::Result result;
+  vk::PresentInfoKHR presentInfoKHR(
+      *renderCompleteSemaphores[currentFrameIndex], *swapChainData->swapChain,
+      currentImageIndex, result);
+  if ((result == vk::Result::eErrorOutOfDateKHR) ||
+      (result == vk::Result::eSuboptimalKHR)) {
+    windowResize();
+    if (result == vk::Result::eErrorOutOfDateKHR) {
+      return;
+    }
+  } else {
+    assert((result == vk::Result::eSuccess) &&
+           "failed to acquire swap chain image!");
+  }
+  // queue wait idle
+  // queue.waitIdle();
+}
+void VgeBase::buildCommandBuffers() {}
 
 }  // namespace vge

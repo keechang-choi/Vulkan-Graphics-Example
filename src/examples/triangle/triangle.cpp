@@ -2,7 +2,8 @@
 
 // std
 #include <array>
-
+#include <cstring>
+#include <limits>
 namespace vge {
 VgeExample::VgeExample() : VgeBase() {
   title = "First Triangle Example";
@@ -12,7 +13,7 @@ VgeExample::VgeExample() : VgeBase() {
       60.f, static_cast<float>(width) / static_cast<float>(height), 1.f, 256.f);
 }
 VgeExample::~VgeExample() {}
-void VgeExample::render() {}
+
 void VgeExample::prepare() {
   VgeBase::prepare();
   createVertexBuffer();
@@ -50,8 +51,8 @@ void VgeExample::createVertexBuffer() {
       VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
           VMA_ALLOCATION_CREATE_MAPPED_BIT);
 
-  memcpy(stagingBuffer.getMappedData(), vertices.data(),
-         stagingBuffer.getBufferSize());
+  std::memcpy(stagingBuffer.getMappedData(), vertices.data(),
+              stagingBuffer.getBufferSize());
 
   vertexBuffer = std::make_unique<vgeu::VgeuBuffer>(
       globalAllocator, sizeof(Vertex), static_cast<uint32_t>(vertices.size()),
@@ -81,8 +82,8 @@ void VgeExample::createIndexBuffer() {
       VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
           VMA_ALLOCATION_CREATE_MAPPED_BIT);
 
-  memcpy(stagingBuffer.getMappedData(), indices.data(),
-         stagingBuffer.getBufferSize());
+  std::memcpy(stagingBuffer.getMappedData(), indices.data(),
+              stagingBuffer.getBufferSize());
 
   indexBuffer = std::make_unique<vgeu::VgeuBuffer>(
       globalAllocator, sizeof(uint32_t), static_cast<uint32_t>(indices.size()),
@@ -237,6 +238,55 @@ void VgeExample::createPipelines() {
       *pipelineLayout, *renderPass);
 
   pipeline = vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
+}
+
+void VgeExample::render() {
+  if (!prepared) {
+    return;
+  }
+  if (viewUpdated) {
+    std::memcpy(uniformBuffers[currentFrameIndex]->getMappedData(), &globalUbo,
+                sizeof(globalUbo));
+  }
+  // draw();
+}
+void VgeExample::draw() {
+  vk::Result result =
+      device.waitForFences(*waitFences[currentFrameIndex], VK_TRUE,
+                           std::numeric_limits<uint64_t>::max());
+  assert(result != vk::Result::eTimeout && "Timed out: waitFence");
+
+  device.resetFences(*waitFences[currentFrameIndex]);
+
+  prepareFrame();
+
+  // draw cmds recording or command buffers should be built already.
+
+  vk::PipelineStageFlags waitDstStageMask(
+      vk::PipelineStageFlagBits::eColorAttachmentOutput);
+  // NOTE: parameter array type has no r value constructor
+  vk::SubmitInfo submitInfo(*presentCompleteSemaphores[currentFrameIndex],
+                            waitDstStageMask,
+                            *drawCmdBuffers[currentFrameIndex],
+                            *renderCompleteSemaphores[currentFrameIndex]);
+
+  queue.submit(submitInfo, *waitFences[currentFrameIndex]);
+  submitFrame();
+}
+
+void VgeExample::buildCommandBuffers() {
+  // TODO:
+  // reset cmd buffers
+  // begin cmd buffer
+  // begin render pass
+  // set viewport and scissors
+  // bind ubo descriptor
+  // bind pipeline
+  // bind vertex buffer
+  // bind index buffer
+  // draw indexed
+  // end renderpass
+  // end command buffer
 }
 
 }  // namespace vge

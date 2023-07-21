@@ -44,7 +44,10 @@ class VgeBase {
   virtual void windowResized();
   virtual void viewChanged();
   virtual void render() = 0;
+  virtual void buildCommandBuffers();
   std::string getShadersPath() { return "../shaders"; }
+  void prepareFrame();
+  void submitFrame();
 
   uint32_t width = 1280;
   uint32_t height = 1080;
@@ -101,6 +104,9 @@ class VgeBase {
   uint32_t lastFPS = 0;
   std::chrono::time_point<std::chrono::high_resolution_clock> lastTimestamp,
       tPrevEnd;
+
+  uint32_t currentFrameIndex;
+  uint32_t currentImageIndex;
 
  private:
   uint32_t destWidth;
