@@ -100,7 +100,7 @@ void VgeExample::createIndexBuffer() {
       device, commandPool, queue,
       [&](const vk::raii::CommandBuffer& cmdBuffer) {
         cmdBuffer.copyBuffer(
-            stagingBuffer.getBuffer(), vertexBuffer->getBuffer(),
+            stagingBuffer.getBuffer(), indexBuffer->getBuffer(),
             vk::BufferCopy(0, 0, stagingBuffer.getBufferSize()));
       });
 }
