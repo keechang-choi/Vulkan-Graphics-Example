@@ -105,7 +105,7 @@ class VgeBase {
   std::chrono::time_point<std::chrono::high_resolution_clock> lastTimestamp,
       tPrevEnd;
 
-  uint32_t currentFrameIndex;
+  uint32_t currentFrameIndex = 0;
   uint32_t currentImageIndex;
 
  private:

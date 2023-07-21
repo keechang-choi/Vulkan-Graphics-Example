@@ -35,6 +35,8 @@ void VgeExample::createUniformBuffers() {
         vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_AUTO,
         VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
             VMA_ALLOCATION_CREATE_MAPPED_BIT));
+    std::memcpy(uniformBuffers[i]->getMappedData(), &globalUbo,
+                sizeof(GlobalUbo));
   }
 }
 
@@ -246,11 +248,13 @@ void VgeExample::render() {
   }
   if (viewUpdated) {
     std::memcpy(uniformBuffers[currentFrameIndex]->getMappedData(), &globalUbo,
-                sizeof(globalUbo));
+                sizeof(GlobalUbo));
   }
   draw();
 }
+
 void VgeExample::draw() {
+  // std::cout << "Call: draw() - " << currentFrameIndex << std::endl;
   vk::Result result =
       device.waitForFences(*waitFences[currentFrameIndex], VK_TRUE,
                            std::numeric_limits<uint64_t>::max());
@@ -276,7 +280,6 @@ void VgeExample::draw() {
 }
 
 void VgeExample::buildCommandBuffers() {
-  // TODO:
   // reset cmd buffers - commandPool flag
 
   // begin cmd buffer

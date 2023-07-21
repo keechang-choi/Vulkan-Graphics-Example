@@ -253,6 +253,8 @@ void VgeBase::prepareFrame() {
       swapChainData->swapChain.acquireNextImage(
           std::numeric_limits<uint64_t>::max(),
           *presentCompleteSemaphores[currentFrameIndex]);
+  // std::cout << "swapchain acquired image index : " << currentImageIndex
+  //           << std::endl;
   if ((result == vk::Result::eErrorOutOfDateKHR) ||
       (result == vk::Result::eSuboptimalKHR)) {
     if (result == vk::Result::eErrorOutOfDateKHR) {
@@ -267,10 +269,13 @@ void VgeBase::prepareFrame() {
 
 // submit presentation queue
 void VgeBase::submitFrame() {
-  vk::Result result;
   vk::PresentInfoKHR presentInfoKHR(
       *renderCompleteSemaphores[currentFrameIndex], *swapChainData->swapChain,
-      currentImageIndex, result);
+      currentImageIndex);
+  vk::Result result = queue.presentKHR(presentInfoKHR);
+
+  currentFrameIndex = (currentFrameIndex + 1) % MAX_CONCURRENT_FRAMES;
+
   if ((result == vk::Result::eErrorOutOfDateKHR) ||
       (result == vk::Result::eSuboptimalKHR)) {
     windowResize();
