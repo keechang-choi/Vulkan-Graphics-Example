@@ -3,14 +3,17 @@
 // std
 #include <array>
 #include <cstring>
+#include <glm/gtc/matrix_transform.hpp>
 #include <limits>
+
 namespace vge {
 VgeExample::VgeExample() : VgeBase() {
   title = "First Triangle Example";
   // camera setup
   camera.setViewTarget(glm::vec3{0.0f, -2.f, -2.f}, glm::vec3{0.f, 0.f, 0.f});
   camera.setPerspectiveProjection(
-      60.f, static_cast<float>(width) / static_cast<float>(height), 1.f, 256.f);
+      glm::radians(60.f),
+      static_cast<float>(width) / static_cast<float>(height), 0.1f, 256.f);
 }
 VgeExample::~VgeExample() {}
 
@@ -34,7 +37,8 @@ void VgeExample::createUniformBuffers() {
         globalAllocator, sizeof(GlobalUbo), 1,
         vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_AUTO,
         VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-            VMA_ALLOCATION_CREATE_MAPPED_BIT));
+            VMA_ALLOCATION_CREATE_MAPPED_BIT |
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT));
     std::memcpy(uniformBuffers[i]->getMappedData(), &globalUbo,
                 sizeof(GlobalUbo));
   }
@@ -42,9 +46,9 @@ void VgeExample::createUniformBuffers() {
 
 void VgeExample::createVertexBuffer() {
   std::vector<Vertex> vertices{
-      {{1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}},
-      {{-1.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}},
-      {{0.0f, -1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}},
+      {{1.0f, 1.0f, 0.1f}, {1.0f, 0.0f, 0.0f}},
+      {{-1.0f, 1.0f, 0.2f}, {0.0f, 1.0f, 0.0f}},
+      {{0.0f, -1.0f, 0.3f}, {0.0f, 0.0f, 1.0f}},
   };
 
   vgeu::VgeuBuffer stagingBuffer(
@@ -246,10 +250,30 @@ void VgeExample::render() {
   if (!prepared) {
     return;
   }
-  if (viewUpdated) {
-    std::memcpy(uniformBuffers[currentFrameIndex]->getMappedData(), &globalUbo,
-                sizeof(GlobalUbo));
+  // CHECK: ubo update frequency.
+  globalUbo.view = camera.getView();
+  std::cout << "======view======" << std::endl;
+  for (int i = 0; i < 4; i++) {
+    for (int j = 0; j < 4; j++) {
+      std::cout << globalUbo.view[j][i] << " ";
+    }
+    std::cout << std::endl;
   }
+  std::cout << std::endl;
+
+  globalUbo.projection = camera.getProjection();
+  std::cout << "======projection======" << std::endl;
+  for (int i = 0; i < 4; i++) {
+    for (int j = 0; j < 4; j++) {
+      std::cout << globalUbo.projection[j][i] << " ";
+    }
+    std::cout << std::endl;
+  }
+
+  std::cout << std::endl;
+  std::memcpy(uniformBuffers[currentFrameIndex]->getMappedData(), &globalUbo,
+              sizeof(GlobalUbo));
+
   draw();
 }
 

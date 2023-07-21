@@ -1,6 +1,8 @@
 #include "vgeu_camera.hpp"
 
 // libs
+#define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/gtc/matrix_transform.hpp>
 
 namespace vgeu {
@@ -18,13 +20,13 @@ void VgeuCamera::setOrthographicProjection(float left, float right, float top,
 
 void VgeuCamera::setPerspectiveProjection(float fovy, float aspect, float near,
                                           float far) {
-  fovy_ = fovy;
-  near_ = near;
-  far_ = far;
-  assert(glm::abs(aspect - std::numeric_limits<float>::epsilon()) > 0.0f);
-  // NOTE: Zero-One, Left Hand
-  projectionMatrix = glm::perspective(glm::radians(fovy), aspect, near, far);
-  return;
+  // fovy_ = fovy;
+  // near_ = near;
+  // far_ = far;
+  // assert(glm::abs(aspect - std::numeric_limits<float>::epsilon()) > 0.0f);
+  // // NOTE: Zero-One, Left Hand
+  // projectionMatrix = glm::perspective(glm::radians(fovy), aspect, near, far);
+  // return;
   const float tanHalfFovy = tan(fovy / 2.f);
   projectionMatrix = glm::mat4{0.0f};
   projectionMatrix[0][0] = 1.f / (aspect * tanHalfFovy);
@@ -72,32 +74,32 @@ void VgeuCamera::setViewDirection(glm::vec3 position, glm::vec3 direction,
 
 void VgeuCamera::setViewTarget(glm::vec3 position, glm::vec3 target,
                                glm::vec3 up) {
-  viewMatrix = glm::lookAt(position, target, up);
-  inverseViewMatrix = glm::inverse(viewMatrix);
-  return;
+  // viewMatrix = glm::lookAt(position, target, up);
+  // inverseViewMatrix = glm::inverse(viewMatrix);
+  // return;
   setViewDirection(position, target - position, up);
 }
 
 void VgeuCamera::setViewYXZ(glm::vec3 position, glm::vec3 rotation) {
-  glm::mat4 rotationMatrix{1.0f};
-  rotationMatrix = glm::rotate(rotationMatrix, glm::radians(rotation.y),
-                               glm::vec3{0.f, 1.f, 0.f});
-  rotationMatrix = glm::rotate(rotationMatrix, glm::radians(rotation.x),
-                               glm::vec3{1.f, 0.0f, 0.f});
-  rotationMatrix = glm::rotate(rotationMatrix, glm::radians(rotation.z),
-                               glm::vec3{0.f, 0.0f, 1.f});
-  glm::mat4 translationMatrix{1.0};
-  translationMatrix = glm::translate(translationMatrix, position);
+  // glm::mat4 rotationMatrix{1.0f};
+  // rotationMatrix = glm::rotate(rotationMatrix, glm::radians(rotation.y),
+  //                              glm::vec3{0.f, 1.f, 0.f});
+  // rotationMatrix = glm::rotate(rotationMatrix, glm::radians(rotation.x),
+  //                              glm::vec3{1.f, 0.0f, 0.f});
+  // rotationMatrix = glm::rotate(rotationMatrix, glm::radians(rotation.z),
+  //                              glm::vec3{0.f, 0.0f, 1.f});
+  // glm::mat4 translationMatrix{1.0};
+  // translationMatrix = glm::translate(translationMatrix, position);
 
-  inverseViewMatrix = translationMatrix * rotationMatrix;
+  // inverseViewMatrix = translationMatrix * rotationMatrix;
 
-  glm::mat4 inverseTranslationMatrix{1.0};
-  inverseTranslationMatrix =
-      glm::translate(inverseTranslationMatrix, -position);
+  // glm::mat4 inverseTranslationMatrix{1.0};
+  // inverseTranslationMatrix =
+  //     glm::translate(inverseTranslationMatrix, -position);
 
-  viewMatrix = glm::transpose(rotationMatrix) * inverseTranslationMatrix;
+  // viewMatrix = glm::transpose(rotationMatrix) * inverseTranslationMatrix;
 
-  return;
+  // return;
   const float c3 = glm::cos(rotation.z);
   const float s3 = glm::sin(rotation.z);
   const float c2 = glm::cos(rotation.x);

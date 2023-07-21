@@ -45,7 +45,7 @@ class VgeuCamera {
   glm::mat4 inverseViewMatrix{1.f};
   float near_ = 0.1f;
   float far_ = 100.0f;
-  float fovy_ = 50.0;
+  float fovy_ = glm::radians(50.0);
 };
 
 // TODO: camera view, projection getter and setter
