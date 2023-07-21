@@ -30,6 +30,7 @@ class VgeuBuffer {
   vk::Buffer getBuffer() const { return buffer; }
   void* getMappedData() const { return allocInfo.pMappedData; }
   vk::DeviceSize getBufferSize() const { return bufferSize; }
+  uint32_t getInstanceCount() const { return instanceCount; }
 
  private:
   VmaAllocator allocator = VK_NULL_HANDLE;

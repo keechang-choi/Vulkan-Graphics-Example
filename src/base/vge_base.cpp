@@ -53,6 +53,7 @@ bool VgeBase::initVulkan() {
       vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute);
 
   queue = vk::raii::Queue(device, queueFamilyIndices.graphics, 0);
+  // TODO: check flag transient.
   vk::CommandPoolCreateInfo cmdPoolCI(
       vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
       queueFamilyIndices.graphics);

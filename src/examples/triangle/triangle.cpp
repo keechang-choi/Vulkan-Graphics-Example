@@ -248,7 +248,7 @@ void VgeExample::render() {
     std::memcpy(uniformBuffers[currentFrameIndex]->getMappedData(), &globalUbo,
                 sizeof(globalUbo));
   }
-  // draw();
+  draw();
 }
 void VgeExample::draw() {
   vk::Result result =
@@ -261,6 +261,7 @@ void VgeExample::draw() {
   prepareFrame();
 
   // draw cmds recording or command buffers should be built already.
+  buildCommandBuffers();
 
   vk::PipelineStageFlags waitDstStageMask(
       vk::PipelineStageFlagBits::eColorAttachmentOutput);
@@ -276,17 +277,55 @@ void VgeExample::draw() {
 
 void VgeExample::buildCommandBuffers() {
   // TODO:
-  // reset cmd buffers
+  // reset cmd buffers - commandPool flag
+
   // begin cmd buffer
+  drawCmdBuffers[currentFrameIndex].begin({});
   // begin render pass
+  std::array<vk::ClearValue, 2> clearValues;
+  clearValues[0].color = vk::ClearColorValue(0.2f, 0.2f, 0.2f, 0.2f);
+  clearValues[1].depthStencil = vk::ClearDepthStencilValue(1.0f, 0);
+  vk::RenderPassBeginInfo renderPassBeginInfo(
+      *renderPass, *frameBuffers[currentImageIndex],
+      vk::Rect2D(vk::Offset2D(0, 0), vgeuWindow->getExtent()), clearValues);
+  // NOTE: no secondary cmd buffers
+  drawCmdBuffers[currentFrameIndex].beginRenderPass(
+      renderPassBeginInfo, vk::SubpassContents::eInline);
+
   // set viewport and scissors
-  // bind ubo descriptor
+  drawCmdBuffers[currentFrameIndex].setViewport(
+      0, vk::Viewport(
+             0.0f, 0.0f, static_cast<float>(vgeuWindow->getExtent().width),
+             static_cast<float>(vgeuWindow->getExtent().height), 0.0f, 1.0f));
+  drawCmdBuffers[currentFrameIndex].setScissor(
+      0, vk::Rect2D(vk::Offset2D(0, 0), vgeuWindow->getExtent()));
+
   // bind pipeline
+  drawCmdBuffers[currentFrameIndex].bindPipeline(
+      vk::PipelineBindPoint::eGraphics, *pipeline);
+
+  // bind ubo descriptor
+  drawCmdBuffers[currentFrameIndex].bindDescriptorSets(
+      vk::PipelineBindPoint::eGraphics, *pipelineLayout, 0,
+      {*descriptorSets[currentFrameIndex]}, nullptr);
+
   // bind vertex buffer
+  drawCmdBuffers[currentFrameIndex].bindVertexBuffers(
+      0, {vertexBuffer->getBuffer()}, {0});
+
   // bind index buffer
+  drawCmdBuffers[currentFrameIndex].bindIndexBuffer(indexBuffer->getBuffer(), 0,
+                                                    vk::IndexType::eUint32);
+
   // draw indexed
+  drawCmdBuffers[currentFrameIndex].drawIndexed(indexBuffer->getInstanceCount(),
+                                                1, 0, 0, 0);
+
   // end renderpass
+  drawCmdBuffers[currentFrameIndex].endRenderPass();
+
   // end command buffer
+  drawCmdBuffers[currentFrameIndex].end();
 }
 
 }  // namespace vge
