@@ -3,6 +3,7 @@
 #include "vgeu_buffer.hpp"
 #include "vgeu_camera.hpp"
 #include "vgeu_keyboard_movement_controller.hpp"
+#include "vgeu_ui_overlay.hpp"
 #include "vgeu_utils.hpp"
 #include "vgeu_window.hpp"
 
