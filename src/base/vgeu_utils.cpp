@@ -260,7 +260,6 @@ SwapChainData::SwapChainData(const vk::raii::PhysicalDevice& physicalDevice,
 
   vk::SurfaceCapabilitiesKHR surfaceCapabilities =
       physicalDevice.getSurfaceCapabilitiesKHR(*surface);
-  vk::Extent2D swapchainExtent;
   if (surfaceCapabilities.currentExtent.width ==
       std::numeric_limits<uint32_t>::max()) {
     // If the surface size is undefined, the size is set to the size of the

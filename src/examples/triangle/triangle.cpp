@@ -10,7 +10,7 @@ namespace vge {
 VgeExample::VgeExample() : VgeBase() {
   title = "First Triangle Example";
   // camera setup
-  camera.setViewTarget(glm::vec3{-2.f, -2.f, -10.f}, glm::vec3{0.f, 0.f, 0.f});
+  camera.setViewTarget(glm::vec3{-2.f, -2.f, -5.f}, glm::vec3{0.f, 0.f, 0.f});
   camera.setPerspectiveProjection(
       glm::radians(60.f),
       static_cast<float>(width) / static_cast<float>(height), 0.1f, 256.f);
@@ -253,25 +253,7 @@ void VgeExample::render() {
   }
   // CHECK: ubo update frequency.
   globalUbo.view = camera.getView();
-  std::cout << "======view======" << std::endl;
-  for (int i = 0; i < 4; i++) {
-    for (int j = 0; j < 4; j++) {
-      std::cout << globalUbo.view[j][i] << " ";
-    }
-    std::cout << std::endl;
-  }
-  std::cout << std::endl;
-
   globalUbo.projection = camera.getProjection();
-  std::cout << "======projection======" << std::endl;
-  for (int i = 0; i < 4; i++) {
-    for (int j = 0; j < 4; j++) {
-      std::cout << globalUbo.projection[j][i] << " ";
-    }
-    std::cout << std::endl;
-  }
-
-  std::cout << std::endl;
   std::memcpy(uniformBuffers[currentFrameIndex]->getMappedData(), &globalUbo,
               sizeof(GlobalUbo));
 
@@ -313,20 +295,24 @@ void VgeExample::buildCommandBuffers() {
   std::array<vk::ClearValue, 2> clearValues;
   clearValues[0].color = vk::ClearColorValue(0.2f, 0.2f, 0.2f, 0.2f);
   clearValues[1].depthStencil = vk::ClearDepthStencilValue(1.0f, 0);
+  // NOTE: use swapChainData->swapchainExtent, height instead of direct
+  // vgeuWindow->getExtent()
   vk::RenderPassBeginInfo renderPassBeginInfo(
       *renderPass, *frameBuffers[currentImageIndex],
-      vk::Rect2D(vk::Offset2D(0, 0), vgeuWindow->getExtent()), clearValues);
+      vk::Rect2D(vk::Offset2D(0, 0), swapChainData->swapchainExtent),
+      clearValues);
   // NOTE: no secondary cmd buffers
   drawCmdBuffers[currentFrameIndex].beginRenderPass(
       renderPassBeginInfo, vk::SubpassContents::eInline);
 
   // set viewport and scissors
   drawCmdBuffers[currentFrameIndex].setViewport(
-      0, vk::Viewport(
-             0.0f, 0.0f, static_cast<float>(vgeuWindow->getExtent().width),
-             static_cast<float>(vgeuWindow->getExtent().height), 0.0f, 1.0f));
+      0, vk::Viewport(0.0f, 0.0f,
+                      static_cast<float>(swapChainData->swapchainExtent.width),
+                      static_cast<float>(swapChainData->swapchainExtent.height),
+                      0.0f, 1.0f));
   drawCmdBuffers[currentFrameIndex].setScissor(
-      0, vk::Rect2D(vk::Offset2D(0, 0), vgeuWindow->getExtent()));
+      0, vk::Rect2D(vk::Offset2D(0, 0), swapChainData->swapchainExtent));
 
   // bind pipeline
   drawCmdBuffers[currentFrameIndex].bindPipeline(
@@ -356,7 +342,9 @@ void VgeExample::buildCommandBuffers() {
   drawCmdBuffers[currentFrameIndex].end();
 }
 void VgeExample::viewChanged() {
-  // NOTE: moved updating ubo into render() to use frameindex
+  // camera.setAspectRatio(static_cast<float>(width) /
+  // static_cast<float>(height)); NOTE: moved updating ubo into render() to use
+  // frameindex
 }
 
 }  // namespace vge

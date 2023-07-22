@@ -76,6 +76,7 @@ struct SwapChainData {
                 uint32_t presentQueueFamilyIndex);
   SwapChainData(std::nullptr_t) {}
 
+  vk::Extent2D swapchainExtent;
   vk::Format colorFormat;
   vk::raii::SwapchainKHR swapChain = nullptr;
   std::vector<vk::Image> images;

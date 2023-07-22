@@ -90,7 +90,7 @@ void VgeBase::prepare() {
   std::cout << "Call: prepare" << std::endl;
   // NOTE: first graphicsQueue supports present?
   swapChainData = std::make_unique<vgeu::SwapChainData>(
-      physicalDevice, device, surface, vgeuWindow->getExtent(),
+      physicalDevice, device, surface, vk::Extent2D(width, height),
       vk::ImageUsageFlagBits::eColorAttachment |
           vk::ImageUsageFlagBits::eTransferSrc,
       nullptr, queueFamilyIndices.graphics, queueFamilyIndices.graphics);
@@ -98,7 +98,7 @@ void VgeBase::prepare() {
             << std::endl;
 
   depthStencil = vgeu::ImageData(
-      physicalDevice, device, depthFormat, vgeuWindow->getExtent(),
+      physicalDevice, device, depthFormat, swapChainData->swapchainExtent,
       vk::ImageTiling::eOptimal,
       vk::ImageUsageFlagBits::eDepthStencilAttachment,
       vk::ImageLayout::eUndefined, vk::MemoryPropertyFlagBits::eDeviceLocal,
@@ -113,7 +113,7 @@ void VgeBase::prepare() {
   // CHECK: vector move assigment operator and validity
   frameBuffers = vgeu::createFramebuffers(
       device, renderPass, swapChainData->imageViews, &depthStencil.imageView,
-      vgeuWindow->getExtent());
+      swapChainData->swapchainExtent);
 
   // create command pool
   vk::CommandPoolCreateInfo cmdPoolCI(
@@ -214,7 +214,7 @@ void VgeBase::windowResize() {
   // recreate swpchain
   // NOTE: unique_ptr move assignment
   swapChainData = std::make_unique<vgeu::SwapChainData>(
-      physicalDevice, device, surface, vgeuWindow->getExtent(),
+      physicalDevice, device, surface, vk::Extent2D(width, height),
       vk::ImageUsageFlagBits::eColorAttachment |
           vk::ImageUsageFlagBits::eTransferSrc,
       &(swapChainData->swapChain), queueFamilyIndices.graphics,
@@ -222,14 +222,15 @@ void VgeBase::windowResize() {
 
   // recreate framebuffers
   depthStencil = vgeu::ImageData(
-      physicalDevice, device, depthFormat, vgeuWindow->getExtent(),
+      physicalDevice, device, depthFormat, swapChainData->swapchainExtent,
       vk::ImageTiling::eOptimal,
       vk::ImageUsageFlagBits::eDepthStencilAttachment,
       vk::ImageLayout::eUndefined, vk::MemoryPropertyFlagBits::eDeviceLocal,
       vk::ImageAspectFlagBits::eDepth);
+
   frameBuffers = vgeu::createFramebuffers(
       device, renderPass, swapChainData->imageViews, &depthStencil.imageView,
-      vgeuWindow->getExtent());
+      swapChainData->swapchainExtent);
 
   // TODO: UI overlay resize
 
