@@ -25,7 +25,7 @@ void VgeuCamera::setPerspectiveProjection(float fovy, float aspect, float near,
   near_ = near;
   far_ = far;
   assert(glm::abs(aspect - std::numeric_limits<float>::epsilon()) > 0.0f);
-  // TODO: Zero-One, Left Hand check
+  // NOTE: Zero-One, Left-Handed(+z direction goes in)
   projectionMatrix = glm::perspectiveLH_ZO(fovy, aspect, near, far);
   return;
   const float tanHalfFovy = tan(fovy / 2.f);
@@ -75,7 +75,7 @@ void VgeuCamera::setViewDirection(glm::vec3 position, glm::vec3 direction,
 
 void VgeuCamera::setViewTarget(glm::vec3 position, glm::vec3 target,
                                glm::vec3 up) {
-  // TODO: check left-handed?
+  // NOTE: check left-handed and up vector considering world space.
   viewMatrix = glm::lookAtLH(position, target, -up);
   inverseViewMatrix = glm::inverse(viewMatrix);
   return;

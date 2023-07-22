@@ -48,6 +48,4 @@ class VgeuCamera {
   float fovy_ = glm::radians(50.0);
 };
 
-// TODO: camera view, projection getter and setter
-
 }  // namespace vgeu

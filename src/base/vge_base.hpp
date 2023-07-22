@@ -22,8 +22,6 @@ class VgeBase {
   VgeBase();
   ~VgeBase();
 
-  // TODO:
-
   // initVulkan vk instance
   // device, queue, sema
   bool initVulkan();

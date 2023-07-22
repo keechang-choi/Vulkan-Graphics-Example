@@ -53,7 +53,7 @@ bool VgeBase::initVulkan() {
       vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute);
 
   queue = vk::raii::Queue(device, queueFamilyIndices.graphics, 0);
-  // TODO: check flag transient.
+  // TODO: check flag transient for performance.
   vk::CommandPoolCreateInfo cmdPoolCI(
       vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
       queueFamilyIndices.graphics);
@@ -197,7 +197,7 @@ void VgeBase::renderLoop() {
 }
 
 void VgeBase::windowResize() {
-  // TODO: dest size shoud be handled earier
+  // TODO: handle dest size for other platforms.
   vk::Extent2D extent = vgeuWindow->getExtent();
   destWidth = extent.width;
   destHeight = extent.height;
