@@ -123,7 +123,8 @@ void VgeExample::createDescriptorSetLayout() {
 
 void VgeExample::createDescriptorPool() {
   std::vector<vk::DescriptorPoolSize> poolSizes;
-  poolSizes.emplace_back(vk::DescriptorType::eUniformBuffer, 1);
+  poolSizes.emplace_back(vk::DescriptorType::eUniformBuffer,
+                         MAX_CONCURRENT_FRAMES);
   // NOTE: need to check flag
   vk::DescriptorPoolCreateInfo descriptorPoolCI(
       vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
