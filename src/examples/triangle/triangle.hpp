@@ -29,6 +29,7 @@ class VgeExample : public VgeBase {
   void createPipelines();
   void draw();
   void buildCommandBuffers();
+  void viewChanged();
 
   // NOTE: movable element;
   std::vector<std::unique_ptr<vgeu::VgeuBuffer>> uniformBuffers;

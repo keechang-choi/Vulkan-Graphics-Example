@@ -10,7 +10,7 @@ namespace vge {
 VgeExample::VgeExample() : VgeBase() {
   title = "First Triangle Example";
   // camera setup
-  camera.setViewTarget(glm::vec3{-2.f, -2.f, -2.f}, glm::vec3{0.f, 0.f, 0.f});
+  camera.setViewTarget(glm::vec3{-2.f, -2.f, -10.f}, glm::vec3{0.f, 0.f, 0.f});
   camera.setPerspectiveProjection(
       glm::radians(60.f),
       static_cast<float>(width) / static_cast<float>(height), 0.1f, 256.f);
@@ -354,6 +354,9 @@ void VgeExample::buildCommandBuffers() {
 
   // end command buffer
   drawCmdBuffers[currentFrameIndex].end();
+}
+void VgeExample::viewChanged() {
+  // NOTE: moved updating ubo into render() to use frameindex
 }
 
 }  // namespace vge

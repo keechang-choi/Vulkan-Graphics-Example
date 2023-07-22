@@ -235,17 +235,17 @@ void VgeBase::windowResize() {
 
   device.waitIdle();
 
+  // camera aspect ratio update
+  if (width > 0 && height > 0) {
+    camera.setAspectRatio(static_cast<float>(width) /
+                          static_cast<float>(height));
+  }
   windowResized();
   viewChanged();
   prepared = true;
 }
 void VgeBase::windowResized() {}
-void VgeBase::viewChanged() {
-  // camera aspect ratio update
-  if (width > 0.f && height > 0.f) {
-    camera.setAspectRatio(width / height);
-  }
-}
+void VgeBase::viewChanged() {}
 void VgeBase::prepareFrame() {
   vk::Result result;
 
