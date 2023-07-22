@@ -76,7 +76,7 @@ void VgeuCamera::setViewDirection(glm::vec3 position, glm::vec3 direction,
 void VgeuCamera::setViewTarget(glm::vec3 position, glm::vec3 target,
                                glm::vec3 up) {
   // TODO: check left-handed?
-  viewMatrix = glm::lookAtLH(position, target, up);
+  viewMatrix = glm::lookAtLH(position, target, -up);
   inverseViewMatrix = glm::inverse(viewMatrix);
   return;
   setViewDirection(position, target - position, up);
