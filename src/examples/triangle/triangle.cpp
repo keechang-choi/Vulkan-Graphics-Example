@@ -342,7 +342,7 @@ void VgeExample::buildCommandBuffers() {
   drawCmdBuffers[currentFrameIndex].end();
 }
 void VgeExample::viewChanged() {
-  std::cout << "Call: viewChanged()" << std::endl;
+  // std::cout << "Call: viewChanged()" << std::endl;
   camera.setAspectRatio(static_cast<float>(width) / static_cast<float>(height));
   // NOTE: moved updating ubo into render() to use frameindex.
 }
