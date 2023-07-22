@@ -295,11 +295,11 @@ void VgeExample::buildCommandBuffers() {
   std::array<vk::ClearValue, 2> clearValues;
   clearValues[0].color = vk::ClearColorValue(0.2f, 0.2f, 0.2f, 0.2f);
   clearValues[1].depthStencil = vk::ClearDepthStencilValue(1.0f, 0);
-  // NOTE: use swapChainData->swapchainExtent, height instead of direct
+  // NOTE: use swapChainData->swapChainExtent, height instead of direct
   // vgeuWindow->getExtent()
   vk::RenderPassBeginInfo renderPassBeginInfo(
       *renderPass, *frameBuffers[currentImageIndex],
-      vk::Rect2D(vk::Offset2D(0, 0), swapChainData->swapchainExtent),
+      vk::Rect2D(vk::Offset2D(0, 0), swapChainData->swapChainExtent),
       clearValues);
   // NOTE: no secondary cmd buffers
   drawCmdBuffers[currentFrameIndex].beginRenderPass(
@@ -308,11 +308,11 @@ void VgeExample::buildCommandBuffers() {
   // set viewport and scissors
   drawCmdBuffers[currentFrameIndex].setViewport(
       0, vk::Viewport(0.0f, 0.0f,
-                      static_cast<float>(swapChainData->swapchainExtent.width),
-                      static_cast<float>(swapChainData->swapchainExtent.height),
+                      static_cast<float>(swapChainData->swapChainExtent.width),
+                      static_cast<float>(swapChainData->swapChainExtent.height),
                       0.0f, 1.0f));
   drawCmdBuffers[currentFrameIndex].setScissor(
-      0, vk::Rect2D(vk::Offset2D(0, 0), swapChainData->swapchainExtent));
+      0, vk::Rect2D(vk::Offset2D(0, 0), swapChainData->swapChainExtent));
 
   // bind pipeline
   drawCmdBuffers[currentFrameIndex].bindPipeline(
@@ -342,9 +342,9 @@ void VgeExample::buildCommandBuffers() {
   drawCmdBuffers[currentFrameIndex].end();
 }
 void VgeExample::viewChanged() {
-  // camera.setAspectRatio(static_cast<float>(width) /
-  // static_cast<float>(height)); NOTE: moved updating ubo into render() to use
-  // frameindex
+  std::cout << "Call: viewChanged()" << std::endl;
+  camera.setAspectRatio(static_cast<float>(width) / static_cast<float>(height));
+  // NOTE: moved updating ubo into render() to use frameindex.
 }
 
 }  // namespace vge

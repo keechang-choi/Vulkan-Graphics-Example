@@ -98,7 +98,7 @@ void VgeBase::prepare() {
             << std::endl;
 
   depthStencil = vgeu::ImageData(
-      physicalDevice, device, depthFormat, swapChainData->swapchainExtent,
+      physicalDevice, device, depthFormat, swapChainData->swapChainExtent,
       vk::ImageTiling::eOptimal,
       vk::ImageUsageFlagBits::eDepthStencilAttachment,
       vk::ImageLayout::eUndefined, vk::MemoryPropertyFlagBits::eDeviceLocal,
@@ -113,7 +113,7 @@ void VgeBase::prepare() {
   // CHECK: vector move assigment operator and validity
   frameBuffers = vgeu::createFramebuffers(
       device, renderPass, swapChainData->imageViews, &depthStencil.imageView,
-      swapChainData->swapchainExtent);
+      swapChainData->swapChainExtent);
 
   // create command pool
   vk::CommandPoolCreateInfo cmdPoolCI(
@@ -200,7 +200,7 @@ void VgeBase::windowResize() {
   // TODO: dest size shoud be handled earier
   vk::Extent2D extent = vgeuWindow->getExtent();
   destWidth = extent.width;
-  destWidth = extent.height;
+  destHeight = extent.height;
 
   if (!prepared) {
     return;
@@ -222,7 +222,7 @@ void VgeBase::windowResize() {
 
   // recreate framebuffers
   depthStencil = vgeu::ImageData(
-      physicalDevice, device, depthFormat, swapChainData->swapchainExtent,
+      physicalDevice, device, depthFormat, swapChainData->swapChainExtent,
       vk::ImageTiling::eOptimal,
       vk::ImageUsageFlagBits::eDepthStencilAttachment,
       vk::ImageLayout::eUndefined, vk::MemoryPropertyFlagBits::eDeviceLocal,
@@ -230,7 +230,7 @@ void VgeBase::windowResize() {
 
   frameBuffers = vgeu::createFramebuffers(
       device, renderPass, swapChainData->imageViews, &depthStencil.imageView,
-      swapChainData->swapchainExtent);
+      swapChainData->swapChainExtent);
 
   // TODO: UI overlay resize
 

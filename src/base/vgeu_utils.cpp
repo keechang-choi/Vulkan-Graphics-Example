@@ -264,15 +264,15 @@ SwapChainData::SwapChainData(const vk::raii::PhysicalDevice& physicalDevice,
       std::numeric_limits<uint32_t>::max()) {
     // If the surface size is undefined, the size is set to the size of the
     // images requested.
-    swapchainExtent.width =
+    swapChainExtent.width =
         clamp(extent.width, surfaceCapabilities.minImageExtent.width,
               surfaceCapabilities.maxImageExtent.width);
-    swapchainExtent.height =
+    swapChainExtent.height =
         clamp(extent.height, surfaceCapabilities.minImageExtent.height,
               surfaceCapabilities.maxImageExtent.height);
   } else {
     // If the surface size is defined, the swap chain size must match
-    swapchainExtent = surfaceCapabilities.currentExtent;
+    swapChainExtent = surfaceCapabilities.currentExtent;
   }
 
   vk::SurfaceTransformFlagBitsKHR preTransform =
@@ -298,7 +298,7 @@ SwapChainData::SwapChainData(const vk::raii::PhysicalDevice& physicalDevice,
                                     surfaceCapabilities.maxImageCount);
   vk::SwapchainCreateInfoKHR swapChainCreateInfo(
       {}, *surface, minImageCount, colorFormat, surfaceFormat.colorSpace,
-      swapchainExtent, 1, usage, vk::SharingMode::eExclusive, {}, preTransform,
+      swapChainExtent, 1, usage, vk::SharingMode::eExclusive, {}, preTransform,
       compositeAlpha, presentMode, true,
       pOldSwapchain ? **pOldSwapchain : nullptr);
 
