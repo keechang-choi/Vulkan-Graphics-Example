@@ -23,6 +23,7 @@ class VgeuBuffer {
 
   VgeuBuffer(const VgeuBuffer&) = delete;
   VgeuBuffer& operator=(const VgeuBuffer&) = delete;
+  VgeuBuffer(std::nullptr_t){};
 
   vk::DescriptorBufferInfo descriptorInfo(vk::DeviceSize size = VK_WHOLE_SIZE,
                                           vk::DeviceSize offset = 0);

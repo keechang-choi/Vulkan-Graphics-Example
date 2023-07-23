@@ -2,14 +2,11 @@
 
 UI Overlay using ImGui
 
-code base from
-https://github.com/SaschaWillems/Vulkan/blob/master/base/VulkanUIOverlay.h
 
 */
 
 #pragma once
 
-#include "vgeu_buffer.hpp"
 #include "vgeu_utils.hpp"
 
 // libs
@@ -19,7 +16,12 @@ https://github.com/SaschaWillems/Vulkan/blob/master/base/VulkanUIOverlay.h
 //
 #include <Vulkan-Hpp/vulkan/vulkan.hpp>
 #include <Vulkan-Hpp/vulkan/vulkan_raii.hpp>
+//
+#define GLFW_INCLUDE_VULKAN
+#include <GLFW/glfw3.h>
 
+#include "../../external/imgui/backends/imgui_impl_glfw.h"
+#include "../../external/imgui/backends/imgui_impl_vulkan.h"
 #include "../../external/imgui/imgui.h"
 
 // std
@@ -37,17 +39,16 @@ https://github.com/SaschaWillems/Vulkan/blob/master/base/VulkanUIOverlay.h
 namespace vgeu {
 class UIOverlay {
  public:
-  UIOverlay();
+  UIOverlay(const vk::raii::Device& device, GLFWwindow* window,
+            const vk::raii::Instance& instance, const vk::raii::Queue& queue,
+            const vk::raii::PhysicalDevice& physicalDevice,
+            const vk::raii::RenderPass& renderPass,
+            const vk::raii::CommandPool& commandPool);
   ~UIOverlay();
   UIOverlay(const UIOverlay&) = delete;
   UIOverlay& operator=(const UIOverlay&) = delete;
 
-  void preparePipeline(const vk::raii::PipelineCache& pipelineCache,
-                       const vk::raii::RenderPass& renderPass,
-                       const vk::Format colorFormat,
-                       const vk::Format depthFormat);
-  void prepareResources();
-
+  // buffers
   bool update();
   // CHECK: const ref?
   void draw(const vk::raii::CommandBuffer& commandBuffer);
@@ -70,24 +71,14 @@ class UIOverlay {
   bool colorPicker(const char* caption, float* color);
   void text(const char* formatstr, ...);
 
+  bool isUpdated() { return updated; }
+  bool isVisible() { return visible; }
+  float getScale() { return scale; }
+  void setUpdated(bool updated_) { updated = updated_; }
+  void setVisible(bool visible_) { visible = visible_; }
+
  private:
-  vk::raii::Device& device;
-  vk::raii::Queue& queue;
-  vk::SampleCountFlagBits rasterizationSamples = vk::SampleCountFlagBits::e1;
-  uint32_t subpass = 0;
-
-  vgeu::VgeuBuffer vertexBuffer;
-  vgeu::VgeuBuffer indexBuffer;
-  int32_t vertexCount = 0;
-  int32_t indexCount = 0;
-
-  std::vector<vk::PipelineShaderStageCreateInfo> shaders;
-
   vk::raii::DescriptorPool descriptorPool = nullptr;
-  vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
-  vk::raii::DescriptorSet descriptorSet = nullptr;
-  vk::raii::PipelineLayout pipelineLayout = nullptr;
-  vk::raii::Pipeline pipeline = nullptr;
 
   vgeu::ImageData fontImageData = nullptr;
   vk::raii::Sampler sampler = nullptr;
@@ -97,7 +88,6 @@ class UIOverlay {
     glm::vec2 translate;
   } pushConstBlock;
 
-  // TODO: getters and setter
   bool visible = true;
   bool updated = false;
   float scale = 1.0f;

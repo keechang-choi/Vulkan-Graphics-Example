@@ -335,6 +335,9 @@ void VgeExample::buildCommandBuffers() {
   drawCmdBuffers[currentFrameIndex].drawIndexed(indexBuffer->getInstanceCount(),
                                                 1, 0, 0, 0);
 
+  // UI overlay draw
+  drawUI(drawCmdBuffers[currentFrameIndex]);
+
   // end renderpass
   drawCmdBuffers[currentFrameIndex].endRenderPass();
 

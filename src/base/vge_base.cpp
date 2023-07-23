@@ -144,6 +144,9 @@ void VgeBase::prepare() {
   }
 
   // UI overlay
+  uiOverlay = std::make_unique<vgeu::UIOverlay>(
+      device, vgeuWindow->getGLFWwindow(), instance, queue, physicalDevice,
+      renderPass, commandPool);
 }
 
 void VgeBase::renderLoop() {
@@ -191,7 +194,8 @@ void VgeBase::renderLoop() {
       lastTimestamp = tEnd;
     }
     tPrevEnd = tEnd;
-    // TODO: UI overlay update
+    // UI overlay update
+    updateUIOverlay();
   }
   device.waitIdle();
 }
@@ -291,5 +295,17 @@ void VgeBase::submitFrame() {
   // queue.waitIdle();
 }
 void VgeBase::buildCommandBuffers() {}
+
+void VgeBase::updateUIOverlay() {
+  ImGui::NewFrame();
+  // demo for test
+  ImGui::ShowDemoWindow();
+  ImGui::Render();
+  uiOverlay->update();
+}
+
+void VgeBase::drawUI(const vk::raii::CommandBuffer& commandBuffer) {
+  uiOverlay->draw(commandBuffer);
+}
 
 }  // namespace vge

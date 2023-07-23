@@ -48,6 +48,8 @@ class VgeBase {
   void prepareFrame();
   void submitFrame();
 
+  void drawUI(const vk::raii::CommandBuffer& commandBuffer);
+
   uint32_t width = 1280;
   uint32_t height = 1080;
   std::string title = "Vulkan Example KC";
@@ -61,6 +63,7 @@ class VgeBase {
   float timerSpeed = 0.25f;
   bool paused = false;
   vgeu::VgeuCamera camera;
+  std::unique_ptr<vgeu::UIOverlay> uiOverlay;
 
  protected:
   VmaAllocator globalAllocator;
@@ -111,6 +114,7 @@ class VgeBase {
   uint32_t destWidth;
   uint32_t destHeight;
   void windowResize();
+  void updateUIOverlay();
 };
 }  // namespace vge
 
