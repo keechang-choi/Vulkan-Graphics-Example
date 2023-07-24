@@ -47,8 +47,8 @@ class VgeBase {
   std::string getShadersPath();
   void prepareFrame();
   void submitFrame();
-
   void drawUI(const vk::raii::CommandBuffer& commandBuffer);
+  virtual void OnUpdateUIOverlay();
 
   uint32_t width = 1280;
   uint32_t height = 1080;
