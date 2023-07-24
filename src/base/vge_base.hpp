@@ -63,7 +63,9 @@ class VgeBase {
   float timerSpeed = 0.25f;
   bool paused = false;
   vgeu::VgeuCamera camera;
-  std::unique_ptr<vgeu::UIOverlay> uiOverlay;
+  struct Settings {
+    bool overlay = true;
+  } settings;
 
  protected:
   VmaAllocator globalAllocator;
@@ -101,6 +103,9 @@ class VgeBase {
   vk::raii::PipelineCache pipelineCache = nullptr;
   std::vector<vk::raii::Framebuffer> frameBuffers;
   vk::raii::DescriptorPool descriptorPool = nullptr;
+
+  // NOTE: declaration order matters.
+  std::unique_ptr<vgeu::UIOverlay> uiOverlay;
 
   uint32_t frameCounter = 0;
   uint32_t lastFPS = 0;

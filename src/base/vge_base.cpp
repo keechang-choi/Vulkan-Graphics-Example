@@ -150,9 +150,11 @@ void VgeBase::prepare() {
   }
 
   // UI overlay
-  uiOverlay = std::make_unique<vgeu::UIOverlay>(
-      device, vgeuWindow->getGLFWwindow(), instance, queue, physicalDevice,
-      renderPass, pipelineCache, commandPool);
+  if (settings.overlay) {
+    uiOverlay = std::make_unique<vgeu::UIOverlay>(
+        device, vgeuWindow->getGLFWwindow(), instance, queue, physicalDevice,
+        renderPass, pipelineCache, commandPool);
+  }
 }
 
 void VgeBase::renderLoop() {
@@ -172,6 +174,11 @@ void VgeBase::renderLoop() {
       viewUpdated = false;
       viewChanged();
     }
+
+    // UI overlay update
+    updateUIOverlay();
+
+    // NOTE: submitting cmd should be called after ui render()
     render();
     frameCounter++;
     auto tEnd = std::chrono::high_resolution_clock::now();
@@ -200,8 +207,6 @@ void VgeBase::renderLoop() {
       lastTimestamp = tEnd;
     }
     tPrevEnd = tEnd;
-    // UI overlay update
-    updateUIOverlay();
   }
   device.waitIdle();
 }
@@ -243,6 +248,11 @@ void VgeBase::windowResize() {
       swapChainData->swapChainExtent);
 
   // TODO: UI overlay resize
+  if (width > 0 && height > 0) {
+    if (settings.overlay) {
+      uiOverlay->resize(width, height);
+    }
+  }
 
   device.waitIdle();
 
@@ -258,12 +268,19 @@ void VgeBase::windowResize() {
 void VgeBase::windowResized() {}
 void VgeBase::viewChanged() {}
 void VgeBase::prepareFrame() {
+  // NOTE: eErrorOutOfDateKHR raise exceptions in vulkan-hpp
+  // https://github.com/KhronosGroup/Vulkan-Hpp/issues/599
   vk::Result result;
+  try {
+    std::tie(result, currentImageIndex) =
+        swapChainData->swapChain.acquireNextImage(
+            std::numeric_limits<uint64_t>::max(),
+            *presentCompleteSemaphores[currentFrameIndex]);
+  } catch (const vk::OutOfDateKHRError& e) {
+    result = vk::Result::eErrorOutOfDateKHR;
+    // NOTE: if fails, no image is acquired according to spec docs.
+  }
 
-  std::tie(result, currentImageIndex) =
-      swapChainData->swapChain.acquireNextImage(
-          std::numeric_limits<uint64_t>::max(),
-          *presentCompleteSemaphores[currentFrameIndex]);
   // std::cout << "swapchain acquired image index : " << currentImageIndex
   //           << std::endl;
   if ((result == vk::Result::eErrorOutOfDateKHR) ||
@@ -280,11 +297,17 @@ void VgeBase::prepareFrame() {
 
 // submit presentation queue
 void VgeBase::submitFrame() {
-  std::cout << "Call: submitFrame()" << std::endl;
   vk::PresentInfoKHR presentInfoKHR(
       *renderCompleteSemaphores[currentFrameIndex], *swapChainData->swapChain,
       currentImageIndex);
-  vk::Result result = queue.presentKHR(presentInfoKHR);
+  // NOTE: eErrorOutOfDateKHR raise exceptions in vulkan-hpp
+  // https://github.com/KhronosGroup/Vulkan-Hpp/issues/599
+  vk::Result result;
+  try {
+    result = queue.presentKHR(presentInfoKHR);
+  } catch (const vk::OutOfDateKHRError& e) {
+    result = vk::Result::eErrorOutOfDateKHR;
+  }
 
   currentFrameIndex = (currentFrameIndex + 1) % MAX_CONCURRENT_FRAMES;
 
@@ -304,6 +327,9 @@ void VgeBase::submitFrame() {
 void VgeBase::buildCommandBuffers() {}
 
 void VgeBase::updateUIOverlay() {
+  if (!settings.overlay) return;
+  ImGui_ImplVulkan_NewFrame();
+  ImGui_ImplGlfw_NewFrame();
   ImGui::NewFrame();
   // demo for test
   ImGui::ShowDemoWindow();
@@ -312,12 +338,13 @@ void VgeBase::updateUIOverlay() {
 }
 
 void VgeBase::drawUI(const vk::raii::CommandBuffer& commandBuffer) {
-  uiOverlay->draw(commandBuffer);
+  if (settings.overlay && uiOverlay->isVisible()) {
+    uiOverlay->draw(commandBuffer);
+  }
 }
 
 std::string VgeBase::getShadersPath() {
   std::filesystem::path p = "../shaders";
-
   return std::filesystem::absolute(p).string();
 }
 

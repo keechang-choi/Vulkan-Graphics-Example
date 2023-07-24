@@ -68,17 +68,24 @@ UIOverlay::UIOverlay(const vk::raii::Device& device, GLFWwindow* window,
                       });
   ImGui_ImplVulkan_DestroyFontUploadObjects();
 }
-UIOverlay::~UIOverlay() { ImGui_ImplVulkan_Shutdown(); }
+UIOverlay::~UIOverlay() {
+  ImGui_ImplVulkan_Shutdown();
+  ImGui_ImplGlfw_Shutdown();
+  ImGui::DestroyContext();
+}
 
 bool UIOverlay::update() { return false; }
 
 void UIOverlay::draw(const vk::raii::CommandBuffer& cmdBuffer) {
-  std::cout << "Call: ui overlay draw()" << std::endl;
   void* p = ImGui::GetDrawData();
-  assert(p != nulptr);
+  assert(p != nullptr);
   ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(),
                                   static_cast<VkCommandBuffer>(*cmdBuffer));
-  std::cout << "Call finished: ui overlay draw()" << std::endl;
+}
+
+void UIOverlay::resize(uint32_t width, uint32_t height) {
+  ImGuiIO& io = ImGui::GetIO();
+  io.DisplaySize = ImVec2((float)(width), (float)(height));
 }
 
 }  // namespace vgeu
