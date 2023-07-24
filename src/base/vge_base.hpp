@@ -44,7 +44,7 @@ class VgeBase {
   virtual void viewChanged();
   virtual void render() = 0;
   virtual void buildCommandBuffers();
-  std::string getShadersPath() { return "../shaders"; }
+  std::string getShadersPath();
   void prepareFrame();
   void submitFrame();
 

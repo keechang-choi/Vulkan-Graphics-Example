@@ -1,0 +1,55 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "(gdb) Launch",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/${input:pickProgram}.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/build",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "${input:pickDebugger}",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set Disassembly Flavor to Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "build"
+        }
+    ],
+    "inputs": [
+        {
+            "id": "pickProgram",
+            "description": "Select program to debug",
+            "type": "pickString",
+            "options": [
+                "triangle",
+            ],
+            "default": "triangle"
+        },
+        {
+            "id": "pickDebugger",
+            "description": "Select dubbuger",
+            "type": "pickString",
+            "options": [
+                "C:/Program Files/mingw-w64/x86_64-12.2.0-release-posix-seh-rt_v10-rev1/mingw64/bin/gdb.exe",
+                "C:/Program Files/mingw-w64/x86_64-12.2.0-release-posix-seh-rt_v10-rev1/mingw64/bin/gdb.exe"
+            ],
+            "default": "C:/Program Files/mingw-w64/x86_64-12.2.0-release-posix-seh-rt_v10-rev1/mingw64/bin/gdb.exe"
+        }
+    ]
+}

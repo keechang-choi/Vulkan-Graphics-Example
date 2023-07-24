@@ -17,6 +17,7 @@ UIOverlay::UIOverlay(const vk::raii::Device& device, GLFWwindow* window,
                      const vk::raii::Queue& queue,
                      const vk::raii::PhysicalDevice& physicalDevice,
                      const vk::raii::RenderPass& renderPass,
+                     const vk::raii::PipelineCache& pipelineCache,
                      const vk::raii::CommandPool& commandPool) {
   // create descriptor pool for imGui
   const uint32_t oversizedPoolValue = 1000;
@@ -51,6 +52,7 @@ UIOverlay::UIOverlay(const vk::raii::Device& device, GLFWwindow* window,
   initInfo.Queue = static_cast<VkQueue>(*queue);
   initInfo.DescriptorPool = static_cast<VkDescriptorPool>(*descriptorPool);
   initInfo.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+  initInfo.PipelineCache = static_cast<VkPipelineCache>(*pipelineCache);
 
   // TODO: check those image count related values not used.
   initInfo.ImageCount = 2;
@@ -70,9 +72,13 @@ UIOverlay::~UIOverlay() { ImGui_ImplVulkan_Shutdown(); }
 
 bool UIOverlay::update() { return false; }
 
-void UIOverlay::draw(const vk::raii::CommandBuffer& commandBuffer) {
+void UIOverlay::draw(const vk::raii::CommandBuffer& cmdBuffer) {
+  std::cout << "Call: ui overlay draw()" << std::endl;
+  void* p = ImGui::GetDrawData();
+  assert(p != nulptr);
   ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(),
-                                  static_cast<VkCommandBuffer>(*commandBuffer));
+                                  static_cast<VkCommandBuffer>(*cmdBuffer));
+  std::cout << "Call finished: ui overlay draw()" << std::endl;
 }
 
 }  // namespace vgeu

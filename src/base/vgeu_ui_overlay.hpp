@@ -43,6 +43,7 @@ class UIOverlay {
             const vk::raii::Instance& instance, const vk::raii::Queue& queue,
             const vk::raii::PhysicalDevice& physicalDevice,
             const vk::raii::RenderPass& renderPass,
+            const vk::raii::PipelineCache& pipelineCache,
             const vk::raii::CommandPool& commandPool);
   ~UIOverlay();
   UIOverlay(const UIOverlay&) = delete;
@@ -51,7 +52,7 @@ class UIOverlay {
   // buffers
   bool update();
   // CHECK: const ref?
-  void draw(const vk::raii::CommandBuffer& commandBuffer);
+  void draw(const vk::raii::CommandBuffer& cmdBuffer);
   void resize(uint32_t width, uint32_t height);
 
   // CHECK: raii paradigm

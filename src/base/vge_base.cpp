@@ -11,12 +11,18 @@
 // std
 #include <cassert>
 #include <chrono>
+#include <filesystem>
 #include <iostream>
 #include <limits>
 #include <memory>
 #include <tuple>
+
 namespace vge {
-VgeBase::VgeBase() { std::cout << "Created: Vulkan Example Base" << std::endl; }
+VgeBase::VgeBase() {
+  std::cout << "FileSystem::CurrentPath: " << std::filesystem::current_path()
+            << std::endl;
+  std::cout << "Created: Vulkan Example Base" << std::endl;
+}
 VgeBase::~VgeBase() {
   // need to destroy non-RAII object created
   if (globalAllocator != VK_NULL_HANDLE) {
@@ -146,7 +152,7 @@ void VgeBase::prepare() {
   // UI overlay
   uiOverlay = std::make_unique<vgeu::UIOverlay>(
       device, vgeuWindow->getGLFWwindow(), instance, queue, physicalDevice,
-      renderPass, commandPool);
+      renderPass, pipelineCache, commandPool);
 }
 
 void VgeBase::renderLoop() {
@@ -274,6 +280,7 @@ void VgeBase::prepareFrame() {
 
 // submit presentation queue
 void VgeBase::submitFrame() {
+  std::cout << "Call: submitFrame()" << std::endl;
   vk::PresentInfoKHR presentInfoKHR(
       *renderCompleteSemaphores[currentFrameIndex], *swapChainData->swapChain,
       currentImageIndex);
@@ -306,6 +313,12 @@ void VgeBase::updateUIOverlay() {
 
 void VgeBase::drawUI(const vk::raii::CommandBuffer& commandBuffer) {
   uiOverlay->draw(commandBuffer);
+}
+
+std::string VgeBase::getShadersPath() {
+  std::filesystem::path p = "../shaders";
+
+  return std::filesystem::absolute(p).string();
 }
 
 }  // namespace vge
