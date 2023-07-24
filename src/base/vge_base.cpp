@@ -3,10 +3,9 @@
 #include "vgeu_utils.hpp"
 
 // libs
-// #include <Vulkan-Hpp/vulkan/vulkan.hpp>
-// #include <Vulkan-Hpp/vulkan/vulkan_raii.hpp>
-
-#include <vulkan/vulkan_core.h>
+#include <CLI11/CLI11.hpp>
+#include <Vulkan-Hpp/vulkan/vulkan.hpp>
+#include <Vulkan-Hpp/vulkan/vulkan_raii.hpp>
 
 // std
 #include <cassert>
@@ -18,10 +17,11 @@
 #include <tuple>
 
 namespace vge {
-VgeBase::VgeBase() {
+VgeBase::VgeBase(bool enableValidation) {
   std::cout << "FileSystem::CurrentPath: " << std::filesystem::current_path()
             << std::endl;
   std::cout << "Created: Vulkan Example Base" << std::endl;
+  settings.validation = enableValidation;
 }
 VgeBase::~VgeBase() {
   // need to destroy non-RAII object created
@@ -345,7 +345,7 @@ void VgeBase::updateUIOverlay() {
   ImGui::Text("%.2f ms/frame (%.1d fps)", (1000.0f / lastFPS), lastFPS);
 
   ImGui::PushItemWidth(110.0f * uiOverlay->getScale());
-  OnUpdateUIOverlay();
+  onUpdateUIOverlay();
   ImGui::PopItemWidth();
 
   ImGui::End();
@@ -361,11 +361,17 @@ void VgeBase::drawUI(const vk::raii::CommandBuffer& commandBuffer) {
   }
 }
 
-void VgeBase::OnUpdateUIOverlay() {}
+void VgeBase::onUpdateUIOverlay() {}
 
 std::string VgeBase::getShadersPath() {
   std::filesystem::path p = "../shaders";
   return std::filesystem::absolute(p).string();
+}
+
+void VgeBase::setupCommandLineParser(CLI::App& app) {
+  app.add_option("-v, --validation", settings.validation,
+                 "Enable/Disable Validation Layer")
+      ->capture_default_str();
 }
 
 }  // namespace vge

@@ -60,6 +60,7 @@ endif()
 include_directories(
   ${Vulkan_INCLUDE_DIRS}
   external
+  external/CLI11
   external/glm
   external/glfw/include
   external/Vulkan-Hpp

@@ -8,6 +8,7 @@
 #include "vgeu_window.hpp"
 
 // libs
+#include <CLI11/CLI11.hpp>
 #include <Vulkan-Hpp/vulkan/vulkan.hpp>
 #include <Vulkan-Hpp/vulkan/vulkan_raii.hpp>
 
@@ -20,9 +21,10 @@ class VgeBase {
  public:
   const uint32_t MAX_CONCURRENT_FRAMES = 2;
 
-  VgeBase();
+  VgeBase(bool enableValidation);
   ~VgeBase();
 
+  void setupCommandLineParser(CLI::App& app);
   // initVulkan vk instance
   // device, queue, sema
   bool initVulkan();
@@ -48,7 +50,7 @@ class VgeBase {
   void prepareFrame();
   void submitFrame();
   void drawUI(const vk::raii::CommandBuffer& commandBuffer);
-  virtual void OnUpdateUIOverlay();
+  virtual void onUpdateUIOverlay();
 
   uint32_t width = 1280;
   uint32_t height = 1080;
@@ -64,6 +66,7 @@ class VgeBase {
   bool paused = false;
   vgeu::VgeuCamera camera;
   struct Settings {
+    bool validation = false;
     bool overlay = true;
   } settings;
 
@@ -123,16 +126,19 @@ class VgeBase {
 };
 }  // namespace vge
 
-#define VULKAN_EXAMPLE_MAIN()             \
-  int main(int argc, char** argv) {       \
-    try {                                 \
-      vge::VgeExample vgeExample{};       \
-      vgeExample.initVulkan();            \
-      vgeExample.prepare();               \
-      vgeExample.renderLoop();            \
-    } catch (const std::exception& e) {   \
-      std::cerr << e.what() << std::endl; \
-      return EXIT_FAILURE;                \
-    }                                     \
-    return 0;                             \
+#define VULKAN_EXAMPLE_MAIN()                 \
+  int main(int argc, char** argv) {           \
+    try {                                     \
+      vge::VgeExample vgeExample{};           \
+      CLI::App app;                           \
+      vgeExample.setupCommandLineParser(app); \
+      CLI11_PARSE(app, argc, argv);           \
+      vgeExample.initVulkan();                \
+      vgeExample.prepare();                   \
+      vgeExample.renderLoop();                \
+    } catch (const std::exception& e) {       \
+      std::cerr << e.what() << std::endl;     \
+      return EXIT_FAILURE;                    \
+    }                                         \
+    return 0;                                 \
   }
