@@ -19,6 +19,8 @@ if(WIN32)
   message("VK_SDK_PATH = ${VK_SDK_PATH}")
 
   message(STATUS "using ${CMAKE_GENERATOR}")
+  message(STATUS "build type: ${CMAKE_BUILD_TYPE}")
+
 
   if(CMAKE_GENERATOR STREQUAL "MinGW Makefiles")
     if("$ENV{MINGW_PATH}" STREQUAL "")
@@ -58,6 +60,7 @@ endif()
 include_directories(
   ${Vulkan_INCLUDE_DIRS}
   external
+  external/CLI11
   external/glm
   external/glfw/include
   external/Vulkan-Hpp
@@ -74,6 +77,7 @@ endif()
 add_subdirectory(${PROJECT_SOURCE_DIR}/external/glfw)
 add_subdirectory(src/base)
 add_subdirectory(src/examples)
+
 
 # ############# Build SHADERS #######################
 

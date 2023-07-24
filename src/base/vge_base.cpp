@@ -3,20 +3,25 @@
 #include "vgeu_utils.hpp"
 
 // libs
-// #include <Vulkan-Hpp/vulkan/vulkan.hpp>
-// #include <Vulkan-Hpp/vulkan/vulkan_raii.hpp>
-
-#include <vulkan/vulkan_core.h>
+#include <CLI11/CLI11.hpp>
+#include <Vulkan-Hpp/vulkan/vulkan.hpp>
+#include <Vulkan-Hpp/vulkan/vulkan_raii.hpp>
 
 // std
 #include <cassert>
 #include <chrono>
+#include <filesystem>
 #include <iostream>
 #include <limits>
 #include <memory>
 #include <tuple>
+
 namespace vge {
-VgeBase::VgeBase() { std::cout << "Created: Vulkan Example Base" << std::endl; }
+VgeBase::VgeBase() {
+  std::cout << "FileSystem::CurrentPath: " << std::filesystem::current_path()
+            << std::endl;
+  std::cout << "Created: Vulkan Example Base" << std::endl;
+}
 VgeBase::~VgeBase() {
   // need to destroy non-RAII object created
   if (globalAllocator != VK_NULL_HANDLE) {
@@ -25,15 +30,16 @@ VgeBase::~VgeBase() {
   }
 }
 
-bool VgeBase::initVulkan() {
+void VgeBase::initVulkan() {
   // NOTE: shoud be created before instance for getting required extensions;
   vgeuWindow = std::make_unique<vgeu::VgeuWindow>(width, height, title);
   // NOTE: all vk::raii class have no copy assignment operator.
   // -> omit std::move
   context = std::make_unique<vk::raii::Context>();
-  instance = vgeu::createInstance(*context, title, title, apiVersion);
+  instance = vgeu::createInstance(*context, title, title, settings.validation,
+                                  apiVersion);
 
-  if (vgeu::enableValidationLayers) {
+  if (settings.validation) {
     debugUtilsMessenger = vgeu::setupDebugMessenger(instance);
   }
 
@@ -81,8 +87,6 @@ bool VgeBase::initVulkan() {
 
   VkResult result = vmaCreateAllocator(&allocatorCI, &globalAllocator);
   assert(result == VK_SUCCESS && "VMA allocator create Error");
-
-  return true;
 }
 
 void VgeBase::getEnabledExtensions(){};
@@ -144,6 +148,12 @@ void VgeBase::prepare() {
   }
 
   // UI overlay
+  if (settings.overlay) {
+    uiOverlay = std::make_unique<vgeu::UIOverlay>(
+        device, vgeuWindow->getGLFWwindow(), instance, queue, physicalDevice,
+        renderPass, pipelineCache, commandPool,
+        std::max(2u, MAX_CONCURRENT_FRAMES));
+  }
 }
 
 void VgeBase::renderLoop() {
@@ -163,6 +173,11 @@ void VgeBase::renderLoop() {
       viewUpdated = false;
       viewChanged();
     }
+
+    // UI overlay update
+    updateUIOverlay();
+
+    // NOTE: submitting cmd should be called after ui render()
     render();
     frameCounter++;
     auto tEnd = std::chrono::high_resolution_clock::now();
@@ -191,7 +206,6 @@ void VgeBase::renderLoop() {
       lastTimestamp = tEnd;
     }
     tPrevEnd = tEnd;
-    // TODO: UI overlay update
   }
   device.waitIdle();
 }
@@ -233,6 +247,11 @@ void VgeBase::windowResize() {
       swapChainData->swapChainExtent);
 
   // TODO: UI overlay resize
+  if (width > 0 && height > 0) {
+    if (settings.overlay) {
+      uiOverlay->resize(width, height);
+    }
+  }
 
   device.waitIdle();
 
@@ -248,12 +267,19 @@ void VgeBase::windowResize() {
 void VgeBase::windowResized() {}
 void VgeBase::viewChanged() {}
 void VgeBase::prepareFrame() {
+  // NOTE: eErrorOutOfDateKHR raise exceptions in vulkan-hpp
+  // https://github.com/KhronosGroup/Vulkan-Hpp/issues/599
   vk::Result result;
+  try {
+    std::tie(result, currentImageIndex) =
+        swapChainData->swapChain.acquireNextImage(
+            std::numeric_limits<uint64_t>::max(),
+            *presentCompleteSemaphores[currentFrameIndex]);
+  } catch (const vk::OutOfDateKHRError& e) {
+    result = vk::Result::eErrorOutOfDateKHR;
+    // NOTE: if fails, no image is acquired according to spec docs.
+  }
 
-  std::tie(result, currentImageIndex) =
-      swapChainData->swapChain.acquireNextImage(
-          std::numeric_limits<uint64_t>::max(),
-          *presentCompleteSemaphores[currentFrameIndex]);
   // std::cout << "swapchain acquired image index : " << currentImageIndex
   //           << std::endl;
   if ((result == vk::Result::eErrorOutOfDateKHR) ||
@@ -273,7 +299,14 @@ void VgeBase::submitFrame() {
   vk::PresentInfoKHR presentInfoKHR(
       *renderCompleteSemaphores[currentFrameIndex], *swapChainData->swapChain,
       currentImageIndex);
-  vk::Result result = queue.presentKHR(presentInfoKHR);
+  // NOTE: eErrorOutOfDateKHR raise exceptions in vulkan-hpp
+  // https://github.com/KhronosGroup/Vulkan-Hpp/issues/599
+  vk::Result result;
+  try {
+    result = queue.presentKHR(presentInfoKHR);
+  } catch (const vk::OutOfDateKHRError& e) {
+    result = vk::Result::eErrorOutOfDateKHR;
+  }
 
   currentFrameIndex = (currentFrameIndex + 1) % MAX_CONCURRENT_FRAMES;
 
@@ -291,5 +324,57 @@ void VgeBase::submitFrame() {
   // queue.waitIdle();
 }
 void VgeBase::buildCommandBuffers() {}
+
+void VgeBase::updateUIOverlay() {
+  if (!settings.overlay) return;
+  ImGui_ImplVulkan_NewFrame();
+  ImGui_ImplGlfw_NewFrame();
+  ImGui::NewFrame();
+  // demo for test
+  ImGui::ShowDemoWindow();
+
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0);
+  ImGui::SetNextWindowPos(
+      ImVec2(10 * uiOverlay->getScale(), 10 * uiOverlay->getScale()));
+  ImGui::Begin("Vulkan Example", nullptr,
+               ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoResize |
+                   ImGuiWindowFlags_NoMove);
+  ImGui::TextUnformatted(title.c_str());
+  ImGui::TextUnformatted(physicalDevice.getProperties().deviceName);
+  ImGui::Text("%.2f ms/frame (%.1d fps)", (1000.0f / lastFPS), lastFPS);
+
+  ImGui::PushItemWidth(110.0f * uiOverlay->getScale());
+  onUpdateUIOverlay();
+  ImGui::PopItemWidth();
+
+  ImGui::End();
+  ImGui::PopStyleVar();
+
+  ImGui::Render();
+  uiOverlay->update();
+}
+
+void VgeBase::drawUI(const vk::raii::CommandBuffer& commandBuffer) {
+  if (settings.overlay && uiOverlay->isVisible()) {
+    uiOverlay->draw(commandBuffer);
+  }
+}
+
+void VgeBase::onUpdateUIOverlay() {}
+
+std::string VgeBase::getShadersPath() {
+  std::filesystem::path p = "../shaders";
+  return std::filesystem::absolute(p).string();
+}
+
+void VgeBase::setupCommandLineParser(CLI::App& app) {
+  app.add_option("-v, --validation", settings.validation,
+                 "Enable/Disable Validation Layer")
+      ->capture_default_str();
+  app.add_option("--width", width, "Window Width")->capture_default_str();
+  app.add_option("--height", height, "Window Height")->capture_default_str();
+  app.add_option("-f, --frame", MAX_CONCURRENT_FRAMES, "Max frames in-flight")
+      ->capture_default_str();
+}
 
 }  // namespace vge

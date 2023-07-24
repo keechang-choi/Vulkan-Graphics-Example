@@ -21,6 +21,7 @@ debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
 vk::raii::Instance createInstance(const vk::raii::Context& context,
                                   const std::string& appName,
                                   const std::string& engineName,
+                                  bool enableValidationLayers,
                                   uint32_t apiVersion) {
   vk::ApplicationInfo applicationInfo(appName.c_str(), 1, engineName.c_str(), 1,
                                       apiVersion);
@@ -28,7 +29,8 @@ vk::raii::Instance createInstance(const vk::raii::Context& context,
     throw std::runtime_error("validation layers requested, but not available!");
   }
 
-  std::vector<const char*> extensions = getRequiredExtensions();
+  std::vector<const char*> extensions =
+      getRequiredExtensions(enableValidationLayers);
   for (int i = 0; i < extensions.size(); i++) {
     std::cout << extensions[i] << std::endl;
   }
@@ -72,7 +74,7 @@ bool checkValidationLayerSupport(const vk::raii::Context& context) {
   return true;
 }
 
-std::vector<const char*> getRequiredExtensions() {
+std::vector<const char*> getRequiredExtensions(bool enableValidationLayers) {
   uint32_t glfwExtensionCount = 0;
   const char** glfwExtensions;
   glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);

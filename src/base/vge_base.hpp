@@ -3,10 +3,12 @@
 #include "vgeu_buffer.hpp"
 #include "vgeu_camera.hpp"
 #include "vgeu_keyboard_movement_controller.hpp"
+#include "vgeu_ui_overlay.hpp"
 #include "vgeu_utils.hpp"
 #include "vgeu_window.hpp"
 
 // libs
+#include <CLI11/CLI11.hpp>
 #include <Vulkan-Hpp/vulkan/vulkan.hpp>
 #include <Vulkan-Hpp/vulkan/vulkan_raii.hpp>
 
@@ -17,14 +19,16 @@
 namespace vge {
 class VgeBase {
  public:
-  const uint32_t MAX_CONCURRENT_FRAMES = 2;
+  // TODO: make it const, temporarily non-const to check FPS.
+  uint32_t MAX_CONCURRENT_FRAMES = 2;
 
   VgeBase();
   ~VgeBase();
 
+  void setupCommandLineParser(CLI::App& app);
   // initVulkan vk instance
   // device, queue, sema
-  bool initVulkan();
+  virtual void initVulkan();
   virtual void getEnabledExtensions();
 
   // virtual prepare vk resources
@@ -43,9 +47,11 @@ class VgeBase {
   virtual void viewChanged();
   virtual void render() = 0;
   virtual void buildCommandBuffers();
-  std::string getShadersPath() { return "../shaders"; }
+  std::string getShadersPath();
   void prepareFrame();
   void submitFrame();
+  void drawUI(const vk::raii::CommandBuffer& commandBuffer);
+  virtual void onUpdateUIOverlay();
 
   uint32_t width = 1280;
   uint32_t height = 1080;
@@ -60,6 +66,14 @@ class VgeBase {
   float timerSpeed = 0.25f;
   bool paused = false;
   vgeu::VgeuCamera camera;
+  struct Settings {
+#ifdef NDEBUG
+    bool validation = false;
+#else
+    bool validation = true;
+#endif
+    bool overlay = true;
+  } settings;
 
  protected:
   VmaAllocator globalAllocator;
@@ -98,6 +112,9 @@ class VgeBase {
   std::vector<vk::raii::Framebuffer> frameBuffers;
   vk::raii::DescriptorPool descriptorPool = nullptr;
 
+  // NOTE: declaration order matters.
+  std::unique_ptr<vgeu::UIOverlay> uiOverlay;
+
   uint32_t frameCounter = 0;
   uint32_t lastFPS = 0;
   std::chrono::time_point<std::chrono::high_resolution_clock> lastTimestamp,
@@ -110,19 +127,23 @@ class VgeBase {
   uint32_t destWidth;
   uint32_t destHeight;
   void windowResize();
+  void updateUIOverlay();
 };
 }  // namespace vge
 
-#define VULKAN_EXAMPLE_MAIN()             \
-  int main(int argc, char** argv) {       \
-    try {                                 \
-      vge::VgeExample vgeExample{};       \
-      vgeExample.initVulkan();            \
-      vgeExample.prepare();               \
-      vgeExample.renderLoop();            \
-    } catch (const std::exception& e) {   \
-      std::cerr << e.what() << std::endl; \
-      return EXIT_FAILURE;                \
-    }                                     \
-    return 0;                             \
+#define VULKAN_EXAMPLE_MAIN()                 \
+  int main(int argc, char** argv) {           \
+    try {                                     \
+      vge::VgeExample vgeExample{};           \
+      CLI::App app;                           \
+      vgeExample.setupCommandLineParser(app); \
+      CLI11_PARSE(app, argc, argv);           \
+      vgeExample.initVulkan();                \
+      vgeExample.prepare();                   \
+      vgeExample.renderLoop();                \
+    } catch (const std::exception& e) {       \
+      std::cerr << e.what() << std::endl;     \
+      return EXIT_FAILURE;                    \
+    }                                         \
+    return 0;                                 \
   }
