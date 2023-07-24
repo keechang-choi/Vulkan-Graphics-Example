@@ -7,15 +7,17 @@
 #include <limits>
 
 namespace vge {
-VgeExample::VgeExample() : VgeBase() {
-  title = "First Triangle Example";
+VgeExample::VgeExample() : VgeBase() { title = "First Triangle Example"; }
+VgeExample::~VgeExample() {}
+
+void VgeExample::initVulkan() {
   // camera setup
   camera.setViewTarget(glm::vec3{-2.f, -2.f, -5.f}, glm::vec3{0.f, 0.f, 0.f});
   camera.setPerspectiveProjection(
       glm::radians(60.f),
       static_cast<float>(width) / static_cast<float>(height), 0.1f, 256.f);
+  VgeBase::initVulkan();
 }
-VgeExample::~VgeExample() {}
 
 void VgeExample::prepare() {
   VgeBase::prepare();

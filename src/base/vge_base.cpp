@@ -30,7 +30,7 @@ VgeBase::~VgeBase() {
   }
 }
 
-bool VgeBase::initVulkan() {
+void VgeBase::initVulkan() {
   // NOTE: shoud be created before instance for getting required extensions;
   vgeuWindow = std::make_unique<vgeu::VgeuWindow>(width, height, title);
   // NOTE: all vk::raii class have no copy assignment operator.
@@ -87,8 +87,6 @@ bool VgeBase::initVulkan() {
 
   VkResult result = vmaCreateAllocator(&allocatorCI, &globalAllocator);
   assert(result == VK_SUCCESS && "VMA allocator create Error");
-
-  return true;
 }
 
 void VgeBase::getEnabledExtensions(){};
@@ -153,7 +151,8 @@ void VgeBase::prepare() {
   if (settings.overlay) {
     uiOverlay = std::make_unique<vgeu::UIOverlay>(
         device, vgeuWindow->getGLFWwindow(), instance, queue, physicalDevice,
-        renderPass, pipelineCache, commandPool);
+        renderPass, pipelineCache, commandPool,
+        std::max(2u, MAX_CONCURRENT_FRAMES));
   }
 }
 

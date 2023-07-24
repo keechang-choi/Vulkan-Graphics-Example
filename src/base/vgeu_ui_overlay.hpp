@@ -44,7 +44,8 @@ class UIOverlay {
             const vk::raii::PhysicalDevice& physicalDevice,
             const vk::raii::RenderPass& renderPass,
             const vk::raii::PipelineCache& pipelineCache,
-            const vk::raii::CommandPool& commandPool);
+            const vk::raii::CommandPool& commandPool,
+            const uint32_t minImageCount);
   ~UIOverlay();
   UIOverlay(const UIOverlay&) = delete;
   UIOverlay& operator=(const UIOverlay&) = delete;

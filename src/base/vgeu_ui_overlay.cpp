@@ -18,7 +18,8 @@ UIOverlay::UIOverlay(const vk::raii::Device& device, GLFWwindow* window,
                      const vk::raii::PhysicalDevice& physicalDevice,
                      const vk::raii::RenderPass& renderPass,
                      const vk::raii::PipelineCache& pipelineCache,
-                     const vk::raii::CommandPool& commandPool) {
+                     const vk::raii::CommandPool& commandPool,
+                     const uint32_t minImageCount) {
   // create descriptor pool for imGui
   const uint32_t oversizedPoolValue = 1000;
   vk::DescriptorPoolSize();
@@ -54,9 +55,14 @@ UIOverlay::UIOverlay(const vk::raii::Device& device, GLFWwindow* window,
   initInfo.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
   initInfo.PipelineCache = static_cast<VkPipelineCache>(*pipelineCache);
 
-  // TODO: check those image count related values not used.
-  initInfo.ImageCount = 2;
-  initInfo.MinImageCount = 2;
+  // TODO: check where those image count are used.
+  // check erros for
+  // Cannot call vkDestroyBuffer on VkBuffer  that is currently in use by a
+  // command buffer:
+  // if this image Count is less than the MAX_FRAMES_IN_FLIGHT.
+  // https://github.com/ocornut/imgui/issues/3690
+  initInfo.ImageCount = minImageCount;
+  initInfo.MinImageCount = minImageCount;
 
   ImGui_ImplVulkan_Init(&initInfo, static_cast<VkRenderPass>(*renderPass));
 

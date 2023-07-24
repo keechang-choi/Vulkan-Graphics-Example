@@ -18,6 +18,7 @@ class VgeExample : public VgeBase {
  public:
   VgeExample();
   ~VgeExample();
+  void initVulkan();
   void render();
   void prepare();
   void createUniformBuffers();

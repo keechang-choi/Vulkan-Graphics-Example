@@ -8,8 +8,6 @@
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/${input:pickProgram}.exe",
-            "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/build",
             "environment": [],
@@ -28,7 +26,11 @@
                     "ignoreFailures": true
                 }
             ],
-            "preLaunchTask": "build"
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/build/${input:pickProgram}.exe",
+            "args": [
+                "${input:cmdArgs}"
+            ],
         }
     ],
     "inputs": [
@@ -50,6 +52,11 @@
                 "C:/Program Files/mingw-w64/x86_64-12.2.0-release-posix-seh-rt_v10-rev1/mingw64/bin/gdb.exe"
             ],
             "default": "C:/Program Files/mingw-w64/x86_64-12.2.0-release-posix-seh-rt_v10-rev1/mingw64/bin/gdb.exe"
+        },
+        {
+            "id": "cmdArgs",
+            "description": "Command line argument",
+            "type": "promptString",
         }
     ]
 }
