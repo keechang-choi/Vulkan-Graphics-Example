@@ -6,10 +6,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <limits>
 
-#define ENABLE_VALIDATION true
-
 namespace vge {
-VgeExample::VgeExample() : VgeBase(ENABLE_VALIDATION) {
+VgeExample::VgeExample() : VgeBase() {
   title = "First Triangle Example";
   // camera setup
   camera.setViewTarget(glm::vec3{-2.f, -2.f, -5.f}, glm::vec3{0.f, 0.f, 0.f});

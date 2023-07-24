@@ -19,9 +19,10 @@
 namespace vge {
 class VgeBase {
  public:
-  const uint32_t MAX_CONCURRENT_FRAMES = 2;
+  // TODO: make it const, temporarily non-const to check FPS.
+  uint32_t MAX_CONCURRENT_FRAMES = 2;
 
-  VgeBase(bool enableValidation);
+  VgeBase();
   ~VgeBase();
 
   void setupCommandLineParser(CLI::App& app);
@@ -66,7 +67,11 @@ class VgeBase {
   bool paused = false;
   vgeu::VgeuCamera camera;
   struct Settings {
+#ifdef NDEBUG
     bool validation = false;
+#else
+    bool validation = true;
+#endif
     bool overlay = true;
   } settings;
 

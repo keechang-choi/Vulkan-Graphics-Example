@@ -21,11 +21,6 @@ https://github.com/KhronosGroup/Vulkan-Hpp
 
 namespace vgeu {
 // initVulkan - device
-#ifdef NDEBUG
-const bool enableValidationLayers = false;
-#else
-const bool enableValidationLayers = true;
-#endif
 
 const std::vector<const char*> validationLayers = {
     "VK_LAYER_KHRONOS_validation"};
@@ -39,10 +34,11 @@ struct QueueFamilyIndices {
 vk::raii::Instance createInstance(const vk::raii::Context& context,
                                   const std::string& appName,
                                   const std::string& engineName,
+                                  bool enableValidationLayers,
                                   uint32_t apiVersion = VK_API_VERSION_1_0);
 vk::DebugUtilsMessengerCreateInfoEXT createDebugCreateInfo();
 bool checkValidationLayerSupport(const vk::raii::Context& context);
-std::vector<const char*> getRequiredExtensions();
+std::vector<const char*> getRequiredExtensions(bool enableValidationLayers);
 vk::raii::DebugUtilsMessengerEXT setupDebugMessenger(
     vk::raii::Instance& instance);
 

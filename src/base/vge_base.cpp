@@ -17,11 +17,10 @@
 #include <tuple>
 
 namespace vge {
-VgeBase::VgeBase(bool enableValidation) {
+VgeBase::VgeBase() {
   std::cout << "FileSystem::CurrentPath: " << std::filesystem::current_path()
             << std::endl;
   std::cout << "Created: Vulkan Example Base" << std::endl;
-  settings.validation = enableValidation;
 }
 VgeBase::~VgeBase() {
   // need to destroy non-RAII object created
@@ -37,9 +36,10 @@ bool VgeBase::initVulkan() {
   // NOTE: all vk::raii class have no copy assignment operator.
   // -> omit std::move
   context = std::make_unique<vk::raii::Context>();
-  instance = vgeu::createInstance(*context, title, title, apiVersion);
+  instance = vgeu::createInstance(*context, title, title, settings.validation,
+                                  apiVersion);
 
-  if (vgeu::enableValidationLayers) {
+  if (settings.validation) {
     debugUtilsMessenger = vgeu::setupDebugMessenger(instance);
   }
 
@@ -371,6 +371,10 @@ std::string VgeBase::getShadersPath() {
 void VgeBase::setupCommandLineParser(CLI::App& app) {
   app.add_option("-v, --validation", settings.validation,
                  "Enable/Disable Validation Layer")
+      ->capture_default_str();
+  app.add_option("--width", width, "Window Width")->capture_default_str();
+  app.add_option("--height", height, "Window Height")->capture_default_str();
+  app.add_option("-f, --frame", MAX_CONCURRENT_FRAMES, "Max frames in-flight")
       ->capture_default_str();
 }
 
