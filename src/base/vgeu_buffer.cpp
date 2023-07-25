@@ -35,10 +35,53 @@ VgeuBuffer::VgeuBuffer(VmaAllocator allocator, vk::DeviceSize instanceSize,
   buffer = vk::Buffer(vkBuffer);
 }
 VgeuBuffer::~VgeuBuffer() {
-  vmaDestroyBuffer(allocator, VkBuffer(buffer), alloc);
+  vmaDestroyBuffer(allocator, static_cast<VkBuffer>(buffer), alloc);
 }
 vk::DescriptorBufferInfo VgeuBuffer::descriptorInfo(vk::DeviceSize size,
                                                     vk::DeviceSize offset) {
   return vk::DescriptorBufferInfo(buffer, offset, size);
 }
+
+VgeuImage::VgeuImage(const vk::raii::Device& device, VmaAllocator allocator,
+                     vk::Format format, const vk::Extent2D& extent,
+                     vk::ImageTiling tiling, vk::ImageUsageFlags usage,
+                     vk::ImageLayout initialLayout,
+                     vk::ImageAspectFlags aspectMask, VmaMemoryUsage memUsage,
+                     VmaAllocationCreateFlags allocCreateFlags)
+    : allocator(allocator) {
+  VkImageCreateInfo vkImageCI{};
+  vkImageCI.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+  vkImageCI.flags = 0;
+  vkImageCI.imageType = VK_IMAGE_TYPE_2D;
+  vkImageCI.format = static_cast<VkFormat>(format);
+  vkImageCI.extent.width = extent.width;
+  vkImageCI.extent.height = extent.height;
+  vkImageCI.extent.depth = 1;
+  vkImageCI.mipLevels = 1;
+  vkImageCI.arrayLayers = 1;
+  vkImageCI.samples = VK_SAMPLE_COUNT_1_BIT;
+  vkImageCI.tiling = static_cast<VkImageTiling>(tiling);
+  vkImageCI.usage = static_cast<VkImageUsageFlags>(usage);
+  vkImageCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  vkImageCI.initialLayout = static_cast<VkImageLayout>(initialLayout);
+
+  VmaAllocationCreateInfo allocCI{};
+  allocCI.usage = memUsage;
+  allocCI.flags = allocCreateFlags;
+
+  VkImage vkImage = VK_NULL_HANDLE;
+  VkResult result = vmaCreateImage(allocator, &vkImageCI, &allocCI, &vkImage,
+                                   &alloc, &allocInfo);
+  assert(result == VK_SUCCESS && "VMA ERROR: failed to create image.");
+  image = vk::Image(vkImage);
+
+  imageView = vk::raii::ImageView(
+      device, vk::ImageViewCreateInfo({}, image, vk::ImageViewType::e2D, format,
+                                      {}, {aspectMask, 0, 1, 0, 1}));
+}
+
+VgeuImage::~VgeuImage() {
+  vmaDestroyImage(allocator, static_cast<VkImage>(image), alloc);
+}
+
 }  // namespace vgeu

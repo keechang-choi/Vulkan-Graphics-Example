@@ -42,5 +42,31 @@ class VgeuBuffer {
   VmaAllocation alloc = VK_NULL_HANDLE;
   VmaAllocationInfo allocInfo{};
 };
+class VgeuImage {
+ public:
+  // device for image view
+  VgeuImage(const vk::raii::Device& device, VmaAllocator allocator,
+            vk::Format format, const vk::Extent2D& extent,
+            vk::ImageTiling tiling, vk::ImageUsageFlags usage,
+            vk::ImageLayout initialLayout, vk::ImageAspectFlags aspectMask,
+            VmaMemoryUsage memUsage, VmaAllocationCreateFlags allocCreateFlags);
+  ~VgeuImage();
+
+  VgeuImage(const VgeuImage&) = delete;
+  VgeuImage& operator=(const VgeuImage&) = delete;
+
+  VgeuImage(std::nullptr_t){};
+
+  vk::Image getImage() const { return image; }
+  const vk::raii::ImageView& getImageView() const { return imageView; }
+
+ private:
+  VmaAllocator allocator = VK_NULL_HANDLE;
+  vk::Format format;
+  vk::Image image = nullptr;
+  vk::raii::ImageView imageView = nullptr;
+  VmaAllocation alloc = VK_NULL_HANDLE;
+  VmaAllocationInfo allocInfo{};
+};
 
 }  // namespace vgeu

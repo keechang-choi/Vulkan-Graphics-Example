@@ -90,7 +90,7 @@ vk::SurfaceFormatKHR pickSurfaceFormat(
 vk::PresentModeKHR pickPresentMode(
     std::vector<vk::PresentModeKHR> const& presentModes);
 
-// TODO: use VMA image
+// TODO: use VMA image, and remove ImageData
 struct ImageData {
   ImageData(vk::raii::PhysicalDevice const& physicalDevice,
             vk::raii::Device const& device, vk::Format format_,
