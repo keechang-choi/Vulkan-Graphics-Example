@@ -8,6 +8,7 @@ https://github.com/SaschaWillems/Vulkan/blob/master/base/VulkanglTFModel.h
 */
 #pragma once
 
+#include "vgeu_buffer.hpp"
 #include "vgeu_utils.hpp"
 
 // libs
@@ -21,6 +22,9 @@ https://github.com/SaschaWillems/Vulkan/blob/master/base/VulkanglTFModel.h
 #include <Vulkan-Hpp/vulkan/vulkan.hpp>
 #include <Vulkan-Hpp/vulkan/vulkan_raii.hpp>
 
+// std
+#include <limits>
+
 namespace vgeu {
 namespace glTF {
 enum DescriptorBindingFlags {
@@ -28,6 +32,7 @@ enum DescriptorBindingFlags {
   ImageNormalMap = 0x00000002
 };
 
+// TODO: move those globals to model class
 extern vk::raii::DescriptorSetLayout descriptorSetLayoutImage;
 extern vk::raii::DescriptorSetLayout descriptorSetLayoutUbo;
 extern vk::MemoryPropertyFlags memoryPropertyFlags;
@@ -41,7 +46,7 @@ struct Texture {
   uint32_t mipLevels;
   uint32_t layerCount;
   vk::DescriptorImageInfo descriptor;
-  vk::raii::Sampler sampler;
+  vk::raii::Sampler sampler = nullptr;
   void updateDescriptor();
   void fromglTfImage(tinygltf::Image& gltfimage, std::string path,
                      const vk::raii::Device& device,
@@ -74,6 +79,14 @@ struct Material {
       uint32_t descriptorBindingFlags);
 };
 
+struct Dimensions {
+  glm::vec3 min = glm::vec3(std::numeric_limits<float>::max());
+  glm::vec3 max = glm::vec3(-std::numeric_limits<float>::max());
+  glm::vec3 size;
+  glm::vec3 center;
+  float radius;
+};
+
 struct Primitive {
   uint32_t firstIndex;
   uint32_t indexCount;
@@ -81,13 +94,7 @@ struct Primitive {
   uint32_t vertexCount;
   Material& material;
 
-  struct Dimensions {
-    glm::vec3 min = glm::vec3(FLT_MAX);
-    glm::vec3 max = glm::vec3(-FLT_MAX);
-    glm::vec3 size;
-    glm::vec3 center;
-    float radius;
-  } dimensions;
+  Dimensions dimensions;
 
   void setDimensions(glm::vec3 min, glm::vec3 max);
   Primitive(uint32_t firstIndex, uint32_t indexCount, Material& material)
@@ -97,17 +104,13 @@ struct Primitive {
 struct Mesh {
   const vk::raii::Device& device;
 
+  // TODO: unqiue_ptr
   std::vector<Primitive*> primitives;
   std::string name;
 
-  struct UniformBuffer {
-    VkBuffer buffer;
-    VkDeviceMemory memory;
-    VkDescriptorBufferInfo descriptor;
-    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
-    void* mapped;
-  } uniformBuffer;
-
+  std::unique_ptr<VgeuBuffer> uniformBuffer;
+  vk::DescriptorBufferInfo descriptor;
+  vk::raii::DescriptorSet descriptorSet = nullptr;
   struct UniformBlock {
     glm::mat4 matrix;
     glm::mat4 jointMatrix[64]{};
@@ -118,12 +121,22 @@ struct Mesh {
   ~Mesh();
 };
 
+// TODO: skin
+
+// https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#nodes-and-hierarchy
+// TODO: check nodes are used as DAG
+
+// node hierarchy is tree -> children can be unique_ptr
+// techically forest
 struct Node {
+  // TODO: raw ptr?
   Node* parent;
   uint32_t index;
+  // TODO: unqiue_ptr since tree structure.
   std::vector<Node*> children;
   glm::mat4 matrix;
   std::string name;
+  // TODO: unique_ptr
   Mesh* mesh;
   // Skin* skin;
   int32_t skinIndex = -1;
@@ -135,6 +148,8 @@ struct Node {
   void update();
   ~Node();
 };
+
+// TODO: animation
 
 enum class VertexComponent {
   Position,
@@ -154,21 +169,21 @@ struct Vertex {
   glm::vec4 joint0;
   glm::vec4 weight0;
   glm::vec4 tangent;
-  static VkVertexInputBindingDescription vertexInputBindingDescription;
-  static std::vector<VkVertexInputAttributeDescription>
+  static vk::VertexInputBindingDescription vertexInputBindingDescription;
+  static std::vector<vk::VertexInputAttributeDescription>
       vertexInputAttributeDescriptions;
-  static VkPipelineVertexInputStateCreateInfo
+  static vk::PipelineVertexInputStateCreateInfo
       pipelineVertexInputStateCreateInfo;
-  static VkVertexInputBindingDescription inputBindingDescription(
+  static vk::VertexInputBindingDescription inputBindingDescription(
       uint32_t binding);
-  static VkVertexInputAttributeDescription inputAttributeDescription(
+  static vk::VertexInputAttributeDescription inputAttributeDescription(
       uint32_t binding, uint32_t location, VertexComponent component);
-  static std::vector<VkVertexInputAttributeDescription>
+  static std::vector<vk::VertexInputAttributeDescription>
   inputAttributeDescriptions(uint32_t binding,
                              const std::vector<VertexComponent> components);
-  /** @brief Returns the default pipeline vertex input state create info
-   * structure for the requested vertex components */
-  static VkPipelineVertexInputStateCreateInfo* getPipelineVertexInputState(
+
+  // TODO: check pointer
+  static vk::PipelineVertexInputStateCreateInfo getPipelineVertexInputState(
       const std::vector<VertexComponent> components);
 };
 
@@ -185,6 +200,80 @@ enum RenderFlags {
   RenderOpaqueNodes = 0x00000002,
   RenderAlphaMaskedNodes = 0x00000004,
   RenderAlphaBlendedNodes = 0x00000008
+};
+class Model {
+ public:
+  Model(){};
+  ~Model();
+
+  void loadNode(Node* parent, const tinygltf::Node& node, uint32_t nodeIndex,
+                const tinygltf::Model& model,
+                std::vector<uint32_t>& indexBuffer,
+                std::vector<Vertex>& vertexBuffer, float globalscale);
+  // TODO: skins
+  void loadImages(tinygltf::Model& gltfModel, const vk::raii::Device& device,
+                  VkQueue transferQueue);
+  void loadMaterials(tinygltf::Model& gltfModel);
+  // TODO: animation
+
+  // NOTE: move ownership of root nodes to the "nodes"
+  // move owenership of children nodes to the parent's vector
+  void loadFromFile(
+      std::string filename, const vk::raii::Device& device,
+      const vk::raii::Queue& transferQueue,
+      uint32_t fileLoadingFlags = vgeu::glTF::FileLoadingFlags::None,
+      float scale = 1.0f);
+
+  void bindBuffers(const vk::raii::CommandBuffer& commandBuffer);
+
+  // NOTE: nullable pipelinelayout
+  void drawNode(Node* node, const vk::raii::CommandBuffer& commandBuffer,
+                uint32_t renderFlags = 0,
+                vk::PipelineLayout pipelineLayout = VK_NULL_HANDLE,
+                uint32_t bindImageSet = 1);
+  void draw(const vk::raii::CommandBuffer& commandBuffer,
+            uint32_t renderFlags = 0,
+            vk::PipelineLayout pipelineLayout = VK_NULL_HANDLE,
+            uint32_t bindImageSet = 1);
+  void getNodeDimensions(Node* node, glm::vec3& min, glm::vec3& max);
+  void getSceneDimensions();
+  // TODO: animation
+  Node* findNode(Node* parent, uint32_t index);
+  Node* nodeFromIndex(uint32_t index);
+  void prepareNodeDescriptor(
+      Node* node, const vk::raii::DescriptorSetLayout& descriptorSetLayout);
+
+  // NOTE: nullable
+  vk::Device device;
+  vk::raii::DescriptorPool descriptorPool = nullptr;
+  std::unique_ptr<VgeuBuffer> vertices;
+  std::unique_ptr<VgeuBuffer> indices;
+  // TODO: takes ownership since root nodes or each tree.
+  // unique_ptr
+  std::vector<Node*> nodes;
+  // all nodes without ownership
+  std::vector<Node*> linearNodes;
+
+  // TODO: skin
+  // std::vector<Skin*> skins;
+
+  std::vector<Texture> textures;
+  std::vector<Material> materials;
+
+  // TODO: animation
+  // std::vector<Animation> animations;
+
+  Dimensions dimensions;
+
+  bool metallicRoughnessWorkflow = true;
+  bool buffersBound = false;
+  std::string path;
+
+ private:
+  void createEmptyTexture(VkQueue transferQueue);
+
+  Texture* getTexture(uint32_t index);
+  Texture emptyTexture;
 };
 
 }  // namespace glTF
