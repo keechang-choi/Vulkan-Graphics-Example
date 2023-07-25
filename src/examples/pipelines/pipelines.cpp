@@ -1,4 +1,4 @@
-#include "triangle.hpp"
+#include "pipelines.hpp"
 
 // libs
 #define GLM_FORCE_RADIANS
@@ -11,7 +11,7 @@
 #include <limits>
 
 namespace vge {
-VgeExample::VgeExample() : VgeBase() { title = "First Triangle Example"; }
+VgeExample::VgeExample() : VgeBase() { title = "Pipelines Example"; }
 VgeExample::~VgeExample() {}
 
 void VgeExample::initVulkan() {
