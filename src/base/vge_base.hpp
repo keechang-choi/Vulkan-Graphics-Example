@@ -76,7 +76,8 @@ class VgeBase {
   } settings;
 
  protected:
-  VmaAllocator globalAllocator;
+  // should be initialized with nullptr
+  VmaAllocator globalAllocator = nullptr;
   std::unique_ptr<vk::raii::Context> context;
   vk::raii::Instance instance = nullptr;
   vk::raii::DebugUtilsMessengerEXT debugUtilsMessenger = nullptr;

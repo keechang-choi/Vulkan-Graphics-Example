@@ -368,6 +368,12 @@ std::string VgeBase::getShadersPath() {
 }
 
 void VgeBase::setupCommandLineParser(CLI::App& app) {
+  // dummy flag for empty arg "",
+  // (some vscode launch inputs may produce empty string arg)
+  bool emptyArg{false};
+  app.add_flag(
+      "-e,", emptyArg,
+      "empty arg \"\" to prevent vscode launching with empty string arg");
   app.add_option("-v, --validation", settings.validation,
                  "Enable/Disable Validation Layer")
       ->capture_default_str();
