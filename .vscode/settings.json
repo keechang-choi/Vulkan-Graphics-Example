@@ -90,7 +90,8 @@
         "shared_mutex": "cpp",
         "filesystem": "cpp",
         "cassert": "cpp",
-        "codecvt": "cpp"
+        "codecvt": "cpp",
+        "valarray": "cpp"
     },
     "C_Cpp.intelliSenseEngineFallback": "disabled",
     "cmake.configureOnOpen": false

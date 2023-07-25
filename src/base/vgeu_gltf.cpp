@@ -3,12 +3,51 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "vgeu_gltf.hpp"
 
+namespace {
+
+bool isKtx(const tinygltf::Image& gltfImage) {
+  bool isUriKtx{false};
+  if (gltfImage.uri.find_last_of(".") != std::string::npos) {
+    if (gltfImage.uri.substr(gltfImage.uri.find_last_of(".") + 1) == "ktx") {
+      isUriKtx = true;
+    }
+  }
+  return isUriKtx;
+}
+bool loadImageDataFunc(tinygltf::Image* image, const int imageIndex,
+                       std::string* error, std::string* warning, int req_width,
+                       int req_height, const unsigned char* bytes, int size,
+                       void* userData) {
+  if (isKtx(*image)) {
+    return true;
+  }
+  return tinygltf::LoadImageData(image, imageIndex, error, warning, req_width,
+                                 req_height, bytes, size, userData);
+}
+
+bool loadImageDataFuncEmpty(tinygltf::Image* image, const int imageIndex,
+                            std::string* error, std::string* warning,
+                            int req_width, int req_height,
+                            const unsigned char* bytes, int size,
+                            void* userData) {
+  return true;
+}
+}  // namespace
 namespace vgeu {
 namespace glTF {
-vk::raii::DescriptorSetLayout descriptorSetLayoutImage = nullptr;
-vk::raii::DescriptorSetLayout descriptorSetLayoutUbo = nullptr;
-vk::MemoryPropertyFlags memoryPropertyFlags = vk::MemoryPropertyFlags(0);
-uint32_t descriptorBindingFlags = DescriptorBindingFlags::ImageBaseColor;
+void Texture::updateDescriptorInfo() {
+  descriptorInfo.sampler = *sampler;
+  descriptorInfo.imageView = *imageData.imageView;
+  descriptorInfo.imageLayout = imageLayout;
+}
+
+void Texture::fromglTfImage(tinygltf::Image& gltfImage, std::string path,
+                            const vk::raii::Device& device,
+                            const vk::raii::Queue& copyQueue) {
+  if (!::isKtx(gltfImage)) {
+  } else {
+  }
+}
 
 }  // namespace glTF
 }  // namespace vgeu

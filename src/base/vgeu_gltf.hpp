@@ -27,27 +27,23 @@ https://github.com/SaschaWillems/Vulkan/blob/master/base/VulkanglTFModel.h
 
 namespace vgeu {
 namespace glTF {
-enum DescriptorBindingFlags {
-  ImageBaseColor = 0x00000001,
-  ImageNormalMap = 0x00000002
+enum class DescriptorBindingFlags {
+  kImageBaseColor = 0x00000001,
+  kImageNormalMap = 0x00000002
 };
-
-// TODO: move those globals to model class
-extern vk::raii::DescriptorSetLayout descriptorSetLayoutImage;
-extern vk::raii::DescriptorSetLayout descriptorSetLayoutUbo;
-extern vk::MemoryPropertyFlags memoryPropertyFlags;
-extern uint32_t descriptorBindingFlags;
 
 struct Node;
 
 struct Texture {
   vgeu::ImageData imageData = nullptr;
+  vk::ImageLayout imageLayout;
   uint32_t width, height;
   uint32_t mipLevels;
   uint32_t layerCount;
-  vk::DescriptorImageInfo descriptor;
+  vk::DescriptorImageInfo descriptorInfo;
   vk::raii::Sampler sampler = nullptr;
-  void updateDescriptor();
+  // TODO: use end of fromglTFImage()
+  void updateDescriptorInfo();
   void fromglTfImage(tinygltf::Image& gltfimage, std::string path,
                      const vk::raii::Device& device,
                      const vk::raii::Queue& copyQueue);
@@ -55,8 +51,8 @@ struct Texture {
 
 struct Material {
   const vk::raii::Device& device;
-  enum AlphaMode { ALPHAMODE_OPAQUE, ALPHAMODE_MASK, ALPHAMODE_BLEND };
-  AlphaMode alphaMode = ALPHAMODE_OPAQUE;
+  enum class AlphaMode { kALPHAMODE_OPAQUE, kALPHAMODE_MASK, kALPHAMODE_BLEND };
+  AlphaMode alphaMode = AlphaMode::kALPHAMODE_OPAQUE;
   float alphaCutoff = 1.0f;
   float metallicFactor = 1.0f;
   float roughnessFactor = 1.0f;
@@ -152,13 +148,13 @@ struct Node {
 // TODO: animation
 
 enum class VertexComponent {
-  Position,
-  Normal,
-  UV,
-  Color,
-  Tangent,
-  Joint0,
-  Weight0
+  kPosition,
+  kNormal,
+  kUV,
+  kColor,
+  kTangent,
+  kJoint0,
+  kWeight0
 };
 
 struct Vertex {
@@ -187,19 +183,19 @@ struct Vertex {
       const std::vector<VertexComponent> components);
 };
 
-enum FileLoadingFlags {
-  None = 0x00000000,
-  PreTransformVertices = 0x00000001,
-  PreMultiplyVertexColors = 0x00000002,
-  FlipY = 0x00000004,
-  DontLoadImages = 0x00000008
+enum class FileLoadingFlags {
+  kNone = 0x00000000,
+  kPreTransformVertices = 0x00000001,
+  kPreMultiplyVertexColors = 0x00000002,
+  kFlipY = 0x00000004,
+  kDontLoadImages = 0x00000008
 };
 
-enum RenderFlags {
-  BindImages = 0x00000001,
-  RenderOpaqueNodes = 0x00000002,
-  RenderAlphaMaskedNodes = 0x00000004,
-  RenderAlphaBlendedNodes = 0x00000008
+enum class RenderFlags {
+  kBindImages = 0x00000001,
+  kRenderOpaqueNodes = 0x00000002,
+  kRenderAlphaMaskedNodes = 0x00000004,
+  kRenderAlphaBlendedNodes = 0x00000008
 };
 class Model {
  public:
@@ -218,11 +214,10 @@ class Model {
 
   // NOTE: move ownership of root nodes to the "nodes"
   // move owenership of children nodes to the parent's vector
-  void loadFromFile(
-      std::string filename, const vk::raii::Device& device,
-      const vk::raii::Queue& transferQueue,
-      uint32_t fileLoadingFlags = vgeu::glTF::FileLoadingFlags::None,
-      float scale = 1.0f);
+  void loadFromFile(std::string filename, const vk::raii::Device& device,
+                    const vk::raii::Queue& transferQueue,
+                    FileLoadingFlags fileLoadingFlags = FileLoadingFlags::kNone,
+                    float scale = 1.0f);
 
   void bindBuffers(const vk::raii::CommandBuffer& commandBuffer);
 
@@ -243,8 +238,14 @@ class Model {
   void prepareNodeDescriptor(
       Node* node, const vk::raii::DescriptorSetLayout& descriptorSetLayout);
 
-  // NOTE: nullable
-  vk::Device device;
+  // TODO: moved from globals to model class member.
+  // check any problems
+  vk::raii::DescriptorSetLayout descriptorSetLayoutImage = nullptr;
+  vk::raii::DescriptorSetLayout descriptorSetLayoutUbo = nullptr;
+  vk::MemoryPropertyFlags memoryPropertyFlags();
+  DescriptorBindingFlags descriptorBindingFlags =
+      DescriptorBindingFlags::kImageBaseColor;
+
   vk::raii::DescriptorPool descriptorPool = nullptr;
   std::unique_ptr<VgeuBuffer> vertices;
   std::unique_ptr<VgeuBuffer> indices;
@@ -274,6 +275,9 @@ class Model {
 
   Texture* getTexture(uint32_t index);
   Texture emptyTexture;
+
+  // NOTE: nullable
+  vk::Device device;
 };
 
 }  // namespace glTF
