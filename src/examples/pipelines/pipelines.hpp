@@ -1,4 +1,5 @@
 #include "vge_base.hpp"
+#include "vgeu_gltf.hpp"
 
 // std
 #include <memory>
