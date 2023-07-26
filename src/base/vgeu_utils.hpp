@@ -132,6 +132,8 @@ std::vector<char> readFile(const std::string& filepath);
 vk::raii::ShaderModule createShaderModule(const vk::raii::Device& device,
                                           std::vector<char>& code);
 
+// create on command buffer from the pool
+// record, submit, then wait for the queue to be idle.
 template <typename Func>
 void oneTimeSubmit(const vk::raii::CommandBuffer& commandBuffer,
                    const vk::raii::Queue& queue, const Func& func) {

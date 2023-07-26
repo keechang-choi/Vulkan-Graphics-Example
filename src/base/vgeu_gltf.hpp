@@ -25,13 +25,48 @@ https://github.com/SaschaWillems/Vulkan/blob/master/base/VulkanglTFModel.h
 // std
 #include <limits>
 #include <memory>
-
+#include <type_traits>
 namespace vgeu {
+
+// Reference: Vulkan-Hpp enums
+template <typename BitType>
+class Flags {
+ public:
+  using MaskType = typename std::underlying_type<BitType>::type;
+
+  constexpr Flags() noexcept : mask_(0) {}
+  constexpr Flags(BitType bit) noexcept : mask_(static_cast<MaskType>(bit)) {}
+  constexpr Flags(Flags<BitType> const& rhs) noexcept = default;
+  constexpr explicit Flags(MaskType flags) noexcept : mask_(flags) {}
+  constexpr bool operator==(Flags<BitType> const& rhs) const noexcept {
+    return mask_ == rhs.mask_;
+  }
+  constexpr bool operator!=(Flags<BitType> const& rhs) const noexcept {
+    return mask_ != rhs.mask_;
+  }
+  constexpr Flags<BitType> operator&(Flags<BitType> const& rhs) const noexcept {
+    return Flags<BitType>(mask_ & rhs.mask_);
+  }
+  constexpr Flags<BitType> operator|(Flags<BitType> const& rhs) const noexcept {
+    return Flags<BitType>(mask_ | rhs.mask_);
+  }
+  constexpr Flags<BitType> operator^(Flags<BitType> const& rhs) const noexcept {
+    return Flags<BitType>(mask_ ^ rhs.mask_);
+  }
+  explicit constexpr operator bool() const noexcept { return !!mask_; }
+  explicit constexpr operator MaskType() const noexcept { return mask_; }
+
+ private:
+  MaskType mask_;
+};
+
 namespace glTF {
-enum class DescriptorBindingFlags {
+enum class DescriptorBindingFlagBits : uint32_t {
   kImageBaseColor = 0x00000001,
   kImageNormalMap = 0x00000002
 };
+
+using DescriptorBindingFlags = Flags<DescriptorBindingFlagBits>;
 
 struct Node;
 
@@ -48,7 +83,8 @@ struct Texture {
   void fromglTfImage(tinygltf::Image& gltfimage, std::string path,
                      const vk::raii::Device& device,
                      const vk::raii::PhysicalDevice& physicalDevice,
-                     VmaAllocator allocator, const vk::raii::Queue& transferQueue);
+                     VmaAllocator allocator,
+                     const vk::raii::Queue& transferQueue);
 };
 
 struct Material {
@@ -64,7 +100,7 @@ struct Material {
   vgeu::glTF::Texture* normalTexture = nullptr;
   vgeu::glTF::Texture* occlusionTexture = nullptr;
   vgeu::glTF::Texture* emissiveTexture = nullptr;
-
+  // TODO: check it used.
   vgeu::glTF::Texture* specularGlossinessTexture;
   vgeu::glTF::Texture* diffuseTexture;
 
@@ -74,7 +110,7 @@ struct Material {
   void createDescriptorSet(
       const vk::raii::DescriptorPool& descriptorPool,
       const vk::raii::DescriptorSetLayout& descriptorSetLayout,
-      uint32_t descriptorBindingFlags);
+      DescriptorBindingFlags descriptorBindingFlags);
 };
 
 struct Dimensions {
@@ -183,33 +219,41 @@ struct Vertex {
       const std::vector<VertexComponent> components);
 };
 
-enum class FileLoadingFlags {
+enum class FileLoadingFlagBits : uint32_t {
   kNone = 0x00000000,
   kPreTransformVertices = 0x00000001,
   kPreMultiplyVertexColors = 0x00000002,
   kFlipY = 0x00000004,
   kDontLoadImages = 0x00000008
 };
+using FileLoadingFlags = Flags<FileLoadingFlagBits>;
 
-enum class RenderFlags {
+enum class RenderFlagBits {
   kBindImages = 0x00000001,
   kRenderOpaqueNodes = 0x00000002,
   kRenderAlphaMaskedNodes = 0x00000004,
   kRenderAlphaBlendedNodes = 0x00000008
 };
+using RenderFlags = Flags<RenderFlagBits>;
+
 class Model {
  public:
   // setup common resources
   Model(const vk::raii::Device& device,
         const vk::raii::PhysicalDevice& physicalDevice, VmaAllocator allocator,
-        const vk::raii::Queue& transferQueue);
+        const vk::raii::Queue& transferQueue,
+        const vk::raii::CommandPool& commandPool);
   ~Model();
+
+  Model(const Model&) = delete;
+  Model& operator=(const Model&) = delete;
 
   // NOTE: move ownership of root nodes to the "nodes"
   // move owenership of children nodes to the parent's vector
-  void loadFromFile(std::string filename,
-                    FileLoadingFlags fileLoadingFlags = FileLoadingFlags::kNone,
-                    float scale = 1.0f);
+  void loadFromFile(
+      std::string filename,
+      FileLoadingFlags fileLoadingFlags = FileLoadingFlagBits::kNone,
+      float scale = 1.0f);
 
   void bindBuffers(const vk::raii::CommandBuffer& commandBuffer);
 
@@ -229,16 +273,20 @@ class Model {
   // check any problems
   vk::raii::DescriptorSetLayout descriptorSetLayoutImage = nullptr;
   vk::raii::DescriptorSetLayout descriptorSetLayoutUbo = nullptr;
-  vk::MemoryPropertyFlags memoryPropertyFlags();
+  // TODO: check instead usageFlags, for raytracing related
+  vk::MemoryPropertyFlags memoryPropertyFlags{};
+  // NOTE: <unresolved overloaded function type> for () constructor
+  vk::BufferUsageFlags additionalBufferUsageFlags{};
+  // NOTE: used for normal map
   DescriptorBindingFlags descriptorBindingFlags =
-      DescriptorBindingFlags::kImageBaseColor;
+      DescriptorBindingFlagBits::kImageBaseColor;
 
   vk::raii::DescriptorPool descriptorPool = nullptr;
   std::unique_ptr<VgeuBuffer> vertexBuffer;
   std::unique_ptr<VgeuBuffer> indexBuffer;
 
  private:
-  void createEmptyTexture(VkQueue transferQueue);
+  void createEmptyTexture();
   void loadNode(Node* parent, const tinygltf::Node& node, uint32_t nodeIndex,
                 const tinygltf::Model& model, std::vector<uint32_t>& indices,
                 std::vector<Vertex>& vertices, float globalscale);
@@ -247,18 +295,20 @@ class Model {
   void loadMaterials(tinygltf::Model& gltfModel);
   // TODO: animation
   Texture* getTexture(uint32_t index);
-  Node* findNode(Node* parent, uint32_t index);
+  Node* findNode(const Node* parent, uint32_t index);
   Node* nodeFromIndex(uint32_t index);
   void prepareNodeDescriptor(
-      Node* node, const vk::raii::DescriptorSetLayout& descriptorSetLayout);
+      const Node* node,
+      const vk::raii::DescriptorSetLayout& descriptorSetLayout);
 
-  void getNodeDimensions(Node* node, glm::vec3& min, glm::vec3& max);
+  void getNodeDimensions(const Node* node, glm::vec3& min, glm::vec3& max);
   void setSceneDimensions();
 
   const vk::raii::Device& device;
   const vk::raii::PhysicalDevice& physicalDevice;
   VmaAllocator allocator;
   const vk::raii::Queue& transferQueue;
+  const vk::raii::CommandPool& commandPool;
 
   // TODO: takes ownership since root nodes or each tree.
   // unique_ptr
