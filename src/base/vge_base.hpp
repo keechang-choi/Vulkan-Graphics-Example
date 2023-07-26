@@ -14,6 +14,7 @@
 
 // std
 #include <chrono>
+#include <memory>
 #include <stdexcept>
 
 namespace vge {
@@ -76,8 +77,7 @@ class VgeBase {
   } settings;
 
  protected:
-  // should be initialized with nullptr
-  VmaAllocator globalAllocator = nullptr;
+  std::unique_ptr<vgeu::VgeuAllocator> globalAllocator;
   std::unique_ptr<vk::raii::Context> context;
   vk::raii::Instance instance = nullptr;
   vk::raii::DebugUtilsMessengerEXT debugUtilsMessenger = nullptr;
@@ -107,7 +107,7 @@ class VgeBase {
   vk::raii::CommandPool cmdPool = nullptr;
   // vector
   vk::raii::CommandBuffers drawCmdBuffers = nullptr;
-  vgeu::ImageData depthStencil = nullptr;
+  std::unique_ptr<vgeu::VgeuImage> depthStencil;
   vk::raii::RenderPass renderPass = nullptr;
   vk::raii::PipelineCache pipelineCache = nullptr;
   std::vector<vk::raii::Framebuffer> frameBuffers;
@@ -125,10 +125,11 @@ class VgeBase {
   uint32_t currentImageIndex;
 
  private:
-  uint32_t destWidth;
-  uint32_t destHeight;
   void windowResize();
   void updateUIOverlay();
+  // TODO: check it necessary
+  uint32_t destWidth;
+  uint32_t destHeight;
 };
 }  // namespace vge
 

@@ -8,7 +8,37 @@
 #include <Vulkan-Hpp/vulkan/vulkan.hpp>
 #include <Vulkan-Hpp/vulkan/vulkan_raii.hpp>
 #include <cassert>
+
+// std
+#include <iostream>
+
 namespace vgeu {
+
+VgeuAllocator::VgeuAllocator(VkDevice device, VkPhysicalDevice physicalDevice,
+                             VkInstance instance, uint32_t apiVersion) {
+  // create VMA global allocator
+  VmaAllocatorCreateInfo allocatorCI{};
+  allocatorCI.physicalDevice = physicalDevice;
+  allocatorCI.device = device;
+  allocatorCI.instance = instance;
+  allocatorCI.vulkanApiVersion = apiVersion;
+  // TOOD: check vma flags
+  // for higher version Vulkan API
+  VmaVulkanFunctions vulkanFunctions = {};
+  vulkanFunctions.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
+  vulkanFunctions.vkGetDeviceProcAddr = vkGetDeviceProcAddr;
+  allocatorCI.pVulkanFunctions = &vulkanFunctions;
+
+  VkResult result = vmaCreateAllocator(&allocatorCI, &allocator);
+  assert(result == VK_SUCCESS && "VMA allocator create Error");
+}
+
+VgeuAllocator::~VgeuAllocator() {
+  if (allocator != VK_NULL_HANDLE) {
+    vmaDestroyAllocator(allocator);
+    allocator = VK_NULL_HANDLE;
+  }
+}
 
 VgeuBuffer::VgeuBuffer(VmaAllocator allocator, vk::DeviceSize instanceSize,
                        uint32_t instanceCount, vk::BufferUsageFlags usageFlags,
@@ -76,11 +106,13 @@ VgeuImage::VgeuImage(const vk::raii::Device& device, VmaAllocator allocator,
   image = vk::Image(vkImage);
 
   imageView = vk::raii::ImageView(
-      device, vk::ImageViewCreateInfo({}, image, vk::ImageViewType::e2D, format,
-                                      {}, {aspectMask, 0, 1, 0, 1}));
+      device, vk::ImageViewCreateInfo(vk::ImageViewCreateFlags(), image,
+                                      vk::ImageViewType::e2D, format, {},
+                                      {aspectMask, 0, 1, 0, 1}));
 }
 
 VgeuImage::~VgeuImage() {
+  // std::cout << "Call: VgeuImage Destructor" << std::endl;
   vmaDestroyImage(allocator, static_cast<VkImage>(image), alloc);
 }
 

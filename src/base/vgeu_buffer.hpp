@@ -13,6 +13,26 @@
 
 namespace vgeu {
 
+// custom VMA allcator for RAII paradigm(for destruction order)
+class VgeuAllocator {
+ public:
+  VgeuAllocator(VkDevice device, VkPhysicalDevice physicalDevice,
+                VkInstance instance, uint32_t apiVersion);
+  ~VgeuAllocator();
+
+  VgeuAllocator(const VgeuAllocator&) = delete;
+  VgeuAllocator& operator=(const VgeuAllocator&) = delete;
+
+  VmaAllocator getAllocator() const { return allocator; };
+  VmaAllocator operator*() const { return allocator; };
+
+ private:
+  // NOTE: allocator should be free after all members destruction,
+  // not first(in Base destructor)
+  // Also, should be initialized with nullptr or check not null when destruct.
+  VmaAllocator allocator = nullptr;
+};
+
 class VgeuBuffer {
  public:
   VgeuBuffer(VmaAllocator allocator, vk::DeviceSize instanceSize,
@@ -23,7 +43,6 @@ class VgeuBuffer {
 
   VgeuBuffer(const VgeuBuffer&) = delete;
   VgeuBuffer& operator=(const VgeuBuffer&) = delete;
-  VgeuBuffer(std::nullptr_t){};
 
   vk::DescriptorBufferInfo descriptorInfo(vk::DeviceSize size = VK_WHOLE_SIZE,
                                           vk::DeviceSize offset = 0);
@@ -54,8 +73,6 @@ class VgeuImage {
 
   VgeuImage(const VgeuImage&) = delete;
   VgeuImage& operator=(const VgeuImage&) = delete;
-
-  VgeuImage(std::nullptr_t){};
 
   vk::Image getImage() const { return image; }
   const vk::raii::ImageView& getImageView() const { return imageView; }

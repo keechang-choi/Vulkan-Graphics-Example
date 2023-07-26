@@ -57,9 +57,9 @@
         },
         {
             "id": "cmdArgs",
-            "description": "Command line argument, (-e to prevent \"\")",
+            "description": "Command line argument, (--vs to prevent \"\")",
             "type": "promptString",
-            "default": "-e",
+            "default": "--vs",
         }
     ]
 }

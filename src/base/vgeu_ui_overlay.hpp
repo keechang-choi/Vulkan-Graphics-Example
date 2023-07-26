@@ -7,6 +7,7 @@ UI Overlay using ImGui
 
 #pragma once
 
+#include "vgeu_buffer.hpp"
 #include "vgeu_utils.hpp"
 
 // libs
@@ -82,7 +83,7 @@ class UIOverlay {
  private:
   vk::raii::DescriptorPool descriptorPool = nullptr;
 
-  vgeu::ImageData fontImageData = nullptr;
+  std::unique_ptr<VgeuImage> fontImageData;
   vk::raii::Sampler sampler = nullptr;
 
   struct PushConstBlock {
