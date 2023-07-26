@@ -109,6 +109,8 @@ Model::Model(const vk::raii::Device& device,
       transferQueue(transferQueue),
       commandPool(commandPool) {}
 
+Model::~Model() {}
+
 void Model::loadFromFile(std::string filename,
                          FileLoadingFlags fileLoadingFlags, float scale) {
   tinygltf::Model gltfModel;
@@ -348,6 +350,16 @@ void Model::loadFromFile(std::string filename,
   }
 }
 
+void Model::bindBuffers(const vk::raii::CommandBuffer& commandBuffer) {}
+
+void Model::drawNode(Node* node, const vk::raii::CommandBuffer& commandBuffer,
+                     uint32_t renderFlags, vk::PipelineLayout pipelineLayout,
+                     uint32_t bindImageSet) {}
+
+void Model::draw(const vk::raii::CommandBuffer& commandBuffer,
+                 uint32_t renderFlags, vk::PipelineLayout pipelineLayout,
+                 uint32_t bindImageSet) {}
+
 void Model::loadImages(tinygltf::Model& gltfModel) {
   for (tinygltf::Image& gltfImage : gltfModel.images) {
     textures.push_back(std::make_unique<Texture>(
@@ -355,6 +367,69 @@ void Model::loadImages(tinygltf::Model& gltfModel) {
   }
   // Create an empty texture to be used for empty material images
   emptyTexture = std::make_unique<Texture>(device, allocator, transferQueue);
+}
+
+void Model::loadMaterials(tinygltf::Model& gltfModel) {}
+
+void Model::loadNode(Node* parent, const tinygltf::Node& node,
+                     uint32_t nodeIndex, const tinygltf::Model& model,
+                     std::vector<uint32_t>& indices,
+                     std::vector<Vertex>& vertices, float globalscale) {}
+
+Texture* Model::getTexture(uint32_t index) { return nullptr; }
+
+Node* Model::findNode(const Node* parent, uint32_t index) { return nullptr; }
+
+Node* Model::nodeFromIndex(uint32_t index) { return nullptr; }
+
+void Model::prepareNodeDescriptor(
+    const Node* node,
+    const vk::raii::DescriptorSetLayout& descriptorSetLayout) {}
+
+void Model::getNodeDimensions(const Node* node, glm::vec3& min,
+                              glm::vec3& max) {}
+
+void Model::setSceneDimensions() {}
+
+void Material::createDescriptorSet(
+    const vk::raii::DescriptorPool& descriptorPool,
+    const vk::raii::DescriptorSetLayout& descriptorSetLayout,
+    DescriptorBindingFlags descriptorBindingFlags) {}
+
+void Primitive::setDimensions(glm::vec3 min, glm::vec3 max) {}
+
+Mesh::Mesh(VmaAllocator allocator, glm::mat4 matrix) {}
+
+Mesh::~Mesh() {}
+
+glm::mat4 Node::localMatrix() { return glm::mat4(); }
+
+glm::mat4 Node::getMatrix() { return glm::mat4(); }
+
+void Node::update() {}
+
+Node::Node() {}
+Node::~Node() {}
+
+vk::VertexInputBindingDescription Vertex::inputBindingDescription(
+    uint32_t binding) {
+  return vk::VertexInputBindingDescription();
+}
+
+vk::VertexInputAttributeDescription Vertex::inputAttributeDescription(
+    uint32_t binding, uint32_t location, VertexComponent component) {
+  return vk::VertexInputAttributeDescription();
+}
+
+std::vector<vk::VertexInputAttributeDescription>
+Vertex::inputAttributeDescriptions(
+    uint32_t binding, const std::vector<VertexComponent> components) {
+  return std::vector<vk::VertexInputAttributeDescription>();
+}
+
+vk::PipelineVertexInputStateCreateInfo Vertex::getPipelineVertexInputState(
+    const std::vector<VertexComponent> components) {
+  return vk::PipelineVertexInputStateCreateInfo();
 }
 
 }  // namespace glTF

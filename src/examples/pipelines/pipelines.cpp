@@ -9,6 +9,7 @@
 #include <array>
 #include <cstring>
 #include <limits>
+#include <memory>
 
 namespace vge {
 VgeExample::VgeExample() : VgeBase() { title = "Pipelines Example"; }
@@ -33,6 +34,18 @@ void VgeExample::prepare() {
   createDescriptorSets();
   createPipelines();
   prepared = true;
+}
+void VgeExample::loadAssets() {
+  vgeu::FileLoadingFlags glTFLoadingFlags =
+      vgeu::FileLoadingFlagBits::kPreTransformVertices |
+      vgeu::FileLoadingFlagBits::kPreMultiplyVertexColors |
+      vgeu::FileLoadingFlagBits::kFlipY;
+
+  scene = std::make_unique<vgeu::glTF::Model>(device, physicalDevice,
+                                              globalAllocator->getAllocator(),
+                                              queue, commandPool);
+  scene->loadFromFile(getAssetsPath() + "/models/apple/food_apple_01_4k.gltf",
+                      glTFLoadingFlags);
 }
 
 void VgeExample::createUniformBuffers() {

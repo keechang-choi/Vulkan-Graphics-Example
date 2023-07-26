@@ -49,6 +49,7 @@ class VgeBase {
   virtual void render() = 0;
   virtual void buildCommandBuffers();
   std::string getShadersPath();
+  std::string getAssetsPath();
   void prepareFrame();
   void submitFrame();
   void drawUI(const vk::raii::CommandBuffer& commandBuffer);

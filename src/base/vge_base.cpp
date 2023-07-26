@@ -354,6 +354,10 @@ std::string VgeBase::getShadersPath() {
   std::filesystem::path p = "../shaders";
   return std::filesystem::absolute(p).string();
 }
+std::string VgeBase::getAssetsPath() {
+  std::filesystem::path p = "../assets";
+  return std::filesystem::absolute(p).string();
+}
 
 void VgeBase::setupCommandLineParser(CLI::App& app) {
   // dummy flag for empty arg "",

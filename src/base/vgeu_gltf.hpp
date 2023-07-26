@@ -9,6 +9,7 @@ https://github.com/SaschaWillems/Vulkan/blob/master/base/VulkanglTFModel.h
 #pragma once
 
 #include "vgeu_buffer.hpp"
+#include "vgeu_flags.hpp"
 #include "vgeu_utils.hpp"
 
 // libs
@@ -25,48 +26,43 @@ https://github.com/SaschaWillems/Vulkan/blob/master/base/VulkanglTFModel.h
 // std
 #include <limits>
 #include <memory>
-#include <type_traits>
 namespace vgeu {
 
-// Reference: Vulkan-Hpp enums
-template <typename BitType>
-class Flags {
- public:
-  using MaskType = typename std::underlying_type<BitType>::type;
-
-  constexpr Flags() noexcept : mask_(0) {}
-  constexpr Flags(BitType bit) noexcept : mask_(static_cast<MaskType>(bit)) {}
-  constexpr Flags(Flags<BitType> const& rhs) noexcept = default;
-  constexpr explicit Flags(MaskType flags) noexcept : mask_(flags) {}
-  constexpr bool operator==(Flags<BitType> const& rhs) const noexcept {
-    return mask_ == rhs.mask_;
-  }
-  constexpr bool operator!=(Flags<BitType> const& rhs) const noexcept {
-    return mask_ != rhs.mask_;
-  }
-  constexpr Flags<BitType> operator&(Flags<BitType> const& rhs) const noexcept {
-    return Flags<BitType>(mask_ & rhs.mask_);
-  }
-  constexpr Flags<BitType> operator|(Flags<BitType> const& rhs) const noexcept {
-    return Flags<BitType>(mask_ | rhs.mask_);
-  }
-  constexpr Flags<BitType> operator^(Flags<BitType> const& rhs) const noexcept {
-    return Flags<BitType>(mask_ ^ rhs.mask_);
-  }
-  explicit constexpr operator bool() const noexcept { return !!mask_; }
-  explicit constexpr operator MaskType() const noexcept { return mask_; }
-
- private:
-  MaskType mask_;
-};
-
-namespace glTF {
 enum class DescriptorBindingFlagBits : uint32_t {
   kImageBaseColor = 0x00000001,
   kImageNormalMap = 0x00000002
 };
-
 using DescriptorBindingFlags = Flags<DescriptorBindingFlagBits>;
+template <>
+struct FlagTraits<DescriptorBindingFlagBits> {
+  static constexpr bool isBitmask = true;
+};
+
+enum class FileLoadingFlagBits : uint32_t {
+  kNone = 0x00000000,
+  kPreTransformVertices = 0x00000001,
+  kPreMultiplyVertexColors = 0x00000002,
+  kFlipY = 0x00000004,
+  kDontLoadImages = 0x00000008
+};
+using FileLoadingFlags = Flags<FileLoadingFlagBits>;
+template <>
+struct FlagTraits<FileLoadingFlagBits> {
+  static constexpr bool isBitmask = true;
+};
+
+enum class RenderFlagBits : uint32_t {
+  kBindImages = 0x00000001,
+  kRenderOpaqueNodes = 0x00000002,
+  kRenderAlphaMaskedNodes = 0x00000004,
+  kRenderAlphaBlendedNodes = 0x00000008
+};
+using RenderFlags = Flags<RenderFlagBits>;
+template <>
+struct FlagTraits<RenderFlagBits> {
+  static constexpr bool isBitmask = true;
+};
+namespace glTF {
 
 struct Node;
 
@@ -198,6 +194,7 @@ struct Node {
   glm::mat4 localMatrix();
   glm::mat4 getMatrix();
   void update();
+  Node();
   ~Node();
 };
 
@@ -226,10 +223,13 @@ struct Vertex {
       vertexInputAttributeDescriptions;
   static vk::PipelineVertexInputStateCreateInfo
       pipelineVertexInputStateCreateInfo;
+
   static vk::VertexInputBindingDescription inputBindingDescription(
       uint32_t binding);
+
   static vk::VertexInputAttributeDescription inputAttributeDescription(
       uint32_t binding, uint32_t location, VertexComponent component);
+
   static std::vector<vk::VertexInputAttributeDescription>
   inputAttributeDescriptions(uint32_t binding,
                              const std::vector<VertexComponent> components);
@@ -238,23 +238,6 @@ struct Vertex {
   static vk::PipelineVertexInputStateCreateInfo getPipelineVertexInputState(
       const std::vector<VertexComponent> components);
 };
-
-enum class FileLoadingFlagBits : uint32_t {
-  kNone = 0x00000000,
-  kPreTransformVertices = 0x00000001,
-  kPreMultiplyVertexColors = 0x00000002,
-  kFlipY = 0x00000004,
-  kDontLoadImages = 0x00000008
-};
-using FileLoadingFlags = Flags<FileLoadingFlagBits>;
-
-enum class RenderFlagBits {
-  kBindImages = 0x00000001,
-  kRenderOpaqueNodes = 0x00000002,
-  kRenderAlphaMaskedNodes = 0x00000004,
-  kRenderAlphaBlendedNodes = 0x00000008
-};
-using RenderFlags = Flags<RenderFlagBits>;
 
 class Model {
  public:
@@ -282,10 +265,12 @@ class Model {
                 uint32_t renderFlags = 0,
                 vk::PipelineLayout pipelineLayout = VK_NULL_HANDLE,
                 uint32_t bindImageSet = 1);
+
   void draw(const vk::raii::CommandBuffer& commandBuffer,
             uint32_t renderFlags = 0,
             vk::PipelineLayout pipelineLayout = VK_NULL_HANDLE,
             uint32_t bindImageSet = 1);
+
   Dimensions getDimensions() const { return dimensions; };
   // TODO: update animation
 
@@ -307,7 +292,9 @@ class Model {
 
  private:
   void loadImages(tinygltf::Model& gltfModel);
+
   void loadMaterials(tinygltf::Model& gltfModel);
+
   void loadNode(Node* parent, const tinygltf::Node& node, uint32_t nodeIndex,
                 const tinygltf::Model& model, std::vector<uint32_t>& indices,
                 std::vector<Vertex>& vertices, float globalscale);
@@ -340,6 +327,7 @@ class Model {
   // std::vector<Skin*> skins;
 
   std::vector<std::unique_ptr<Texture>> textures;
+  // TODO: unique_ptr?
   std::vector<Material> materials;
 
   // TODO: animation

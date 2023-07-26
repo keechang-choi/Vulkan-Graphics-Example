@@ -1,4 +1,6 @@
 #include "vge_base.hpp"
+
+//
 #include "vgeu_gltf.hpp"
 
 // std
@@ -22,6 +24,7 @@ class VgeExample : public VgeBase {
   void initVulkan();
   void render();
   void prepare();
+  void loadAssets();
   void createUniformBuffers();
   void createVertexBuffer();
   void createIndexBuffer();
@@ -32,6 +35,8 @@ class VgeExample : public VgeBase {
   void draw();
   void buildCommandBuffers();
   void viewChanged();
+
+  std::unique_ptr<vgeu::glTF::Model> scene;
 
   // NOTE: movable element;
   std::vector<std::unique_ptr<vgeu::VgeuBuffer>> uniformBuffers;
