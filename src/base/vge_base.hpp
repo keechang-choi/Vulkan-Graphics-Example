@@ -77,7 +77,6 @@ class VgeBase {
   } settings;
 
  protected:
-  std::unique_ptr<vgeu::VgeuAllocator> globalAllocator;
   std::unique_ptr<vk::raii::Context> context;
   vk::raii::Instance instance = nullptr;
   vk::raii::DebugUtilsMessengerEXT debugUtilsMessenger = nullptr;
@@ -85,6 +84,8 @@ class VgeBase {
   vk::PhysicalDeviceFeatures enabledFeatures{};
   std::vector<const char*> enabledDeviceExtensions;
   vk::raii::Device device = nullptr;
+  // NOTE: not sure, but vma alloctor should be destructed before the device's.
+  std::unique_ptr<vgeu::VgeuAllocator> globalAllocator;
   vgeu::QueueFamilyIndices queueFamilyIndices;
   void* deviceCreatepNextChain = nullptr;
   vk::raii::Queue queue = nullptr;
