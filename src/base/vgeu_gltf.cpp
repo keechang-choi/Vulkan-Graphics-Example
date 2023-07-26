@@ -86,9 +86,11 @@ void Texture::createEmptyTexture(const vk::raii::Device& device,
         device, allocator, vk::Format::eR8G8B8A8Unorm,
         vk::Extent2D(width, height), vk::ImageTiling::eOptimal,
         vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst,
-        vk::ImageLayout::eUndefined,
-        VmaAllocationCreateFlagBits::
-            VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
+        vk::ImageLayout::eUndefined, VmaMemoryUsage::VMA_MEMORY_USAGE_AUTO,
+        VmaAllocationCreateFlagBits::VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
+        vk::ImageAspectFlagBits::eColor, 1);
+
+    // TODO:  layout transition
   }
 }
 
@@ -347,14 +349,12 @@ void Model::loadFromFile(std::string filename,
 }
 
 void Model::loadImages(tinygltf::Model& gltfModel) {
-  for (tinygltf::Image& image : gltfModel.images) {
-    Texture texture;
-    texture.fromglTfImage(image, path, device, physicalDevice, allocator,
-                          transferQueue);
-    textures.push_back(texture);
+  for (tinygltf::Image& gltfImage : gltfModel.images) {
+    textures.push_back(std::make_unique<Texture>(
+        gltfImage, path, device, physicalDevice, allocator, transferQueue));
   }
   // Create an empty texture to be used for empty material images
-  createEmptyTexture(transferQueue);
+  emptyTexture = std::make_unique<Texture>(device, allocator, transferQueue);
 }
 
 }  // namespace glTF

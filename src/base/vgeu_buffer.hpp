@@ -63,13 +63,14 @@ class VgeuBuffer {
 };
 class VgeuImage {
  public:
-  // device for image view
+  // TODO: look into reasons for separate image view
+  // device, aspectMask, mipLevels for image view
   VgeuImage(const vk::raii::Device& device, VmaAllocator allocator,
-                     vk::Format format, const vk::Extent2D& extent,
-                     vk::ImageTiling tiling, vk::ImageUsageFlags usage,
-                     vk::ImageLayout initialLayout, VmaMemoryUsage memUsage,
-                     VmaAllocationCreateFlags allocCreateFlags,
-                     vk::ImageAspectFlags aspectMask, uint32_t mipLevels));
+            vk::Format format, const vk::Extent2D& extent,
+            vk::ImageTiling tiling, vk::ImageUsageFlags usage,
+            vk::ImageLayout initialLayout, VmaMemoryUsage memUsage,
+            VmaAllocationCreateFlags allocCreateFlags,
+            vk::ImageAspectFlags aspectMask, uint32_t mipLevels);
   ~VgeuImage();
 
   VgeuImage(const VgeuImage&) = delete;

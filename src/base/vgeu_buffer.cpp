@@ -87,7 +87,7 @@ VgeuImage::VgeuImage(const vk::raii::Device& device, VmaAllocator allocator,
   vkImageCI.extent.width = extent.width;
   vkImageCI.extent.height = extent.height;
   vkImageCI.extent.depth = 1;
-  vkImageCI.mipLevels = 1;
+  vkImageCI.mipLevels = mipLevels;
   vkImageCI.arrayLayers = 1;
   vkImageCI.samples = VK_SAMPLE_COUNT_1_BIT;
   vkImageCI.tiling = static_cast<VkImageTiling>(tiling);
@@ -112,7 +112,7 @@ VgeuImage::VgeuImage(const vk::raii::Device& device, VmaAllocator allocator,
       device,
       vk::ImageViewCreateInfo(
           vk::ImageViewCreateFlags(), image, vk::ImageViewType::e2D, format, {},
-          vk::ImageSubresourceRange{aspectMask, 0, 1, 0, 1}));
+          vk::ImageSubresourceRange{aspectMask, 0, 1, 0, mipLevels}));
 }
 
 VgeuImage::~VgeuImage() {

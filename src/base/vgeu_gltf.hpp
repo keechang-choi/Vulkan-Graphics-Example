@@ -307,7 +307,6 @@ class Model {
 
  private:
   void loadImages(tinygltf::Model& gltfModel);
-  void createEmptyTexture();
   void loadMaterials(tinygltf::Model& gltfModel);
   void loadNode(Node* parent, const tinygltf::Node& node, uint32_t nodeIndex,
                 const tinygltf::Model& model, std::vector<uint32_t>& indices,
@@ -340,14 +339,14 @@ class Model {
   // TODO: skin
   // std::vector<Skin*> skins;
 
-  std::vector<Texture> textures;
+  std::vector<std::unique_ptr<Texture>> textures;
   std::vector<Material> materials;
 
   // TODO: animation
   // std::vector<Animation> animations;
   Dimensions dimensions;
 
-  Texture emptyTexture;
+  std::unique_ptr<Texture> emptyTexture;
   // TOOD: check it to be private right.
   bool metallicRoughnessWorkflow = true;
   bool buffersBound = false;

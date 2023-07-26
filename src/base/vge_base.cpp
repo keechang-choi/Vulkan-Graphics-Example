@@ -91,9 +91,9 @@ void VgeBase::prepare() {
       device, globalAllocator->getAllocator(), depthFormat,
       swapChainData->swapChainExtent, vk::ImageTiling::eOptimal,
       vk::ImageUsageFlagBits::eDepthStencilAttachment,
-      vk::ImageLayout::eUndefined, vk::ImageAspectFlagBits::eDepth,
-      VmaMemoryUsage::VMA_MEMORY_USAGE_AUTO,
-      VmaAllocationCreateFlagBits::VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
+      vk::ImageLayout::eUndefined, VmaMemoryUsage::VMA_MEMORY_USAGE_AUTO,
+      VmaAllocationCreateFlagBits::VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
+      vk::ImageAspectFlagBits::eDepth, 1);
 
   renderPass =
       vgeu::createRenderPass(device, swapChainData->colorFormat, depthFormat);
@@ -226,9 +226,9 @@ void VgeBase::windowResize() {
       device, globalAllocator->getAllocator(), depthFormat,
       swapChainData->swapChainExtent, vk::ImageTiling::eOptimal,
       vk::ImageUsageFlagBits::eDepthStencilAttachment,
-      vk::ImageLayout::eUndefined, vk::ImageAspectFlagBits::eDepth,
-      VmaMemoryUsage::VMA_MEMORY_USAGE_AUTO,
-      VmaAllocationCreateFlagBits::VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
+      vk::ImageLayout::eUndefined, VmaMemoryUsage::VMA_MEMORY_USAGE_AUTO,
+      VmaAllocationCreateFlagBits::VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
+      vk::ImageAspectFlagBits::eDepth, 1);
 
   frameBuffers = vgeu::createFramebuffers(
       device, renderPass, swapChainData->imageViews,
