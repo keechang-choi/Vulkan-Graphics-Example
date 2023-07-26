@@ -40,10 +40,17 @@ bool loadImageDataFuncEmpty(tinygltf::Image* image, const int imageIndex,
 }  // namespace
 namespace vgeu {
 namespace glTF {
-void Texture::updateDescriptorInfo() {
-  descriptorInfo.sampler = *sampler;
-  descriptorInfo.imageView = *vgeuImage->getImageView();
-  descriptorInfo.imageLayout = imageLayout;
+Texture::Texture(tinygltf::Image& gltfimage, std::string path,
+                 const vk::raii::Device& device,
+                 const vk::raii::PhysicalDevice& physicalDevice,
+                 VmaAllocator allocator, const vk::raii::Queue& transferQueue) {
+  fromglTfImage(gltfimage, path, device, physicalDevice, allocator,
+                transferQueue);
+}
+
+Texture::Texture(const vk::raii::Device& device, VmaAllocator allocator,
+                 const vk::raii::Queue& transferQueue) {
+  createEmptyTexture(device, allocator, transferQueue);
 }
 
 void Texture::fromglTfImage(tinygltf::Image& gltfImage, std::string path,
@@ -56,6 +63,40 @@ void Texture::fromglTfImage(tinygltf::Image& gltfImage, std::string path,
   }
 }
 
+void Texture::createEmptyTexture(const vk::raii::Device& device,
+                                 VmaAllocator allocator,
+                                 const vk::raii::Queue& transferQueue) {
+  width = 1;
+  height = 1;
+  layerCount = 1;
+  mipLevels = 1;
+  unsigned char buffer = 0u;
+
+  {
+    vgeu::VgeuBuffer stagingBuffer(
+        allocator, 4, width * height, vk::BufferUsageFlagBits::eTransferSrc,
+        VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT);
+
+    std::memcpy(stagingBuffer.getMappedData(), &buffer,
+                stagingBuffer.getBufferSize());
+
+    vgeuImage = std::make_unique<VgeuImage>(
+        device, allocator, vk::Format::eR8G8B8A8Unorm,
+        vk::Extent2D(width, height), vk::ImageTiling::eOptimal,
+        vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst,
+        vk::ImageLayout::eUndefined,
+        VmaAllocationCreateFlagBits::
+            VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
+  }
+}
+
+void Texture::updateDescriptorInfo() {
+  descriptorInfo.sampler = *sampler;
+  descriptorInfo.imageView = *vgeuImage->getImageView();
+  descriptorInfo.imageLayout = imageLayout;
+}
 Model::Model(const vk::raii::Device& device,
              const vk::raii::PhysicalDevice& physicalDevice,
              VmaAllocator allocator, const vk::raii::Queue& transferQueue,
@@ -303,6 +344,17 @@ void Model::loadFromFile(std::string filename,
       }
     }
   }
+}
+
+void Model::loadImages(tinygltf::Model& gltfModel) {
+  for (tinygltf::Image& image : gltfModel.images) {
+    Texture texture;
+    texture.fromglTfImage(image, path, device, physicalDevice, allocator,
+                          transferQueue);
+    textures.push_back(texture);
+  }
+  // Create an empty texture to be used for empty material images
+  createEmptyTexture(transferQueue);
 }
 
 }  // namespace glTF

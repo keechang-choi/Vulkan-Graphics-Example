@@ -70,7 +70,34 @@ using DescriptorBindingFlags = Flags<DescriptorBindingFlagBits>;
 
 struct Node;
 
-struct Texture {
+// modified existing structure to fit in RAII paradigm.
+class Texture {
+ public:
+  // fromglTFImage
+  Texture(tinygltf::Image& gltfimage, std::string path,
+          const vk::raii::Device& device,
+          const vk::raii::PhysicalDevice& physicalDevice,
+          VmaAllocator allocator, const vk::raii::Queue& transferQueue);
+  // empty texture
+  Texture(const vk::raii::Device& device, VmaAllocator allocator,
+          const vk::raii::Queue& transferQueue);
+
+  Texture(const Texture&) = delete;
+  Texture& operator=(const Texture&) = delete;
+
+ private:
+  void fromglTfImage(tinygltf::Image& gltfimage, std::string path,
+                     const vk::raii::Device& device,
+                     const vk::raii::PhysicalDevice& physicalDevice,
+                     VmaAllocator allocator,
+                     const vk::raii::Queue& transferQueue);
+
+  void createEmptyTexture(const vk::raii::Device& device,
+                          VmaAllocator allocator,
+                          const vk::raii::Queue& transferQueue);
+
+  // TODO: use end of fromglTFImage()
+  void updateDescriptorInfo();
   std::unique_ptr<vgeu::VgeuImage> vgeuImage;
   vk::ImageLayout imageLayout;
   uint32_t width, height;
@@ -78,13 +105,6 @@ struct Texture {
   uint32_t layerCount;
   vk::DescriptorImageInfo descriptorInfo;
   vk::raii::Sampler sampler = nullptr;
-  // TODO: use end of fromglTFImage()
-  void updateDescriptorInfo();
-  void fromglTfImage(tinygltf::Image& gltfimage, std::string path,
-                     const vk::raii::Device& device,
-                     const vk::raii::PhysicalDevice& physicalDevice,
-                     VmaAllocator allocator,
-                     const vk::raii::Queue& transferQueue);
 };
 
 struct Material {
@@ -286,13 +306,14 @@ class Model {
   std::unique_ptr<VgeuBuffer> indexBuffer;
 
  private:
+  void loadImages(tinygltf::Model& gltfModel);
   void createEmptyTexture();
+  void loadMaterials(tinygltf::Model& gltfModel);
   void loadNode(Node* parent, const tinygltf::Node& node, uint32_t nodeIndex,
                 const tinygltf::Model& model, std::vector<uint32_t>& indices,
                 std::vector<Vertex>& vertices, float globalscale);
   // TODO: skins
-  void loadImages(tinygltf::Model& gltfModel);
-  void loadMaterials(tinygltf::Model& gltfModel);
+
   // TODO: animation
   Texture* getTexture(uint32_t index);
   Node* findNode(const Node* parent, uint32_t index);

@@ -75,9 +75,9 @@ vk::DescriptorBufferInfo VgeuBuffer::descriptorInfo(vk::DeviceSize size,
 VgeuImage::VgeuImage(const vk::raii::Device& device, VmaAllocator allocator,
                      vk::Format format, const vk::Extent2D& extent,
                      vk::ImageTiling tiling, vk::ImageUsageFlags usage,
-                     vk::ImageLayout initialLayout,
-                     vk::ImageAspectFlags aspectMask, VmaMemoryUsage memUsage,
-                     VmaAllocationCreateFlags allocCreateFlags)
+                     vk::ImageLayout initialLayout, VmaMemoryUsage memUsage,
+                     VmaAllocationCreateFlags allocCreateFlags,
+                     vk::ImageAspectFlags aspectMask, uint32_t mipLevels)
     : allocator(allocator) {
   VkImageCreateInfo vkImageCI{};
   vkImageCI.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -105,10 +105,14 @@ VgeuImage::VgeuImage(const vk::raii::Device& device, VmaAllocator allocator,
   assert(result == VK_SUCCESS && "VMA ERROR: failed to create image.");
   image = vk::Image(vkImage);
 
+  // NOTE: imageViewCI subresourceRange levelCount should be equal or less than
+  // the imageCI
+  // https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VkImageViewCreateInfo.html#VUID-VkImageViewCreateInfo-subresourceRange-01718
   imageView = vk::raii::ImageView(
-      device, vk::ImageViewCreateInfo(vk::ImageViewCreateFlags(), image,
-                                      vk::ImageViewType::e2D, format, {},
-                                      {aspectMask, 0, 1, 0, 1}));
+      device,
+      vk::ImageViewCreateInfo(
+          vk::ImageViewCreateFlags(), image, vk::ImageViewType::e2D, format, {},
+          vk::ImageSubresourceRange{aspectMask, 0, 1, 0, 1}));
 }
 
 VgeuImage::~VgeuImage() {
