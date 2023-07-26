@@ -24,6 +24,7 @@ https://github.com/SaschaWillems/Vulkan/blob/master/base/VulkanglTFModel.h
 
 // std
 #include <limits>
+#include <memory>
 
 namespace vgeu {
 namespace glTF {
@@ -35,7 +36,7 @@ enum class DescriptorBindingFlags {
 struct Node;
 
 struct Texture {
-  vgeu::ImageData imageData = nullptr;
+  std::unique_ptr<vgeu::VgeuImage> vgeuImage;
   vk::ImageLayout imageLayout;
   uint32_t width, height;
   uint32_t mipLevels;
@@ -46,7 +47,8 @@ struct Texture {
   void updateDescriptorInfo();
   void fromglTfImage(tinygltf::Image& gltfimage, std::string path,
                      const vk::raii::Device& device,
-                     const vk::raii::Queue& copyQueue);
+                     const vk::raii::PhysicalDevice& physicalDevice,
+                     VmaAllocator allocator, const vk::raii::Queue& transferQueue);
 };
 
 struct Material {
@@ -98,14 +100,12 @@ struct Primitive {
 };
 
 struct Mesh {
-  const vk::raii::Device& device;
-
-  // TODO: unqiue_ptr
-  std::vector<Primitive*> primitives;
+  // TODO: unique_ptr or class itself
+  std::vector<std::unique_ptr<Primitive>> primitives;
   std::string name;
 
   std::unique_ptr<VgeuBuffer> uniformBuffer;
-  vk::DescriptorBufferInfo descriptor;
+  vk::DescriptorBufferInfo descriptorInfo;
   vk::raii::DescriptorSet descriptorSet = nullptr;
   struct UniformBlock {
     glm::mat4 matrix;
@@ -113,7 +113,7 @@ struct Mesh {
     float jointcount{0};
   } uniformBlock;
 
-  Mesh(const vk::raii::Device& device, glm::mat4 matrix);
+  Mesh(VmaAllocator allocator, glm::mat4 matrix);
   ~Mesh();
 };
 
@@ -129,11 +129,11 @@ struct Node {
   Node* parent;
   uint32_t index;
   // TODO: unqiue_ptr since tree structure.
-  std::vector<Node*> children;
+  std::vector<std::unique_ptr<Node>> children;
   glm::mat4 matrix;
   std::string name;
   // TODO: unique_ptr
-  Mesh* mesh;
+  std::unique_ptr<Mesh> mesh;
   // Skin* skin;
   int32_t skinIndex = -1;
   glm::vec3 translation{};
@@ -199,23 +199,15 @@ enum class RenderFlags {
 };
 class Model {
  public:
-  Model(){};
+  // setup common resources
+  Model(const vk::raii::Device& device,
+        const vk::raii::PhysicalDevice& physicalDevice, VmaAllocator allocator,
+        const vk::raii::Queue& transferQueue);
   ~Model();
-
-  void loadNode(Node* parent, const tinygltf::Node& node, uint32_t nodeIndex,
-                const tinygltf::Model& model,
-                std::vector<uint32_t>& indexBuffer,
-                std::vector<Vertex>& vertexBuffer, float globalscale);
-  // TODO: skins
-  void loadImages(tinygltf::Model& gltfModel, const vk::raii::Device& device,
-                  VkQueue transferQueue);
-  void loadMaterials(tinygltf::Model& gltfModel);
-  // TODO: animation
 
   // NOTE: move ownership of root nodes to the "nodes"
   // move owenership of children nodes to the parent's vector
-  void loadFromFile(std::string filename, const vk::raii::Device& device,
-                    const vk::raii::Queue& transferQueue,
+  void loadFromFile(std::string filename,
                     FileLoadingFlags fileLoadingFlags = FileLoadingFlags::kNone,
                     float scale = 1.0f);
 
@@ -230,13 +222,8 @@ class Model {
             uint32_t renderFlags = 0,
             vk::PipelineLayout pipelineLayout = VK_NULL_HANDLE,
             uint32_t bindImageSet = 1);
-  void getNodeDimensions(Node* node, glm::vec3& min, glm::vec3& max);
-  void getSceneDimensions();
-  // TODO: animation
-  Node* findNode(Node* parent, uint32_t index);
-  Node* nodeFromIndex(uint32_t index);
-  void prepareNodeDescriptor(
-      Node* node, const vk::raii::DescriptorSetLayout& descriptorSetLayout);
+  Dimensions getDimensions() const { return dimensions; };
+  // TODO: update animation
 
   // TODO: moved from globals to model class member.
   // check any problems
@@ -247,11 +234,35 @@ class Model {
       DescriptorBindingFlags::kImageBaseColor;
 
   vk::raii::DescriptorPool descriptorPool = nullptr;
-  std::unique_ptr<VgeuBuffer> vertices;
-  std::unique_ptr<VgeuBuffer> indices;
+  std::unique_ptr<VgeuBuffer> vertexBuffer;
+  std::unique_ptr<VgeuBuffer> indexBuffer;
+
+ private:
+  void createEmptyTexture(VkQueue transferQueue);
+  void loadNode(Node* parent, const tinygltf::Node& node, uint32_t nodeIndex,
+                const tinygltf::Model& model, std::vector<uint32_t>& indices,
+                std::vector<Vertex>& vertices, float globalscale);
+  // TODO: skins
+  void loadImages(tinygltf::Model& gltfModel);
+  void loadMaterials(tinygltf::Model& gltfModel);
+  // TODO: animation
+  Texture* getTexture(uint32_t index);
+  Node* findNode(Node* parent, uint32_t index);
+  Node* nodeFromIndex(uint32_t index);
+  void prepareNodeDescriptor(
+      Node* node, const vk::raii::DescriptorSetLayout& descriptorSetLayout);
+
+  void getNodeDimensions(Node* node, glm::vec3& min, glm::vec3& max);
+  void setSceneDimensions();
+
+  const vk::raii::Device& device;
+  const vk::raii::PhysicalDevice& physicalDevice;
+  VmaAllocator allocator;
+  const vk::raii::Queue& transferQueue;
+
   // TODO: takes ownership since root nodes or each tree.
   // unique_ptr
-  std::vector<Node*> nodes;
+  std::vector<std::unique_ptr<Node>> nodes;
   // all nodes without ownership
   std::vector<Node*> linearNodes;
 
@@ -263,21 +274,13 @@ class Model {
 
   // TODO: animation
   // std::vector<Animation> animations;
-
   Dimensions dimensions;
 
+  Texture emptyTexture;
+  // TOOD: check it to be private right.
   bool metallicRoughnessWorkflow = true;
   bool buffersBound = false;
   std::string path;
-
- private:
-  void createEmptyTexture(VkQueue transferQueue);
-
-  Texture* getTexture(uint32_t index);
-  Texture emptyTexture;
-
-  // NOTE: nullable
-  vk::Device device;
 };
 
 }  // namespace glTF

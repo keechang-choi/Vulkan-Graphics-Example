@@ -37,17 +37,26 @@ namespace vgeu {
 namespace glTF {
 void Texture::updateDescriptorInfo() {
   descriptorInfo.sampler = *sampler;
-  descriptorInfo.imageView = *imageData.imageView;
+  descriptorInfo.imageView = *vgeuImage->getImageView();
   descriptorInfo.imageLayout = imageLayout;
 }
 
 void Texture::fromglTfImage(tinygltf::Image& gltfImage, std::string path,
                             const vk::raii::Device& device,
+                            const vk::raii::PhysicalDevice& physicalDevice,
+                            VmaAllocator allocator,
                             const vk::raii::Queue& copyQueue) {
   if (!::isKtx(gltfImage)) {
   } else {
   }
 }
 
+Model::Model(const vk::raii::Device& device,
+             const vk::raii::PhysicalDevice& physicalDevice,
+             VmaAllocator allocator, const vk::raii::Queue& transferQueue)
+    : device(device),
+      physicalDevice(physicalDevice),
+      allocator(allocator),
+      transferQueue(transferQueue) {}
 }  // namespace glTF
 }  // namespace vgeu
