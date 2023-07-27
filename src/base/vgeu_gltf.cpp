@@ -44,7 +44,7 @@ Texture::Texture(tinygltf::Image& gltfimage, std::string path,
                  const vk::raii::Device& device, VmaAllocator allocator,
                  const vk::raii::Queue& transferQueue,
                  const vk::raii::CommandPool& commandPool) {
-  fromglTfImage(gltfimage, path, device, allocator, transferQueue, commandPool);
+  fromglTFImage(gltfimage, path, device, allocator, transferQueue, commandPool);
 }
 
 Texture::Texture(const vk::raii::Device& device, VmaAllocator allocator,
@@ -53,13 +53,71 @@ Texture::Texture(const vk::raii::Device& device, VmaAllocator allocator,
   createEmptyTexture(device, allocator, transferQueue, commandPool);
 }
 
-void Texture::fromglTfImage(tinygltf::Image& gltfImage, std::string path,
+void Texture::fromglTFImage(tinygltf::Image& gltfImage, std::string path,
                             const vk::raii::Device& device,
                             VmaAllocator allocator,
-                            const vk::raii::Queue& copyQueue,
+                            const vk::raii::Queue& transferQueue,
                             const vk::raii::CommandPool& commandPool) {
   if (!::isKtx(gltfImage)) {
+    // NOTE: SetPreserveimageChannels false by default
+    assert(gltfImage.component == 4 && "failed: image channel is not RGBA");
+    vk::DeviceSize bufferSize = gltfImage.image.size();
+    uint32_t pixelCount = gltfImage.width * gltfImage.height;
+    uint32_t pixelSize = 4;
+    assert(bufferSize == pixelCount * pixelSize);
+
+    width = gltfImage.width;
+    height = gltfImage.height;
+    mipLevels = static_cast<uint32_t>(
+        std::floor(std::log2(std::max(width, height))) + 1.0);
+    // TODO: check physical device format properties support?
+
+    // TODO: remove duplication
+    {
+      vgeu::VgeuBuffer stagingBuffer(
+          allocator, pixelSize, width * height,
+          vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_AUTO,
+          VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+              VMA_ALLOCATION_CREATE_MAPPED_BIT);
+
+      std::memcpy(stagingBuffer.getMappedData(), gltfImage.image.data(),
+                  stagingBuffer.getBufferSize());
+
+      vgeuImage = std::make_unique<VgeuImage>(
+          device, allocator, vk::Format::eR8G8B8A8Unorm,
+          vk::Extent2D(width, height), vk::ImageTiling::eOptimal,
+          vk::ImageUsageFlagBits::eSampled |
+              vk::ImageUsageFlagBits::eTransferDst,
+          vk::ImageLayout::eUndefined, VmaMemoryUsage::VMA_MEMORY_USAGE_AUTO,
+          VmaAllocationCreateFlagBits::
+              VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
+          vk::ImageAspectFlagBits::eColor, 1);
+
+      // NOTE: 0 for buffer packed tightly
+      vk::BufferImageCopy region(
+          0, 0, 0,
+          vk::ImageSubresourceLayers{vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+          vk::Offset3D{0, 0, 0}, vk::Extent3D{width, height, 1});
+      // layout transition
+      oneTimeSubmit(device, commandPool, transferQueue,
+                    [&](const vk::raii::CommandBuffer& cmdBuffer) {
+                      setImageLayout(cmdBuffer, vgeuImage->getImage(),
+                                     vgeuImage->getFormat(), 0, 1,
+                                     vk::ImageLayout::eUndefined,
+                                     vk::ImageLayout::eTransferDstOptimal);
+                      cmdBuffer.copyBufferToImage(
+                          stagingBuffer.getBuffer(), vgeuImage->getImage(),
+                          vk::ImageLayout::eTransferDstOptimal, region);
+                      setImageLayout(cmdBuffer, vgeuImage->getImage(),
+                                     vgeuImage->getFormat(), 0, 1,
+                                     vk::ImageLayout::eTransferDstOptimal,
+                                     vk::ImageLayout::eShaderReadOnlyOptimal);
+                    });
+      imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    }
+
   } else {
+    // TODO: loading texture using KTX format
   }
 }
 
@@ -89,25 +147,25 @@ void Texture::createEmptyTexture(const vk::raii::Device& device,
         vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst,
         vk::ImageLayout::eUndefined, VmaMemoryUsage::VMA_MEMORY_USAGE_AUTO,
         VmaAllocationCreateFlagBits::VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
-        vk::ImageAspectFlagBits::eColor, 1);
+        vk::ImageAspectFlagBits::eColor, mipLevels);
 
     // NOTE: 0 for buffer packed tightly
     vk::BufferImageCopy region(
         0, 0, 0,
         vk::ImageSubresourceLayers{vk::ImageAspectFlagBits::eColor, 0, 0, 1},
         vk::Offset3D{0, 0, 0}, vk::Extent3D{width, height, 1});
-    // TODO:  layout transition
+    // layout transition
     oneTimeSubmit(device, commandPool, transferQueue,
                   [&](const vk::raii::CommandBuffer& cmdBuffer) {
                     setImageLayout(cmdBuffer, vgeuImage->getImage(),
-                                   vgeuImage->getFormat(), 0, 1,
+                                   vgeuImage->getFormat(), 0, mipLevels,
                                    vk::ImageLayout::eUndefined,
                                    vk::ImageLayout::eTransferDstOptimal);
                     cmdBuffer.copyBufferToImage(
                         stagingBuffer.getBuffer(), vgeuImage->getImage(),
                         vk::ImageLayout::eTransferDstOptimal, region);
                     setImageLayout(cmdBuffer, vgeuImage->getImage(),
-                                   vgeuImage->getFormat(), 0, 1,
+                                   vgeuImage->getFormat(), 0, mipLevels,
                                    vk::ImageLayout::eTransferDstOptimal,
                                    vk::ImageLayout::eShaderReadOnlyOptimal);
                   });
@@ -156,6 +214,8 @@ void Model::loadFromFile(std::string filename,
   size_t pos = filename.find_last_of('/');
   path = filename.substr(0, pos);
   std::string error, warning;
+
+  // NOTE: SetPreserveimageChannels false by default -> 4channel
   bool fileLoaded =
       gltfContext.LoadASCIIFromFile(&gltfModel, &error, &warning, filename);
   if (!fileLoaded) {

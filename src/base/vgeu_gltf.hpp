@@ -83,7 +83,7 @@ class Texture {
   Texture& operator=(const Texture&) = delete;
 
  private:
-  void fromglTfImage(tinygltf::Image& gltfimage, std::string path,
+  void fromglTFImage(tinygltf::Image& gltfimage, std::string path,
                      const vk::raii::Device& device, VmaAllocator allocator,
                      const vk::raii::Queue& transferQueue,
                      const vk::raii::CommandPool& commandPool);
