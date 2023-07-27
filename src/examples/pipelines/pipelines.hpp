@@ -22,6 +22,7 @@ class VgeExample : public VgeBase {
   VgeExample();
   ~VgeExample();
   void initVulkan();
+  void getEnabledExtensions();
   void render();
   void prepare();
   void loadAssets();

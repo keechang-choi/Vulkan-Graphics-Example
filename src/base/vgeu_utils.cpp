@@ -548,6 +548,9 @@ void setImageLayout(const vk::raii::CommandBuffer& commandBuffer,
                     vk::ImageLayout newImageLayout) {
   vk::AccessFlags srcAccessMask{};  // NOTE: 0
   switch (oldImageLayout) {
+    case vk::ImageLayout::eTransferSrcOptimal:
+      srcAccessMask = vk::AccessFlagBits::eTransferRead;
+      break;
     case vk::ImageLayout::eTransferDstOptimal:
       srcAccessMask = vk::AccessFlagBits::eTransferWrite;
       break;
@@ -568,6 +571,7 @@ void setImageLayout(const vk::raii::CommandBuffer& commandBuffer,
     case vk::ImageLayout::ePreinitialized:
       srcStage = vk::PipelineStageFlagBits::eHost;
       break;
+    case vk::ImageLayout::eTransferSrcOptimal:
     case vk::ImageLayout::eTransferDstOptimal:
       srcStage = vk::PipelineStageFlagBits::eTransfer;
       break;

@@ -24,8 +24,14 @@ void VgeExample::initVulkan() {
   VgeBase::initVulkan();
 }
 
+void VgeExample::getEnabledExtensions() {
+  enabledFeatures.samplerAnisotropy =
+      physicalDevice.getFeatures().samplerAnisotropy;
+}
+
 void VgeExample::prepare() {
   VgeBase::prepare();
+  loadAssets();
   createVertexBuffer();
   createIndexBuffer();
   createUniformBuffers();

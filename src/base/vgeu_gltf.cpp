@@ -87,11 +87,12 @@ void Texture::fromglTFImage(tinygltf::Image& gltfImage, std::string path,
           device, allocator, vk::Format::eR8G8B8A8Unorm,
           vk::Extent2D(width, height), vk::ImageTiling::eOptimal,
           vk::ImageUsageFlagBits::eSampled |
+              vk::ImageUsageFlagBits::eTransferSrc |
               vk::ImageUsageFlagBits::eTransferDst,
           vk::ImageLayout::eUndefined, VmaMemoryUsage::VMA_MEMORY_USAGE_AUTO,
           VmaAllocationCreateFlagBits::
               VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
-          vk::ImageAspectFlagBits::eColor, 1);
+          vk::ImageAspectFlagBits::eColor, mipLevels);
 
       // NOTE: row length, image height : 0 for buffer packed tightly
       vk::BufferImageCopy region(
