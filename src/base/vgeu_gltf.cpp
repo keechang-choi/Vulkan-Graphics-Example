@@ -91,8 +91,42 @@ void Texture::createEmptyTexture(const vk::raii::Device& device,
         VmaAllocationCreateFlagBits::VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
         vk::ImageAspectFlagBits::eColor, 1);
 
+    // NOTE: 0 for buffer packed tightly
+    vk::BufferImageCopy region(
+        0, 0, 0,
+        vk::ImageSubresourceLayers{vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+        vk::Offset3D{0, 0, 0}, vk::Extent3D{width, height, 1});
     // TODO:  layout transition
+    oneTimeSubmit(device, commandPool, transferQueue,
+                  [&](const vk::raii::CommandBuffer& cmdBuffer) {
+                    setImageLayout(cmdBuffer, vgeuImage->getImage(),
+                                   vgeuImage->getFormat(), 0, 1,
+                                   vk::ImageLayout::eUndefined,
+                                   vk::ImageLayout::eTransferDstOptimal);
+                    cmdBuffer.copyBufferToImage(
+                        stagingBuffer.getBuffer(), vgeuImage->getImage(),
+                        vk::ImageLayout::eTransferDstOptimal, region);
+                    setImageLayout(cmdBuffer, vgeuImage->getImage(),
+                                   vgeuImage->getFormat(), 0, 1,
+                                   vk::ImageLayout::eTransferDstOptimal,
+                                   vk::ImageLayout::eShaderReadOnlyOptimal);
+                  });
+    imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
   }
+  createSampler(device);
+  updateDescriptorInfo();
+}
+
+void Texture::createSampler(const vk::raii::Device& device) {
+  // NOTE: maxAnisotorpy fixed. may get it from physical Device.
+  vk::SamplerCreateInfo samplerCI(
+      vk::SamplerCreateFlags{}, vk::Filter::eLinear, vk::Filter::eLinear,
+      vk::SamplerMipmapMode::eLinear, vk::SamplerAddressMode::eRepeat,
+      vk::SamplerAddressMode::eRepeat, vk::SamplerAddressMode::eRepeat, 0.f,
+      true, 8.0f, false, vk::CompareOp::eNever, 0.f,
+      static_cast<float>(mipLevels), vk::BorderColor::eFloatOpaqueWhite);
+
+  sampler = vk::raii::Sampler(device, samplerCI);
 }
 
 void Texture::updateDescriptorInfo() {

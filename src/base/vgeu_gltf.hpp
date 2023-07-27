@@ -92,15 +92,17 @@ class Texture {
                           VmaAllocator allocator,
                           const vk::raii::Queue& transferQueue,
                           const vk::raii::CommandPool& commandPool);
-
+  // NOTE: use mipLevels
+  void createSampler(const vk::raii::Device& device);
   // TODO: use end of fromglTFImage()
   void updateDescriptorInfo();
   std::unique_ptr<vgeu::VgeuImage> vgeuImage;
-  vk::ImageLayout imageLayout;
-  uint32_t width, height;
-  uint32_t mipLevels;
-  uint32_t layerCount;
-  vk::DescriptorImageInfo descriptorInfo;
+  vk::ImageLayout imageLayout{};
+  uint32_t width = 0;
+  uint32_t height = 0;
+  uint32_t mipLevels = 0;
+  uint32_t layerCount = 0;
+  vk::DescriptorImageInfo descriptorInfo{};
   vk::raii::Sampler sampler = nullptr;
 };
 

@@ -78,7 +78,7 @@ VgeuImage::VgeuImage(const vk::raii::Device& device, VmaAllocator allocator,
                      vk::ImageLayout initialLayout, VmaMemoryUsage memUsage,
                      VmaAllocationCreateFlags allocCreateFlags,
                      vk::ImageAspectFlags aspectMask, uint32_t mipLevels)
-    : allocator(allocator) {
+    : allocator(allocator), format(format) {
   VkImageCreateInfo vkImageCI{};
   vkImageCI.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
   vkImageCI.flags = 0;

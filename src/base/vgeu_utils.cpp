@@ -542,7 +542,7 @@ vk::raii::ShaderModule createShaderModule(const vk::raii::Device& device,
 }
 
 void setImageLayout(const vk::raii::CommandBuffer& commandBuffer,
-                    vk::Image image, vk::Format format,
+                    vk::Image image,
                     vk::ImageSubresourceRange imageSubresourceRange,
                     vk::ImageLayout oldImageLayout,
                     vk::ImageLayout newImageLayout) {
@@ -657,8 +657,8 @@ void setImageLayout(const vk::raii::CommandBuffer& commandBuffer,
 
   vk::ImageSubresourceRange imageSubresourceRange(aspectMask, baseMipLevel,
                                                   levelCount, 0, 1);
-  setImageLayout(commandBuffer, image, format, imageSubresourceRange,
-                 oldImageLayout, newImageLayout);
+  setImageLayout(commandBuffer, image, imageSubresourceRange, oldImageLayout,
+                 newImageLayout);
 }
 
 }  // namespace vgeu
