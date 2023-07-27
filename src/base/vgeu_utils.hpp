@@ -155,4 +155,18 @@ void oneTimeSubmit(const vk::raii::Device& device,
   oneTimeSubmit(commandBuffers.front(), queue, func);
 }
 
+// transition by image memory barrier.
+// internally select stage, accessMask.
+void setImageLayout(const vk::raii::CommandBuffer& commandBuffer,
+                    vk::Image image, vk::Format format,
+                    vk::ImageSubresourceRange imageSubresourceRange,
+                    vk::ImageLayout oldImageLayout,
+                    vk::ImageLayout newImageLayout);
+
+// transition by image memory barrier with base and count for mipLevels
+void setImageLayout(const vk::raii::CommandBuffer& commandBuffer,
+                    vk::Image image, vk::Format format, uint32_t baseMipLevel,
+                    uint32_t levelCount, vk::ImageLayout oldImageLayout,
+                    vk::ImageLayout newImageLayout);
+
 }  // namespace vgeu

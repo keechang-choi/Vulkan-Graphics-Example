@@ -71,26 +71,27 @@ class Texture {
  public:
   // fromglTFImage
   Texture(tinygltf::Image& gltfimage, std::string path,
-          const vk::raii::Device& device,
-          const vk::raii::PhysicalDevice& physicalDevice,
-          VmaAllocator allocator, const vk::raii::Queue& transferQueue);
+          const vk::raii::Device& device, VmaAllocator allocator,
+          const vk::raii::Queue& transferQueue,
+          const vk::raii::CommandPool& commandPool);
   // empty texture
   Texture(const vk::raii::Device& device, VmaAllocator allocator,
-          const vk::raii::Queue& transferQueue);
+          const vk::raii::Queue& transferQueue,
+          const vk::raii::CommandPool& commandPool);
 
   Texture(const Texture&) = delete;
   Texture& operator=(const Texture&) = delete;
 
  private:
   void fromglTfImage(tinygltf::Image& gltfimage, std::string path,
-                     const vk::raii::Device& device,
-                     const vk::raii::PhysicalDevice& physicalDevice,
-                     VmaAllocator allocator,
-                     const vk::raii::Queue& transferQueue);
+                     const vk::raii::Device& device, VmaAllocator allocator,
+                     const vk::raii::Queue& transferQueue,
+                     const vk::raii::CommandPool& commandPool);
 
   void createEmptyTexture(const vk::raii::Device& device,
                           VmaAllocator allocator,
-                          const vk::raii::Queue& transferQueue);
+                          const vk::raii::Queue& transferQueue,
+                          const vk::raii::CommandPool& commandPool);
 
   // TODO: use end of fromglTFImage()
   void updateDescriptorInfo();
@@ -242,8 +243,7 @@ struct Vertex {
 class Model {
  public:
   // setup common resources
-  Model(const vk::raii::Device& device,
-        const vk::raii::PhysicalDevice& physicalDevice, VmaAllocator allocator,
+  Model(const vk::raii::Device& device, VmaAllocator allocator,
         const vk::raii::Queue& transferQueue,
         const vk::raii::CommandPool& commandPool);
   ~Model();
@@ -312,7 +312,6 @@ class Model {
   void setSceneDimensions();
 
   const vk::raii::Device& device;
-  const vk::raii::PhysicalDevice& physicalDevice;
   VmaAllocator allocator;
   const vk::raii::Queue& transferQueue;
   const vk::raii::CommandPool& commandPool;

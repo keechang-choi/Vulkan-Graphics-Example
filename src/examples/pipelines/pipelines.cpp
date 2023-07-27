@@ -41,9 +41,8 @@ void VgeExample::loadAssets() {
       vgeu::FileLoadingFlagBits::kPreMultiplyVertexColors |
       vgeu::FileLoadingFlagBits::kFlipY;
 
-  scene = std::make_unique<vgeu::glTF::Model>(device, physicalDevice,
-                                              globalAllocator->getAllocator(),
-                                              queue, commandPool);
+  scene = std::make_unique<vgeu::glTF::Model>(
+      device, globalAllocator->getAllocator(), queue, commandPool);
   scene->loadFromFile(getAssetsPath() + "/models/apple/food_apple_01_4k.gltf",
                       glTFLoadingFlags);
 }

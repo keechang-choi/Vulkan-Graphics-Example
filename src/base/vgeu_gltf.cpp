@@ -41,23 +41,23 @@ bool loadImageDataFuncEmpty(tinygltf::Image* image, const int imageIndex,
 namespace vgeu {
 namespace glTF {
 Texture::Texture(tinygltf::Image& gltfimage, std::string path,
-                 const vk::raii::Device& device,
-                 const vk::raii::PhysicalDevice& physicalDevice,
-                 VmaAllocator allocator, const vk::raii::Queue& transferQueue) {
-  fromglTfImage(gltfimage, path, device, physicalDevice, allocator,
-                transferQueue);
+                 const vk::raii::Device& device, VmaAllocator allocator,
+                 const vk::raii::Queue& transferQueue,
+                 const vk::raii::CommandPool& commandPool) {
+  fromglTfImage(gltfimage, path, device, allocator, transferQueue, commandPool);
 }
 
 Texture::Texture(const vk::raii::Device& device, VmaAllocator allocator,
-                 const vk::raii::Queue& transferQueue) {
-  createEmptyTexture(device, allocator, transferQueue);
+                 const vk::raii::Queue& transferQueue,
+                 const vk::raii::CommandPool& commandPool) {
+  createEmptyTexture(device, allocator, transferQueue, commandPool);
 }
 
 void Texture::fromglTfImage(tinygltf::Image& gltfImage, std::string path,
                             const vk::raii::Device& device,
-                            const vk::raii::PhysicalDevice& physicalDevice,
                             VmaAllocator allocator,
-                            const vk::raii::Queue& copyQueue) {
+                            const vk::raii::Queue& copyQueue,
+                            const vk::raii::CommandPool& commandPool) {
   if (!::isKtx(gltfImage)) {
   } else {
   }
@@ -65,7 +65,8 @@ void Texture::fromglTfImage(tinygltf::Image& gltfImage, std::string path,
 
 void Texture::createEmptyTexture(const vk::raii::Device& device,
                                  VmaAllocator allocator,
-                                 const vk::raii::Queue& transferQueue) {
+                                 const vk::raii::Queue& transferQueue,
+                                 const vk::raii::CommandPool& commandPool) {
   width = 1;
   height = 1;
   layerCount = 1;
@@ -99,12 +100,10 @@ void Texture::updateDescriptorInfo() {
   descriptorInfo.imageView = *vgeuImage->getImageView();
   descriptorInfo.imageLayout = imageLayout;
 }
-Model::Model(const vk::raii::Device& device,
-             const vk::raii::PhysicalDevice& physicalDevice,
-             VmaAllocator allocator, const vk::raii::Queue& transferQueue,
+Model::Model(const vk::raii::Device& device, VmaAllocator allocator,
+             const vk::raii::Queue& transferQueue,
              const vk::raii::CommandPool& commandPool)
     : device(device),
-      physicalDevice(physicalDevice),
       allocator(allocator),
       transferQueue(transferQueue),
       commandPool(commandPool) {}
@@ -350,6 +349,16 @@ void Model::loadFromFile(std::string filename,
   }
 }
 
+void Model::loadImages(tinygltf::Model& gltfModel) {
+  for (tinygltf::Image& gltfImage : gltfModel.images) {
+    textures.push_back(std::make_unique<Texture>(
+        gltfImage, path, device, allocator, transferQueue, commandPool));
+  }
+  // Create an empty texture to be used for empty material images
+  emptyTexture =
+      std::make_unique<Texture>(device, allocator, transferQueue, commandPool);
+}
+
 void Model::bindBuffers(const vk::raii::CommandBuffer& commandBuffer) {}
 
 void Model::drawNode(Node* node, const vk::raii::CommandBuffer& commandBuffer,
@@ -359,15 +368,6 @@ void Model::drawNode(Node* node, const vk::raii::CommandBuffer& commandBuffer,
 void Model::draw(const vk::raii::CommandBuffer& commandBuffer,
                  uint32_t renderFlags, vk::PipelineLayout pipelineLayout,
                  uint32_t bindImageSet) {}
-
-void Model::loadImages(tinygltf::Model& gltfModel) {
-  for (tinygltf::Image& gltfImage : gltfModel.images) {
-    textures.push_back(std::make_unique<Texture>(
-        gltfImage, path, device, physicalDevice, allocator, transferQueue));
-  }
-  // Create an empty texture to be used for empty material images
-  emptyTexture = std::make_unique<Texture>(device, allocator, transferQueue);
-}
 
 void Model::loadMaterials(tinygltf::Model& gltfModel) {}
 
