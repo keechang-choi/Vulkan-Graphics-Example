@@ -72,7 +72,7 @@ void Texture::fromglTFImage(tinygltf::Image& gltfImage, std::string path,
         std::floor(std::log2(std::max(width, height))) + 1.0);
     // TODO: check physical device format properties support?
 
-    // TODO: remove duplication
+    // NOTE: create image mipLevels-count, copy 0-level image
     {
       vgeu::VgeuBuffer stagingBuffer(
           allocator, pixelSize, width * height,
@@ -93,32 +93,74 @@ void Texture::fromglTFImage(tinygltf::Image& gltfImage, std::string path,
               VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
           vk::ImageAspectFlagBits::eColor, 1);
 
-      // NOTE: 0 for buffer packed tightly
+      // NOTE: row length, image height : 0 for buffer packed tightly
       vk::BufferImageCopy region(
           0, 0, 0,
           vk::ImageSubresourceLayers{vk::ImageAspectFlagBits::eColor, 0, 0, 1},
           vk::Offset3D{0, 0, 0}, vk::Extent3D{width, height, 1});
-      // layout transition
+      // NOTE: 0-mipLevel image copy and transition all mipLevels to dst
       oneTimeSubmit(device, commandPool, transferQueue,
                     [&](const vk::raii::CommandBuffer& cmdBuffer) {
                       setImageLayout(cmdBuffer, vgeuImage->getImage(),
-                                     vgeuImage->getFormat(), 0, 1,
+                                     vgeuImage->getFormat(), 0, mipLevels,
                                      vk::ImageLayout::eUndefined,
                                      vk::ImageLayout::eTransferDstOptimal);
                       cmdBuffer.copyBufferToImage(
                           stagingBuffer.getBuffer(), vgeuImage->getImage(),
                           vk::ImageLayout::eTransferDstOptimal, region);
-                      setImageLayout(cmdBuffer, vgeuImage->getImage(),
-                                     vgeuImage->getFormat(), 0, 1,
-                                     vk::ImageLayout::eTransferDstOptimal,
-                                     vk::ImageLayout::eShaderReadOnlyOptimal);
                     });
-      imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
     }
+    oneTimeSubmit(device, commandPool, transferQueue,
+                  [this](const vk::raii::CommandBuffer& cmdBuffer) {
+                    this->generateMipmaps(cmdBuffer);
+                  });
 
   } else {
     // TODO: loading texture using KTX format
+    assert(false && "failed: not yet implemented KTX format texture loading");
   }
+  createSampler(device);
+  updateDescriptorInfo();
+}
+
+void Texture::generateMipmaps(const vk::raii::CommandBuffer& cmdBuffer) {
+  uint32_t mipWidth = width;
+  uint32_t mipHeight = height;
+  for (uint32_t i = 1; i < mipLevels; i++) {
+    setImageLayout(cmdBuffer, vgeuImage->getImage(), vgeuImage->getFormat(),
+                   i - 1, 1, vk::ImageLayout::eTransferDstOptimal,
+                   vk::ImageLayout::eTransferSrcOptimal);
+    uint32_t nextMipWidth = mipWidth > 1 ? mipWidth / 2 : 1u;
+    uint32_t nextMipHeight = mipHeight > 1 ? mipHeight / 2 : 1u;
+
+    vk::ImageBlit region(
+        vk::ImageSubresourceLayers{vk::ImageAspectFlagBits::eColor, i - 1, 0,
+                                   1},
+        {
+            vk::Offset3D{0, 0, 0},
+            vk::Offset3D{static_cast<int>(mipWidth),
+                         static_cast<int>(mipHeight), 1},
+        },
+        vk::ImageSubresourceLayers{vk::ImageAspectFlagBits::eColor, i, 0, 1},
+        {
+            vk::Offset3D{0, 0, 0},
+            vk::Offset3D{static_cast<int>(nextMipWidth),
+                         static_cast<int>(nextMipHeight), 1},
+        });
+
+    cmdBuffer.blitImage(
+        vgeuImage->getImage(), vk::ImageLayout::eTransferSrcOptimal,
+        vgeuImage->getImage(), vk::ImageLayout::eTransferDstOptimal, region,
+        vk::Filter::eLinear);
+    setImageLayout(cmdBuffer, vgeuImage->getImage(), vgeuImage->getFormat(),
+                   i - 1, 1, vk::ImageLayout::eTransferSrcOptimal,
+                   vk::ImageLayout::eShaderReadOnlyOptimal);
+    mipWidth = nextMipWidth;
+    mipHeight = nextMipHeight;
+  }
+  setImageLayout(cmdBuffer, vgeuImage->getImage(), vgeuImage->getFormat(),
+                 mipLevels - 1, 1, vk::ImageLayout::eTransferDstOptimal,
+                 vk::ImageLayout::eShaderReadOnlyOptimal);
 }
 
 void Texture::createEmptyTexture(const vk::raii::Device& device,

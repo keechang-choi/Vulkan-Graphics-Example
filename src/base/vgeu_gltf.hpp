@@ -87,7 +87,7 @@ class Texture {
                      const vk::raii::Device& device, VmaAllocator allocator,
                      const vk::raii::Queue& transferQueue,
                      const vk::raii::CommandPool& commandPool);
-
+  void generateMipmaps(const vk::raii::CommandBuffer& cmdBuffer);
   void createEmptyTexture(const vk::raii::Device& device,
                           VmaAllocator allocator,
                           const vk::raii::Queue& transferQueue,
@@ -282,9 +282,10 @@ class Model {
   vk::raii::DescriptorSetLayout descriptorSetLayoutUbo = nullptr;
   // TODO: check instead usageFlags, for raytracing related
   vk::MemoryPropertyFlags memoryPropertyFlags{};
-  // NOTE: <unresolved overloaded function type> for () constructor
+  // NOTE: <unresolved overloaded function type> for () constructor,
+  // when used in operator|
   vk::BufferUsageFlags additionalBufferUsageFlags{};
-  // NOTE: used for normal map
+  // NOTE: for normal map
   DescriptorBindingFlags descriptorBindingFlags =
       DescriptorBindingFlagBits::kImageBaseColor;
 
