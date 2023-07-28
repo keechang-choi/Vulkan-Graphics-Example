@@ -855,18 +855,68 @@ Node* Model::nodeFromIndex(uint32_t index) { return nullptr; }
 
 void Model::prepareNodeDescriptor(
     const Node* node,
-    const vk::raii::DescriptorSetLayout& descriptorSetLayout) {}
+    const vk::raii::DescriptorSetLayout& descriptorSetLayout) {
+  if (node->mesh) {
+    vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
+                                            *descriptorSetLayout);
+    node->mesh->descriptorSet =
+        std::move(vk::raii::DescriptorSets(device, allocInfo).front());
+
+    vk::WriteDescriptorSet writeDescriptorSet(
+        *node->mesh->descriptorSet, 0, 0, vk::DescriptorType::eUniformBuffer,
+        nullptr, node->mesh->descriptorInfo);
+    device.updateDescriptorSets(writeDescriptorSet, nullptr);
+  }
+  for (const auto& child : node->children) {
+    prepareNodeDescriptor(child.get(), descriptorSetLayout);
+  }
+}
 
 void Model::getNodeDimensions(const Node* node, glm::vec3& min,
                               glm::vec3& max) {}
 
-void Model::setSceneDimensions() {}
+void Model::setSceneDimensions() {
+  dimensions.min = glm::vec3(std::numeric_limits<float>::max());
+  dimensions.max = glm::vec3(-std::numeric_limits<float>::max());
+  for (const auto& node : nodes) {
+    getNodeDimensions(node.get(), dimensions.min, dimensions.max);
+  }
+  dimensions.size = dimensions.max - dimensions.min;
+  dimensions.center = (dimensions.min + dimensions.max) / 2.0f;
+  dimensions.radius = glm::distance(dimensions.min, dimensions.max) / 2.0f;
+}
 
 void Material::createDescriptorSet(
     const vk::raii::Device& device,
     const vk::raii::DescriptorPool& descriptorPool,
     const vk::raii::DescriptorSetLayout& descriptorSetLayout,
-    DescriptorBindingFlags descriptorBindingFlags) {}
+    DescriptorBindingFlags descriptorBindingFlags) {
+  vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
+                                          *descriptorSetLayout);
+  descriptorSet =
+      std::move(vk::raii::DescriptorSets(device, allocInfo).front());
+
+  // TODO: check unused.
+  std::vector<vk::DescriptorImageInfo> descriptorInfos{};
+  std::vector<vk::WriteDescriptorSet> writeDescriptorSets{};
+  // writeDescriptorSets.reserve(2);
+  if (descriptorBindingFlags & DescriptorBindingFlagBits::kImageBaseColor) {
+    descriptorInfos.push_back(baseColorTexture->descriptorInfo);
+    writeDescriptorSets.emplace_back(
+        *descriptorSet, static_cast<uint32_t>(writeDescriptorSets.size()), 0,
+        vk::DescriptorType::eCombinedImageSampler,
+        baseColorTexture->descriptorInfo, nullptr);
+  }
+  if (normalTexture &&
+      descriptorBindingFlags & DescriptorBindingFlagBits::kImageNormalMap) {
+    descriptorInfos.push_back(normalTexture->descriptorInfo);
+    writeDescriptorSets.emplace_back(
+        *descriptorSet, static_cast<uint32_t>(writeDescriptorSets.size()), 0,
+        vk::DescriptorType::eCombinedImageSampler,
+        normalTexture->descriptorInfo, nullptr);
+  }
+  device.updateDescriptorSets(writeDescriptorSets, nullptr);
+}
 
 void Primitive::setDimensions(glm::vec3 min, glm::vec3 max) {}
 
