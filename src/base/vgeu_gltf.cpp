@@ -870,13 +870,46 @@ void Material::createDescriptorSet(
 
 void Primitive::setDimensions(glm::vec3 min, glm::vec3 max) {}
 
-Mesh::Mesh(VmaAllocator allocator, glm::mat4 matrix) {}
+Mesh::Mesh(VmaAllocator allocator, glm::mat4 matrix) {
+  uniformBlock.matrix = matrix;
+  uniformBuffer = std::make_unique<vgeu::VgeuBuffer>(
+      allocator, sizeof(uniformBlock), 1,
+      vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_AUTO,
+      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+          VMA_ALLOCATION_CREATE_MAPPED_BIT |
+          VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
+  descriptorInfo = uniformBuffer->descriptorInfo();
+}
 
-glm::mat4 Node::localMatrix() { return glm::mat4(); }
+glm::mat4 Node::localMatrix() {
+  return glm::translate(glm::mat4(1.0f), translation) * glm::mat4(rotation) *
+         glm::scale(glm::mat4(1.0f), scale) * matrix;
+}
 
-glm::mat4 Node::getMatrix() { return glm::mat4(); }
+glm::mat4 Node::getMatrix() {
+  glm::mat4 m = localMatrix();
+  Node* p = parent;
+  while (p) {
+    m = p->localMatrix() * m;
+    p = p->parent;
+  }
+  return m;
+}
 
-void Node::update() {}
+void Node::update() {
+  if (mesh) {
+    glm::mat4 m = getMatrix();
+    // TODO: skin
+    if (/*skin*/ false) {
+    } else {
+      memcpy(mesh->uniformBuffer->getMappedData(), &m, sizeof(glm::mat4));
+    }
+  }
+
+  for (auto& child : children) {
+    child->update();
+  }
+}
 
 vk::VertexInputBindingDescription Vertex::inputBindingDescription(
     uint32_t binding) {
