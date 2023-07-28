@@ -330,7 +330,9 @@ void Model::loadFromFile(std::string filename,
           }
           // Pre-Multiply vertex colors with material base color
           if (preMultiplyColor) {
-            vertex.color = primitive->material.baseColorFactor * vertex.color;
+            vertex.color =
+                primitive->material.getMaterialData().baseColorFactor *
+                vertex.color;
           }
         }
       }
@@ -410,7 +412,7 @@ void Model::loadFromFile(std::string filename,
     }
   }
   for (auto& material : materials) {
-    if (material.baseColorTexture != nullptr) {
+    if (material.getMaterialData().baseColorTexture != nullptr) {
       imageCount++;
     }
   }
@@ -478,7 +480,7 @@ void Model::loadFromFile(std::string filename,
           vk::raii::DescriptorSetLayout(device, setLayoutCI);
     }
     for (auto& material : materials) {
-      if (material.baseColorTexture != nullptr) {
+      if (material.getMaterialData().baseColorTexture != nullptr) {
         material.createDescriptorSet(descriptorPool, descriptorSetLayoutImage,
                                      descriptorBindingFlags);
       }
@@ -496,6 +498,79 @@ void Model::loadImages(tinygltf::Model& gltfModel) {
       std::make_unique<Texture>(device, allocator, transferQueue, commandPool);
 }
 
+void Model::loadMaterials(tinygltf::Model& gltfModel) {
+  for (tinygltf::Material& mat : gltfModel.materials) {
+    Material::MaterialData materialData{};
+
+    if (mat.values.find("baseColorTexture") != mat.values.end()) {
+      materialData.baseColorTexture = getTexture(
+          gltfModel.textures[mat.values["baseColorTexture"].TextureIndex()]
+              .source);
+    }
+    // Metallic roughness workflow
+    if (mat.values.find("metallicRoughnessTexture") != mat.values.end()) {
+      materialData.metallicRoughnessTexture = getTexture(
+          gltfModel
+              .textures[mat.values["metallicRoughnessTexture"].TextureIndex()]
+              .source);
+    }
+    if (mat.values.find("roughnessFactor") != mat.values.end()) {
+      materialData.roughnessFactor =
+          static_cast<float>(mat.values["roughnessFactor"].Factor());
+    }
+    if (mat.values.find("metallicFactor") != mat.values.end()) {
+      materialData.metallicFactor =
+          static_cast<float>(mat.values["metallicFactor"].Factor());
+    }
+    if (mat.values.find("baseColorFactor") != mat.values.end()) {
+      materialData.baseColorFactor =
+          glm::make_vec4(mat.values["baseColorFactor"].ColorFactor().data());
+    }
+    if (mat.additionalValues.find("normalTexture") !=
+        mat.additionalValues.end()) {
+      materialData.normalTexture = getTexture(
+          gltfModel
+              .textures[mat.additionalValues["normalTexture"].TextureIndex()]
+              .source);
+    } else {
+      materialData.normalTexture = emptyTexture.get();
+    }
+    if (mat.additionalValues.find("emissiveTexture") !=
+        mat.additionalValues.end()) {
+      materialData.emissiveTexture = getTexture(
+          gltfModel
+              .textures[mat.additionalValues["emissiveTexture"].TextureIndex()]
+              .source);
+    }
+    if (mat.additionalValues.find("occlusionTexture") !=
+        mat.additionalValues.end()) {
+      materialData.occlusionTexture = getTexture(
+          gltfModel
+              .textures[mat.additionalValues["occlusionTexture"].TextureIndex()]
+              .source);
+    }
+    if (mat.additionalValues.find("alphaMode") != mat.additionalValues.end()) {
+      tinygltf::Parameter param = mat.additionalValues["alphaMode"];
+      if (param.string_value == "BLEND") {
+        materialData.alphaMode = Material::AlphaMode::kALPHAMODE_BLEND;
+      }
+      if (param.string_value == "MASK") {
+        materialData.alphaMode = Material::AlphaMode::kALPHAMODE_MASK;
+      }
+    }
+    if (mat.additionalValues.find("alphaCutoff") !=
+        mat.additionalValues.end()) {
+      materialData.alphaCutoff =
+          static_cast<float>(mat.additionalValues["alphaCutoff"].Factor());
+    }
+
+    materials.emplace_back(device, materialData);
+  }
+  // Push a default material at the end of the list for meshes with no material
+  // assigned
+  materials.emplace_back(device, Material::MaterialData{});
+}
+
 void Model::bindBuffers(const vk::raii::CommandBuffer& commandBuffer) {}
 
 void Model::drawNode(Node* node, const vk::raii::CommandBuffer& commandBuffer,
@@ -505,8 +580,6 @@ void Model::drawNode(Node* node, const vk::raii::CommandBuffer& commandBuffer,
 void Model::draw(const vk::raii::CommandBuffer& commandBuffer,
                  uint32_t renderFlags, vk::PipelineLayout pipelineLayout,
                  uint32_t bindImageSet) {}
-
-void Model::loadMaterials(tinygltf::Model& gltfModel) {}
 
 void Model::loadNode(Node* parent, const tinygltf::Node& node,
                      uint32_t nodeIndex, const tinygltf::Model& model,
@@ -527,6 +600,12 @@ void Model::getNodeDimensions(const Node* node, glm::vec3& min,
                               glm::vec3& max) {}
 
 void Model::setSceneDimensions() {}
+
+Material::Material(const vk::raii::Device& device,
+                   const MaterialData& materialData)
+    : device(device), materialData(materialData) {}
+
+Material::~Material() {}
 
 void Material::createDescriptorSet(
     const vk::raii::DescriptorPool& descriptorPool,
