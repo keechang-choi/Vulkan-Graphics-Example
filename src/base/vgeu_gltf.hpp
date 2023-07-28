@@ -106,37 +106,30 @@ class Texture {
   vk::raii::Sampler sampler = nullptr;
 };
 
-class Material {
- public:
+struct Material {
   enum class AlphaMode { kALPHAMODE_OPAQUE, kALPHAMODE_MASK, kALPHAMODE_BLEND };
-  struct MaterialData {
-    AlphaMode alphaMode = AlphaMode::kALPHAMODE_OPAQUE;
-    float alphaCutoff = 1.0f;
-    float metallicFactor = 1.0f;
-    float roughnessFactor = 1.0f;
-    glm::vec4 baseColorFactor = glm::vec4(1.0f);
-    vgeu::glTF::Texture* baseColorTexture = nullptr;
-    vgeu::glTF::Texture* metallicRoughnessTexture = nullptr;
-    vgeu::glTF::Texture* normalTexture = nullptr;
-    vgeu::glTF::Texture* occlusionTexture = nullptr;
-    vgeu::glTF::Texture* emissiveTexture = nullptr;
-    // TODO: check it used.
-    vgeu::glTF::Texture* specularGlossinessTexture = nullptr;
-    vgeu::glTF::Texture* diffuseTexture = nullptr;
-  };
-  // TOOD: determine meterialData to be public
-  Material(const vk::raii::Device& device, const MaterialData& materialData);
-  ~Material();
+
+  AlphaMode alphaMode = AlphaMode::kALPHAMODE_OPAQUE;
+  float alphaCutoff = 1.0f;
+  float metallicFactor = 1.0f;
+  float roughnessFactor = 1.0f;
+  glm::vec4 baseColorFactor = glm::vec4(1.0f);
+  vgeu::glTF::Texture* baseColorTexture = nullptr;
+  vgeu::glTF::Texture* metallicRoughnessTexture = nullptr;
+  vgeu::glTF::Texture* normalTexture = nullptr;
+  vgeu::glTF::Texture* occlusionTexture = nullptr;
+  vgeu::glTF::Texture* emissiveTexture = nullptr;
+  // TODO: check it used.
+  vgeu::glTF::Texture* specularGlossinessTexture = nullptr;
+  vgeu::glTF::Texture* diffuseTexture = nullptr;
+
+  vk::raii::DescriptorSet descriptorSet = nullptr;
+
   void createDescriptorSet(
+      const vk::raii::Device& device,
       const vk::raii::DescriptorPool& descriptorPool,
       const vk::raii::DescriptorSetLayout& descriptorSetLayout,
       DescriptorBindingFlags descriptorBindingFlags);
-  const MaterialData& getMaterialData() const { return materialData; }
-
- private:
-  const vk::raii::Device& device;
-  MaterialData materialData;
-  vk::raii::DescriptorSet descriptorSet = nullptr;
 };
 
 struct Dimensions {
@@ -188,7 +181,7 @@ struct Mesh {
 // techically forest
 struct Node {
   // TODO: raw ptr?
-  Node* parent;
+  Node* parent = nullptr;
   uint32_t index;
   // TODO: unqiue_ptr since tree structure.
   std::vector<std::unique_ptr<Node>> children;
@@ -196,6 +189,7 @@ struct Node {
   std::string name;
   // TODO: unique_ptr
   std::unique_ptr<Mesh> mesh;
+  // TODO: skin
   // Skin* skin;
   int32_t skinIndex = -1;
   glm::vec3 translation{};
@@ -204,8 +198,6 @@ struct Node {
   glm::mat4 localMatrix();
   glm::mat4 getMatrix();
   void update();
-  Node();
-  ~Node();
 };
 
 // TODO: animation

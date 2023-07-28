@@ -330,9 +330,7 @@ void Model::loadFromFile(std::string filename,
           }
           // Pre-Multiply vertex colors with material base color
           if (preMultiplyColor) {
-            vertex.color =
-                primitive->material.getMaterialData().baseColorFactor *
-                vertex.color;
+            vertex.color = primitive->material.baseColorFactor * vertex.color;
           }
         }
       }
@@ -412,7 +410,7 @@ void Model::loadFromFile(std::string filename,
     }
   }
   for (auto& material : materials) {
-    if (material.getMaterialData().baseColorTexture != nullptr) {
+    if (material.baseColorTexture != nullptr) {
       imageCount++;
     }
   }
@@ -480,8 +478,9 @@ void Model::loadFromFile(std::string filename,
           vk::raii::DescriptorSetLayout(device, setLayoutCI);
     }
     for (auto& material : materials) {
-      if (material.getMaterialData().baseColorTexture != nullptr) {
-        material.createDescriptorSet(descriptorPool, descriptorSetLayoutImage,
+      if (material.baseColorTexture != nullptr) {
+        material.createDescriptorSet(device, descriptorPool,
+                                     descriptorSetLayoutImage,
                                      descriptorBindingFlags);
       }
     }
@@ -500,51 +499,50 @@ void Model::loadImages(tinygltf::Model& gltfModel) {
 
 void Model::loadMaterials(tinygltf::Model& gltfModel) {
   for (tinygltf::Material& mat : gltfModel.materials) {
-    Material::MaterialData materialData{};
-
+    Material& material = materials.emplace_back();
     if (mat.values.find("baseColorTexture") != mat.values.end()) {
-      materialData.baseColorTexture = getTexture(
+      material.baseColorTexture = getTexture(
           gltfModel.textures[mat.values["baseColorTexture"].TextureIndex()]
               .source);
     }
     // Metallic roughness workflow
     if (mat.values.find("metallicRoughnessTexture") != mat.values.end()) {
-      materialData.metallicRoughnessTexture = getTexture(
+      material.metallicRoughnessTexture = getTexture(
           gltfModel
               .textures[mat.values["metallicRoughnessTexture"].TextureIndex()]
               .source);
     }
     if (mat.values.find("roughnessFactor") != mat.values.end()) {
-      materialData.roughnessFactor =
+      material.roughnessFactor =
           static_cast<float>(mat.values["roughnessFactor"].Factor());
     }
     if (mat.values.find("metallicFactor") != mat.values.end()) {
-      materialData.metallicFactor =
+      material.metallicFactor =
           static_cast<float>(mat.values["metallicFactor"].Factor());
     }
     if (mat.values.find("baseColorFactor") != mat.values.end()) {
-      materialData.baseColorFactor =
+      material.baseColorFactor =
           glm::make_vec4(mat.values["baseColorFactor"].ColorFactor().data());
     }
     if (mat.additionalValues.find("normalTexture") !=
         mat.additionalValues.end()) {
-      materialData.normalTexture = getTexture(
+      material.normalTexture = getTexture(
           gltfModel
               .textures[mat.additionalValues["normalTexture"].TextureIndex()]
               .source);
     } else {
-      materialData.normalTexture = emptyTexture.get();
+      material.normalTexture = emptyTexture.get();
     }
     if (mat.additionalValues.find("emissiveTexture") !=
         mat.additionalValues.end()) {
-      materialData.emissiveTexture = getTexture(
+      material.emissiveTexture = getTexture(
           gltfModel
               .textures[mat.additionalValues["emissiveTexture"].TextureIndex()]
               .source);
     }
     if (mat.additionalValues.find("occlusionTexture") !=
         mat.additionalValues.end()) {
-      materialData.occlusionTexture = getTexture(
+      material.occlusionTexture = getTexture(
           gltfModel
               .textures[mat.additionalValues["occlusionTexture"].TextureIndex()]
               .source);
@@ -552,23 +550,65 @@ void Model::loadMaterials(tinygltf::Model& gltfModel) {
     if (mat.additionalValues.find("alphaMode") != mat.additionalValues.end()) {
       tinygltf::Parameter param = mat.additionalValues["alphaMode"];
       if (param.string_value == "BLEND") {
-        materialData.alphaMode = Material::AlphaMode::kALPHAMODE_BLEND;
+        material.alphaMode = Material::AlphaMode::kALPHAMODE_BLEND;
       }
       if (param.string_value == "MASK") {
-        materialData.alphaMode = Material::AlphaMode::kALPHAMODE_MASK;
+        material.alphaMode = Material::AlphaMode::kALPHAMODE_MASK;
       }
     }
     if (mat.additionalValues.find("alphaCutoff") !=
         mat.additionalValues.end()) {
-      materialData.alphaCutoff =
+      material.alphaCutoff =
           static_cast<float>(mat.additionalValues["alphaCutoff"].Factor());
     }
-
-    materials.emplace_back(device, materialData);
   }
   // Push a default material at the end of the list for meshes with no material
   // assigned
-  materials.emplace_back(device, Material::MaterialData{});
+  materials.emplace_back();
+}
+void Model::loadNode(Node* parent, const tinygltf::Node& node,
+                     uint32_t nodeIndex, const tinygltf::Model& model,
+                     std::vector<uint32_t>& indices,
+                     std::vector<Vertex>& vertices, float globalscale) {
+  // To be moved into nodes or children of the other node;
+  std::unique_ptr<Node> newNode(new Node{});
+  newNode->index = nodeIndex;
+  newNode->parent = parent;
+  newNode->name = node.name;
+  newNode->skinIndex = node.skin;
+  newNode->matrix = glm::mat4(1.0f);
+
+  // Generate local node matrix
+  glm::vec3 translation = glm::vec3(0.0f);
+  if (node.translation.size() == 3) {
+    translation = glm::make_vec3(node.translation.data());
+    newNode->translation = translation;
+  }
+  glm::mat4 rotation = glm::mat4(1.0f);
+  if (node.rotation.size() == 4) {
+    glm::quat q = glm::make_quat(node.rotation.data());
+    newNode->rotation = glm::mat4(q);
+  }
+  glm::vec3 scale = glm::vec3(1.0f);
+  if (node.scale.size() == 3) {
+    scale = glm::make_vec3(node.scale.data());
+    newNode->scale = scale;
+  }
+  if (node.matrix.size() == 16) {
+    newNode->matrix = glm::make_mat4x4(node.matrix.data());
+    if (globalscale != 1.0f) {
+      // TODO: check why commented
+      // newNode->matrix = glm::scale(newNode->matrix, glm::vec3(globalscale));
+    }
+  };
+
+  // Node with children
+  if (node.children.size() > 0) {
+    for (auto i = 0; i < node.children.size(); i++) {
+      loadNode(newNode.get(), model.nodes[node.children[i]], node.children[i],
+               model, indices, vertices, globalscale);
+    }
+  }
 }
 
 void Model::bindBuffers(const vk::raii::CommandBuffer& commandBuffer) {}
@@ -580,11 +620,6 @@ void Model::drawNode(Node* node, const vk::raii::CommandBuffer& commandBuffer,
 void Model::draw(const vk::raii::CommandBuffer& commandBuffer,
                  uint32_t renderFlags, vk::PipelineLayout pipelineLayout,
                  uint32_t bindImageSet) {}
-
-void Model::loadNode(Node* parent, const tinygltf::Node& node,
-                     uint32_t nodeIndex, const tinygltf::Model& model,
-                     std::vector<uint32_t>& indices,
-                     std::vector<Vertex>& vertices, float globalscale) {}
 
 Texture* Model::getTexture(uint32_t index) { return nullptr; }
 
@@ -601,13 +636,8 @@ void Model::getNodeDimensions(const Node* node, glm::vec3& min,
 
 void Model::setSceneDimensions() {}
 
-Material::Material(const vk::raii::Device& device,
-                   const MaterialData& materialData)
-    : device(device), materialData(materialData) {}
-
-Material::~Material() {}
-
 void Material::createDescriptorSet(
+    const vk::raii::Device& device,
     const vk::raii::DescriptorPool& descriptorPool,
     const vk::raii::DescriptorSetLayout& descriptorSetLayout,
     DescriptorBindingFlags descriptorBindingFlags) {}
@@ -623,9 +653,6 @@ glm::mat4 Node::localMatrix() { return glm::mat4(); }
 glm::mat4 Node::getMatrix() { return glm::mat4(); }
 
 void Node::update() {}
-
-Node::Node() {}
-Node::~Node() {}
 
 vk::VertexInputBindingDescription Vertex::inputBindingDescription(
     uint32_t binding) {
