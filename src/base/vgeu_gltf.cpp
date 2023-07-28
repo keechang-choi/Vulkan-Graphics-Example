@@ -816,12 +816,14 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
             return;
         }
       }
-      std::unique_ptr<Primitive>& newPrimitive =
-          newNode->mesh->primitives.emplace_back(
-              indexStart, indexCount,
-              gltfPrimitive.material > -1 ? materials[gltfPrimitive.material]
-                                          : materials.back());
 
+      newNode->mesh->primitives.push_back(std::make_unique<Primitive>(
+          indexStart, indexCount,
+          gltfPrimitive.material > -1 ? materials[gltfPrimitive.material]
+                                      : materials.back()));
+
+      std::unique_ptr<Primitive>& newPrimitive =
+          newNode->mesh->primitives.back();
       newPrimitive->firstVertex = vertexStart;
       newPrimitive->vertexCount = vertexCount;
       newPrimitive->setDimensions(posMin, posMax);
