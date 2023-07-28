@@ -165,7 +165,6 @@ struct Mesh {
   } uniformBlock;
 
   Mesh(VmaAllocator allocator, glm::mat4 matrix);
-  ~Mesh();
 };
 
 // TODO: skin

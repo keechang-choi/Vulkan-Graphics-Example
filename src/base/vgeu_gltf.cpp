@@ -566,36 +566,36 @@ void Model::loadMaterials(tinygltf::Model& gltfModel) {
   // assigned
   materials.emplace_back();
 }
-void Model::loadNode(Node* parent, const tinygltf::Node& node,
-                     uint32_t nodeIndex, const tinygltf::Model& model,
+void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
+                     uint32_t nodeIndex, const tinygltf::Model& gltfModel,
                      std::vector<uint32_t>& indices,
                      std::vector<Vertex>& vertices, float globalscale) {
   // To be moved into nodes or children of the other node;
   std::unique_ptr<Node> newNode(new Node{});
   newNode->index = nodeIndex;
   newNode->parent = parent;
-  newNode->name = node.name;
-  newNode->skinIndex = node.skin;
+  newNode->name = gltfNode.name;
+  newNode->skinIndex = gltfNode.skin;
   newNode->matrix = glm::mat4(1.0f);
 
   // Generate local node matrix
   glm::vec3 translation = glm::vec3(0.0f);
-  if (node.translation.size() == 3) {
-    translation = glm::make_vec3(node.translation.data());
+  if (gltfNode.translation.size() == 3) {
+    translation = glm::make_vec3(gltfNode.translation.data());
     newNode->translation = translation;
   }
   glm::mat4 rotation = glm::mat4(1.0f);
-  if (node.rotation.size() == 4) {
-    glm::quat q = glm::make_quat(node.rotation.data());
+  if (gltfNode.rotation.size() == 4) {
+    glm::quat q = glm::make_quat(gltfNode.rotation.data());
     newNode->rotation = glm::mat4(q);
   }
   glm::vec3 scale = glm::vec3(1.0f);
-  if (node.scale.size() == 3) {
-    scale = glm::make_vec3(node.scale.data());
+  if (gltfNode.scale.size() == 3) {
+    scale = glm::make_vec3(gltfNode.scale.data());
     newNode->scale = scale;
   }
-  if (node.matrix.size() == 16) {
-    newNode->matrix = glm::make_mat4x4(node.matrix.data());
+  if (gltfNode.matrix.size() == 16) {
+    newNode->matrix = glm::make_mat4x4(gltfNode.matrix.data());
     if (globalscale != 1.0f) {
       // TODO: check why commented
       // newNode->matrix = glm::scale(newNode->matrix, glm::vec3(globalscale));
@@ -603,11 +603,235 @@ void Model::loadNode(Node* parent, const tinygltf::Node& node,
   };
 
   // Node with children
-  if (node.children.size() > 0) {
-    for (auto i = 0; i < node.children.size(); i++) {
-      loadNode(newNode.get(), model.nodes[node.children[i]], node.children[i],
-               model, indices, vertices, globalscale);
+  if (gltfNode.children.size() > 0) {
+    for (auto i = 0; i < gltfNode.children.size(); i++) {
+      loadNode(newNode.get(), gltfModel.nodes[gltfNode.children[i]],
+               gltfNode.children[i], gltfModel, indices, vertices, globalscale);
     }
+  }
+
+  // Node contains mesh data
+  if (gltfNode.mesh > -1) {
+    const tinygltf::Mesh gltfMesh = gltfModel.meshes[gltfNode.mesh];
+    newNode->mesh = std::make_unique<Mesh>(allocator, newNode->matrix);
+    newNode->mesh->name = gltfMesh.name;
+    for (size_t j = 0; j < gltfMesh.primitives.size(); j++) {
+      const tinygltf::Primitive& gltfPrimitive = gltfMesh.primitives[j];
+      if (gltfPrimitive.indices < 0) {
+        continue;
+      }
+      uint32_t indexStart = static_cast<uint32_t>(indices.size());
+      uint32_t vertexStart = static_cast<uint32_t>(vertices.size());
+      uint32_t indexCount = 0;
+      uint32_t vertexCount = 0;
+      glm::vec3 posMin{};
+      glm::vec3 posMax{};
+      bool hasSkin = false;
+      // Vertices
+      {
+        const float* bufferPos = nullptr;
+        const float* bufferNormals = nullptr;
+        const float* bufferTexCoords = nullptr;
+        const float* bufferColors = nullptr;
+        const float* bufferTangents = nullptr;
+        uint32_t numColorComponents;
+        const uint16_t* bufferJoints = nullptr;
+        const float* bufferWeights = nullptr;
+
+        // Position attribute is required
+        assert(gltfPrimitive.attributes.find("POSITION") !=
+               gltfPrimitive.attributes.end());
+
+        const tinygltf::Accessor& posAccessor =
+            gltfModel
+                .accessors[gltfPrimitive.attributes.find("POSITION")->second];
+        const tinygltf::BufferView& posView =
+            gltfModel.bufferViews[posAccessor.bufferView];
+        bufferPos = reinterpret_cast<const float*>(
+            &(gltfModel.buffers[posView.buffer]
+                  .data[posAccessor.byteOffset + posView.byteOffset]));
+        posMin = glm::vec3(posAccessor.minValues[0], posAccessor.minValues[1],
+                           posAccessor.minValues[2]);
+        posMax = glm::vec3(posAccessor.maxValues[0], posAccessor.maxValues[1],
+                           posAccessor.maxValues[2]);
+
+        if (gltfPrimitive.attributes.find("NORMAL") !=
+            gltfPrimitive.attributes.end()) {
+          const tinygltf::Accessor& normAccessor =
+              gltfModel
+                  .accessors[gltfPrimitive.attributes.find("NORMAL")->second];
+          const tinygltf::BufferView& normView =
+              gltfModel.bufferViews[normAccessor.bufferView];
+          bufferNormals = reinterpret_cast<const float*>(
+              &(gltfModel.buffers[normView.buffer]
+                    .data[normAccessor.byteOffset + normView.byteOffset]));
+        }
+
+        if (gltfPrimitive.attributes.find("TEXCOORD_0") !=
+            gltfPrimitive.attributes.end()) {
+          const tinygltf::Accessor& uvAccessor =
+              gltfModel.accessors[gltfPrimitive.attributes.find("TEXCOORD_0")
+                                      ->second];
+          const tinygltf::BufferView& uvView =
+              gltfModel.bufferViews[uvAccessor.bufferView];
+          bufferTexCoords = reinterpret_cast<const float*>(
+              &(gltfModel.buffers[uvView.buffer]
+                    .data[uvAccessor.byteOffset + uvView.byteOffset]));
+        }
+
+        if (gltfPrimitive.attributes.find("COLOR_0") !=
+            gltfPrimitive.attributes.end()) {
+          const tinygltf::Accessor& colorAccessor =
+              gltfModel
+                  .accessors[gltfPrimitive.attributes.find("COLOR_0")->second];
+          const tinygltf::BufferView& colorView =
+              gltfModel.bufferViews[colorAccessor.bufferView];
+          // Color buffer are either of type vec3 or vec4
+          numColorComponents =
+              colorAccessor.type == TINYGLTF_PARAMETER_TYPE_FLOAT_VEC3 ? 3 : 4;
+          bufferColors = reinterpret_cast<const float*>(
+              &(gltfModel.buffers[colorView.buffer]
+                    .data[colorAccessor.byteOffset + colorView.byteOffset]));
+        }
+
+        if (gltfPrimitive.attributes.find("TANGENT") !=
+            gltfPrimitive.attributes.end()) {
+          const tinygltf::Accessor& tangentAccessor =
+              gltfModel
+                  .accessors[gltfPrimitive.attributes.find("TANGENT")->second];
+          const tinygltf::BufferView& tangentView =
+              gltfModel.bufferViews[tangentAccessor.bufferView];
+          bufferTangents = reinterpret_cast<const float*>(&(
+              gltfModel.buffers[tangentView.buffer]
+                  .data[tangentAccessor.byteOffset + tangentView.byteOffset]));
+        }
+
+        // Skinning
+        // Joints
+        if (gltfPrimitive.attributes.find("JOINTS_0") !=
+            gltfPrimitive.attributes.end()) {
+          const tinygltf::Accessor& jointAccessor =
+              gltfModel
+                  .accessors[gltfPrimitive.attributes.find("JOINTS_0")->second];
+          const tinygltf::BufferView& jointView =
+              gltfModel.bufferViews[jointAccessor.bufferView];
+          bufferJoints = reinterpret_cast<const uint16_t*>(
+              &(gltfModel.buffers[jointView.buffer]
+                    .data[jointAccessor.byteOffset + jointView.byteOffset]));
+        }
+
+        if (gltfPrimitive.attributes.find("WEIGHTS_0") !=
+            gltfPrimitive.attributes.end()) {
+          const tinygltf::Accessor& uvAccessor =
+              gltfModel.accessors[gltfPrimitive.attributes.find("WEIGHTS_0")
+                                      ->second];
+          const tinygltf::BufferView& uvView =
+              gltfModel.bufferViews[uvAccessor.bufferView];
+          bufferWeights = reinterpret_cast<const float*>(
+              &(gltfModel.buffers[uvView.buffer]
+                    .data[uvAccessor.byteOffset + uvView.byteOffset]));
+        }
+
+        hasSkin = (bufferJoints && bufferWeights);
+
+        vertexCount = static_cast<uint32_t>(posAccessor.count);
+
+        for (size_t v = 0; v < posAccessor.count; v++) {
+          Vertex vert{};
+          vert.pos = glm::vec4(glm::make_vec3(&bufferPos[v * 3]), 1.0f);
+          vert.normal = glm::normalize(
+              glm::vec3(bufferNormals ? glm::make_vec3(&bufferNormals[v * 3])
+                                      : glm::vec3(0.0f)));
+          vert.uv = bufferTexCoords ? glm::make_vec2(&bufferTexCoords[v * 2])
+                                    : glm::vec3(0.0f);
+          if (bufferColors) {
+            switch (numColorComponents) {
+              case 3:
+                vert.color =
+                    glm::vec4(glm::make_vec3(&bufferColors[v * 3]), 1.0f);
+              case 4:
+                vert.color = glm::make_vec4(&bufferColors[v * 4]);
+            }
+          } else {
+            vert.color = glm::vec4(1.0f);
+          }
+          vert.tangent = bufferTangents
+                             ? glm::vec4(glm::make_vec4(&bufferTangents[v * 4]))
+                             : glm::vec4(0.0f);
+          vert.joint0 = hasSkin
+                            ? glm::vec4(glm::make_vec4(&bufferJoints[v * 4]))
+                            : glm::vec4(0.0f);
+          vert.weight0 =
+              hasSkin ? glm::make_vec4(&bufferWeights[v * 4]) : glm::vec4(0.0f);
+          vertices.push_back(vert);
+        }
+      }
+      // Indices
+      {
+        const tinygltf::Accessor& accessor =
+            gltfModel.accessors[gltfPrimitive.indices];
+        const tinygltf::BufferView& bufferView =
+            gltfModel.bufferViews[accessor.bufferView];
+        const tinygltf::Buffer& buffer = gltfModel.buffers[bufferView.buffer];
+
+        indexCount = static_cast<uint32_t>(accessor.count);
+
+        switch (accessor.componentType) {
+          case TINYGLTF_PARAMETER_TYPE_UNSIGNED_INT: {
+            uint32_t* buf = new uint32_t[accessor.count];
+            memcpy(buf,
+                   &buffer.data[accessor.byteOffset + bufferView.byteOffset],
+                   accessor.count * sizeof(uint32_t));
+            for (size_t index = 0; index < accessor.count; index++) {
+              indices.push_back(buf[index] + vertexStart);
+            }
+            delete[] buf;
+            break;
+          }
+          case TINYGLTF_PARAMETER_TYPE_UNSIGNED_SHORT: {
+            uint16_t* buf = new uint16_t[accessor.count];
+            memcpy(buf,
+                   &buffer.data[accessor.byteOffset + bufferView.byteOffset],
+                   accessor.count * sizeof(uint16_t));
+            for (size_t index = 0; index < accessor.count; index++) {
+              indices.push_back(buf[index] + vertexStart);
+            }
+            delete[] buf;
+            break;
+          }
+          case TINYGLTF_PARAMETER_TYPE_UNSIGNED_BYTE: {
+            uint8_t* buf = new uint8_t[accessor.count];
+            memcpy(buf,
+                   &buffer.data[accessor.byteOffset + bufferView.byteOffset],
+                   accessor.count * sizeof(uint8_t));
+            for (size_t index = 0; index < accessor.count; index++) {
+              indices.push_back(buf[index] + vertexStart);
+            }
+            delete[] buf;
+            break;
+          }
+          default:
+            std::cerr << "Index component type " << accessor.componentType
+                      << " not supported!" << std::endl;
+            return;
+        }
+      }
+      std::unique_ptr<Primitive>& newPrimitive =
+          newNode->mesh->primitives.emplace_back(
+              indexStart, indexCount,
+              gltfPrimitive.material > -1 ? materials[gltfPrimitive.material]
+                                          : materials.back());
+
+      newPrimitive->firstVertex = vertexStart;
+      newPrimitive->vertexCount = vertexCount;
+      newPrimitive->setDimensions(posMin, posMax);
+    }
+  }
+  linearNodes.push_back(newNode.get());
+  if (parent != nullptr) {
+    parent->children.push_back(std::move(newNode));
+  } else {
+    nodes.push_back(std::move(newNode));
   }
 }
 
@@ -645,8 +869,6 @@ void Material::createDescriptorSet(
 void Primitive::setDimensions(glm::vec3 min, glm::vec3 max) {}
 
 Mesh::Mesh(VmaAllocator allocator, glm::mat4 matrix) {}
-
-Mesh::~Mesh() {}
 
 glm::mat4 Node::localMatrix() { return glm::mat4(); }
 
