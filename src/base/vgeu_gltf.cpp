@@ -837,21 +837,22 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
   }
 }
 
-void Model::bindBuffers(const vk::raii::CommandBuffer& commandBuffer) {}
-
-void Model::drawNode(Node* node, const vk::raii::CommandBuffer& commandBuffer,
-                     uint32_t renderFlags, vk::PipelineLayout pipelineLayout,
-                     uint32_t bindImageSet) {}
+const Texture* Model::getTexture(uint32_t index) const {
+  if (index < textures.size()) {
+    return textures[index].get();
+  }
+  return nullptr;
+}
 
 void Model::draw(const vk::raii::CommandBuffer& commandBuffer,
                  uint32_t renderFlags, vk::PipelineLayout pipelineLayout,
                  uint32_t bindImageSet) {}
 
-Texture* Model::getTexture(uint32_t index) { return nullptr; }
+void Model::drawNode(Node* node, const vk::raii::CommandBuffer& commandBuffer,
+                     uint32_t renderFlags, vk::PipelineLayout pipelineLayout,
+                     uint32_t bindImageSet) {}
 
-Node* Model::findNode(const Node* parent, uint32_t index) { return nullptr; }
-
-Node* Model::nodeFromIndex(uint32_t index) { return nullptr; }
+void Model::bindBuffers(const vk::raii::CommandBuffer& commandBuffer) {}
 
 void Model::prepareNodeDescriptor(
     const Node* node,
@@ -873,7 +874,37 @@ void Model::prepareNodeDescriptor(
 }
 
 void Model::getNodeDimensions(const Node* node, glm::vec3& min,
-                              glm::vec3& max) {}
+                              glm::vec3& max) const {
+  if (node->mesh) {
+    for (const auto& primitive : node->mesh->primitives) {
+      glm::vec4 locMin =
+          glm::vec4(primitive->dimensions.min, 1.0f) * node->getMatrix();
+      glm::vec4 locMax =
+          glm::vec4(primitive->dimensions.max, 1.0f) * node->getMatrix();
+      if (locMin.x < min.x) {
+        min.x = locMin.x;
+      }
+      if (locMin.y < min.y) {
+        min.y = locMin.y;
+      }
+      if (locMin.z < min.z) {
+        min.z = locMin.z;
+      }
+      if (locMax.x > max.x) {
+        max.x = locMax.x;
+      }
+      if (locMax.y > max.y) {
+        max.y = locMax.y;
+      }
+      if (locMax.z > max.z) {
+        max.z = locMax.z;
+      }
+    }
+  }
+  for (const auto& child : node->children) {
+    getNodeDimensions(child.get(), min, max);
+  }
+}
 
 void Model::setSceneDimensions() {
   dimensions.min = glm::vec3(std::numeric_limits<float>::max());
@@ -884,6 +915,31 @@ void Model::setSceneDimensions() {
   dimensions.size = dimensions.max - dimensions.min;
   dimensions.center = (dimensions.min + dimensions.max) / 2.0f;
   dimensions.radius = glm::distance(dimensions.min, dimensions.max) / 2.0f;
+}
+
+const Node* Model::findNode(const Node* parent, uint32_t index) const {
+  const Node* nodeFound = nullptr;
+  if (parent->index == index) {
+    return parent;
+  }
+  for (const auto& child : parent->children) {
+    nodeFound = findNode(child.get(), index);
+    if (nodeFound) {
+      break;
+    }
+  }
+  return nodeFound;
+}
+
+const Node* Model::nodeFromIndex(uint32_t index) const {
+  const Node* nodeFound = nullptr;
+  for (const auto& node : nodes) {
+    nodeFound = findNode(node.get(), index);
+    if (nodeFound) {
+      break;
+    }
+  }
+  return nodeFound;
 }
 
 void Material::createDescriptorSet(
@@ -918,7 +974,13 @@ void Material::createDescriptorSet(
   device.updateDescriptorSets(writeDescriptorSets, nullptr);
 }
 
-void Primitive::setDimensions(glm::vec3 min, glm::vec3 max) {}
+void Primitive::setDimensions(glm::vec3 min, glm::vec3 max) {
+  dimensions.min = min;
+  dimensions.max = max;
+  dimensions.size = max - min;
+  dimensions.center = (min + max) / 2.0f;
+  dimensions.radius = glm::distance(min, max) / 2.0f;
+}
 
 Mesh::Mesh(VmaAllocator allocator, glm::mat4 matrix) {
   uniformBlock.matrix = matrix;
@@ -931,14 +993,14 @@ Mesh::Mesh(VmaAllocator allocator, glm::mat4 matrix) {
   descriptorInfo = uniformBuffer->descriptorInfo();
 }
 
-glm::mat4 Node::localMatrix() {
+glm::mat4 Node::localMatrix() const {
   return glm::translate(glm::mat4(1.0f), translation) * glm::mat4(rotation) *
          glm::scale(glm::mat4(1.0f), scale) * matrix;
 }
 
-glm::mat4 Node::getMatrix() {
+glm::mat4 Node::getMatrix() const {
   glm::mat4 m = localMatrix();
-  Node* p = parent;
+  const Node* p = parent;
   while (p) {
     m = p->localMatrix() * m;
     p = p->parent;

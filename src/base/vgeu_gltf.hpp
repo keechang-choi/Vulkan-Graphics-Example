@@ -110,14 +110,14 @@ struct Material {
   float metallicFactor = 1.0f;
   float roughnessFactor = 1.0f;
   glm::vec4 baseColorFactor = glm::vec4(1.0f);
-  vgeu::glTF::Texture* baseColorTexture = nullptr;
-  vgeu::glTF::Texture* metallicRoughnessTexture = nullptr;
-  vgeu::glTF::Texture* normalTexture = nullptr;
-  vgeu::glTF::Texture* occlusionTexture = nullptr;
-  vgeu::glTF::Texture* emissiveTexture = nullptr;
+  const vgeu::glTF::Texture* baseColorTexture = nullptr;
+  const vgeu::glTF::Texture* metallicRoughnessTexture = nullptr;
+  const vgeu::glTF::Texture* normalTexture = nullptr;
+  const vgeu::glTF::Texture* occlusionTexture = nullptr;
+  const vgeu::glTF::Texture* emissiveTexture = nullptr;
   // TODO: check it used.
-  vgeu::glTF::Texture* specularGlossinessTexture = nullptr;
-  vgeu::glTF::Texture* diffuseTexture = nullptr;
+  const vgeu::glTF::Texture* specularGlossinessTexture = nullptr;
+  const vgeu::glTF::Texture* diffuseTexture = nullptr;
 
   vk::raii::DescriptorSet descriptorSet = nullptr;
 
@@ -176,7 +176,7 @@ struct Mesh {
 // techically forest
 struct Node {
   // TODO: raw ptr?
-  Node* parent = nullptr;
+  const Node* parent = nullptr;
   uint32_t index;
   // TODO: unqiue_ptr since tree structure.
   std::vector<std::unique_ptr<Node>> children;
@@ -190,8 +190,8 @@ struct Node {
   glm::vec3 translation{};
   glm::vec3 scale{1.0f};
   glm::quat rotation{};
-  glm::mat4 localMatrix();
-  glm::mat4 getMatrix();
+  glm::mat4 localMatrix() const;
+  glm::mat4 getMatrix() const;
   void update();
 };
 
@@ -298,14 +298,15 @@ class Model {
   // TODO: skins
 
   // TODO: animation
-  Texture* getTexture(uint32_t index);
-  Node* findNode(const Node* parent, uint32_t index);
-  Node* nodeFromIndex(uint32_t index);
+  const Texture* getTexture(uint32_t index) const;
+  const Node* findNode(const Node* parent, uint32_t index) const;
+  const Node* nodeFromIndex(uint32_t index) const;
   void prepareNodeDescriptor(
       const Node* node,
       const vk::raii::DescriptorSetLayout& descriptorSetLayout);
 
-  void getNodeDimensions(const Node* node, glm::vec3& min, glm::vec3& max);
+  void getNodeDimensions(const Node* node, glm::vec3& min,
+                         glm::vec3& max) const;
   void setSceneDimensions();
 
   const vk::raii::Device& device;
