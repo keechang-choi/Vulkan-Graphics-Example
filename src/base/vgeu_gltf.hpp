@@ -249,16 +249,16 @@ class Model {
       FileLoadingFlags fileLoadingFlags = FileLoadingFlagBits::kNone,
       float scale = 1.0f);
 
-  void bindBuffers(const vk::raii::CommandBuffer& commandBuffer);
+  void bindBuffers(const vk::raii::CommandBuffer& cmdBuffer);
 
   // NOTE: nullable pipelinelayout
-  void drawNode(Node* node, const vk::raii::CommandBuffer& commandBuffer,
-                uint32_t renderFlags = 0,
+  void drawNode(const Node* node, const vk::raii::CommandBuffer& cmdBuffer,
+                RenderFlags renderFlags = 0,
                 vk::PipelineLayout pipelineLayout = VK_NULL_HANDLE,
                 uint32_t bindImageSet = 1);
 
-  void draw(const vk::raii::CommandBuffer& commandBuffer,
-            uint32_t renderFlags = 0,
+  void draw(const vk::raii::CommandBuffer& cmdBuffer,
+            RenderFlags renderFlags = 0,
             vk::PipelineLayout pipelineLayout = VK_NULL_HANDLE,
             uint32_t bindImageSet = 1);
 

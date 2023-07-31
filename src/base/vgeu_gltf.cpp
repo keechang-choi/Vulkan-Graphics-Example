@@ -844,15 +844,54 @@ const Texture* Model::getTexture(uint32_t index) const {
   return nullptr;
 }
 
-void Model::draw(const vk::raii::CommandBuffer& commandBuffer,
-                 uint32_t renderFlags, vk::PipelineLayout pipelineLayout,
-                 uint32_t bindImageSet) {}
+void Model::draw(const vk::raii::CommandBuffer& cmdBuffer,
+                 RenderFlags renderFlags, vk::PipelineLayout pipelineLayout,
+                 uint32_t bindImageSet) {
+  if (!buffersBound) {
+    bindBuffers(cmdBuffer);
+  }
+  for (const auto& node : nodes) {
+    drawNode(node.get(), cmdBuffer, renderFlags, pipelineLayout, bindImageSet);
+  }
+}
 
-void Model::drawNode(Node* node, const vk::raii::CommandBuffer& commandBuffer,
-                     uint32_t renderFlags, vk::PipelineLayout pipelineLayout,
-                     uint32_t bindImageSet) {}
+void Model::drawNode(const Node* node, const vk::raii::CommandBuffer& cmdBuffer,
+                     RenderFlags renderFlags, vk::PipelineLayout pipelineLayout,
+                     uint32_t bindImageSet) {
+  if (node->mesh) {
+    for (const auto& primitive : node->mesh->primitives) {
+      bool skip = false;
+      const Material& material = primitive->material;
+      if (renderFlags & RenderFlagBits::kRenderOpaqueNodes) {
+        skip = (material.alphaMode != Material::AlphaMode::kALPHAMODE_OPAQUE);
+      }
+      if (renderFlags & RenderFlagBits::kRenderAlphaMaskedNodes) {
+        skip = (material.alphaMode != Material::AlphaMode::kALPHAMODE_MASK);
+      }
+      if (renderFlags & RenderFlagBits::kRenderAlphaBlendedNodes) {
+        skip = (material.alphaMode != Material::AlphaMode::kALPHAMODE_BLEND);
+      }
+      if (!skip) {
+        if (renderFlags & RenderFlagBits::kBindImages) {
+          cmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                       pipelineLayout, bindImageSet,
+                                       *material.descriptorSet, nullptr);
+        }
+        cmdBuffer.drawIndexed(primitive->indexCount, 1, primitive->firstIndex,
+                              0, 0);
+      }
+    }
+  }
+  for (const auto& child : node->children) {
+    drawNode(child.get(), cmdBuffer, renderFlags, pipelineLayout, bindImageSet);
+  }
+}
 
-void Model::bindBuffers(const vk::raii::CommandBuffer& commandBuffer) {}
+void Model::bindBuffers(const vk::raii::CommandBuffer& cmdBuffer) {
+  vk::DeviceSize offset(0);
+  cmdBuffer.bindVertexBuffers(0, vertexBuffer->getBuffer(), offset);
+  buffersBound = true;
+}
 
 void Model::prepareNodeDescriptor(
     const Node* node,
@@ -1022,11 +1061,6 @@ void Node::update() {
     child->update();
   }
 }
-
-static std::vector<vk::VertexInputAttributeDescription>
-    vertexInputAttributeDescriptions;
-static vk::PipelineVertexInputStateCreateInfo
-    pipelineVertexInputStateCreateInfo;
 
 vk::VertexInputBindingDescription Vertex::getInputBindingDescription(
     uint32_t binding) {
