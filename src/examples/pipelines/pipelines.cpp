@@ -32,8 +32,6 @@ void VgeExample::getEnabledExtensions() {
 void VgeExample::prepare() {
   VgeBase::prepare();
   loadAssets();
-  createVertexBuffer();
-  createIndexBuffer();
   createUniformBuffers();
   createDescriptorSetLayout();
   createDescriptorPool();
@@ -66,75 +64,6 @@ void VgeExample::createUniformBuffers() {
     std::memcpy(uniformBuffers[i]->getMappedData(), &globalUbo,
                 sizeof(GlobalUbo));
   }
-}
-
-void VgeExample::createVertexBuffer() {
-  std::vector<Vertex> vertices{
-      {{1.0f, 1.0f, 0.1f}, {1.0f, 0.0f, 0.0f}},
-      {{-1.0f, 1.0f, 0.2f}, {0.0f, 1.0f, 0.0f}},
-      {{0.0f, -1.0f, 0.3f}, {0.0f, 0.0f, 1.0f}},
-  };
-
-  vgeu::VgeuBuffer stagingBuffer(
-      globalAllocator->getAllocator(), sizeof(Vertex),
-      static_cast<uint32_t>(vertices.size()),
-      vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_AUTO,
-      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-          VMA_ALLOCATION_CREATE_MAPPED_BIT);
-
-  std::memcpy(stagingBuffer.getMappedData(), vertices.data(),
-              stagingBuffer.getBufferSize());
-
-  vertexBuffer = std::make_unique<vgeu::VgeuBuffer>(
-      globalAllocator->getAllocator(), sizeof(Vertex),
-      static_cast<uint32_t>(vertices.size()),
-      vk::BufferUsageFlagBits::eVertexBuffer |
-          vk::BufferUsageFlagBits::eTransferDst,
-      VMA_MEMORY_USAGE_AUTO,
-      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-          VMA_ALLOCATION_CREATE_MAPPED_BIT);
-
-  // single Time command
-  // begin, copy , end, submit, waitIdle queue.
-  vgeu::oneTimeSubmit(
-      device, commandPool, queue,
-      [&](const vk::raii::CommandBuffer& cmdBuffer) {
-        cmdBuffer.copyBuffer(
-            stagingBuffer.getBuffer(), vertexBuffer->getBuffer(),
-            vk::BufferCopy(0, 0, stagingBuffer.getBufferSize()));
-      });
-}
-
-void VgeExample::createIndexBuffer() {
-  std::vector<uint32_t> indices{0, 1, 2};
-
-  vgeu::VgeuBuffer stagingBuffer(
-      globalAllocator->getAllocator(), sizeof(uint32_t),
-      static_cast<uint32_t>(indices.size()),
-      vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_AUTO,
-      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-          VMA_ALLOCATION_CREATE_MAPPED_BIT);
-
-  std::memcpy(stagingBuffer.getMappedData(), indices.data(),
-              stagingBuffer.getBufferSize());
-
-  indexBuffer = std::make_unique<vgeu::VgeuBuffer>(
-      globalAllocator->getAllocator(), sizeof(uint32_t),
-      static_cast<uint32_t>(indices.size()),
-      vk::BufferUsageFlagBits::eIndexBuffer |
-          vk::BufferUsageFlagBits::eTransferDst,
-      VMA_MEMORY_USAGE_AUTO,
-      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-          VMA_ALLOCATION_CREATE_MAPPED_BIT);
-
-  // single Time command copy
-  vgeu::oneTimeSubmit(
-      device, commandPool, queue,
-      [&](const vk::raii::CommandBuffer& cmdBuffer) {
-        cmdBuffer.copyBuffer(
-            stagingBuffer.getBuffer(), indexBuffer->getBuffer(),
-            vk::BufferCopy(0, 0, stagingBuffer.getBufferSize()));
-      });
 }
 
 void VgeExample::createDescriptorSetLayout() {
@@ -206,13 +135,6 @@ void VgeExample::createPipelines() {
                                         vk::ShaderStageFlagBits::eFragment,
                                         *fragShaderModule, "main", nullptr),
   };
-  //   // NOTE: brace init list flags may cause template argument deducing fail
-  //   std::vector<vk::PipelineShaderStageCreateInfo> pipelineShaderStageCI;
-  //   pipelineShaderStageCI.emplace_back(vk::PipelineShaderStageCreateFlags{},
-  //                                      vk::ShaderStageFlagBits::eVertex,
-  //                                      *vertShaderModule, "main");
-  //   pipelineShaderStageCI.push_back(vk::PipelineShaderStageCreateInfo(
-  //       {}, vk::ShaderStageFlagBits::eVertex, *vertShaderModule, "main"));
 
   vk::VertexInputBindingDescription vertexInputBindingDescription(
       0, sizeof(Vertex));
@@ -224,9 +146,12 @@ void VgeExample::createPipelines() {
   vertexInputAttributeDescriptions.emplace_back(
       1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color));
 
-  vk::PipelineVertexInputStateCreateInfo vertexInputSCI(
-      vk::PipelineVertexInputStateCreateFlags(), vertexInputBindingDescription,
-      vertexInputAttributeDescriptions);
+  vk::PipelineVertexInputStateCreateInfo vertexInputSCI =
+      vgeu::glTF::Vertex::getPipelineVertexInputState({
+          vgeu::glTF::VertexComponent::kPosition,
+          vgeu::glTF::VertexComponent::kNormal,
+          vgeu::glTF::VertexComponent::kColor,
+      });
 
   vk::PipelineInputAssemblyStateCreateInfo inputAssemblySCI(
       vk::PipelineInputAssemblyStateCreateFlags(),
@@ -342,26 +267,20 @@ void VgeExample::buildCommandBuffers() {
   drawCmdBuffers[currentFrameIndex].setScissor(
       0, vk::Rect2D(vk::Offset2D(0, 0), swapChainData->swapChainExtent));
 
-  // bind pipeline
-  drawCmdBuffers[currentFrameIndex].bindPipeline(
-      vk::PipelineBindPoint::eGraphics, *pipeline);
-
   // bind ubo descriptor
   drawCmdBuffers[currentFrameIndex].bindDescriptorSets(
       vk::PipelineBindPoint::eGraphics, *pipelineLayout, 0,
       {*descriptorSets[currentFrameIndex]}, nullptr);
-
   // bind vertex buffer
-  drawCmdBuffers[currentFrameIndex].bindVertexBuffers(
-      0, {vertexBuffer->getBuffer()}, {0});
-
   // bind index buffer
-  drawCmdBuffers[currentFrameIndex].bindIndexBuffer(indexBuffer->getBuffer(), 0,
-                                                    vk::IndexType::eUint32);
+  scene->bindBuffers(drawCmdBuffers[currentFrameIndex]);
+
+  // bind pipeline
+  drawCmdBuffers[currentFrameIndex].bindPipeline(
+      vk::PipelineBindPoint::eGraphics, *pipeline);
 
   // draw indexed
-  drawCmdBuffers[currentFrameIndex].drawIndexed(indexBuffer->getInstanceCount(),
-                                                1, 0, 0, 0);
+  scene->draw(drawCmdBuffers[currentFrameIndex]);
 
   // UI overlay draw
   drawUI(drawCmdBuffers[currentFrameIndex]);

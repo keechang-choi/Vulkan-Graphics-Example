@@ -890,6 +890,8 @@ void Model::drawNode(const Node* node, const vk::raii::CommandBuffer& cmdBuffer,
 void Model::bindBuffers(const vk::raii::CommandBuffer& cmdBuffer) {
   vk::DeviceSize offset(0);
   cmdBuffer.bindVertexBuffers(0, vertexBuffer->getBuffer(), offset);
+  cmdBuffer.bindIndexBuffer(indexBuffer->getBuffer(), 0,
+                            vk::IndexType::eUint32);
   buffersBound = true;
 }
 
@@ -1022,6 +1024,7 @@ void Primitive::setDimensions(glm::vec3 min, glm::vec3 max) {
 }
 
 Mesh::Mesh(VmaAllocator allocator, glm::mat4 matrix) {
+  vk::BufferUsageFlags b = {};
   uniformBlock.matrix = matrix;
   uniformBuffer = std::make_unique<vgeu::VgeuBuffer>(
       allocator, sizeof(uniformBlock), 1,

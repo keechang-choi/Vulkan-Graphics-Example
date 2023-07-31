@@ -45,6 +45,7 @@ class Flags {
   constexpr Flags<BitType> operator^(Flags<BitType> const& rhs) const noexcept {
     return Flags<BitType>(mask_ ^ rhs.mask_);
   }
+
   explicit constexpr operator bool() const noexcept { return !!mask_; }
   explicit constexpr operator MaskType() const noexcept { return mask_; }
 

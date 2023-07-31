@@ -253,12 +253,12 @@ class Model {
 
   // NOTE: nullable pipelinelayout
   void drawNode(const Node* node, const vk::raii::CommandBuffer& cmdBuffer,
-                RenderFlags renderFlags = 0,
+                RenderFlags renderFlags = {},
                 vk::PipelineLayout pipelineLayout = VK_NULL_HANDLE,
                 uint32_t bindImageSet = 1);
 
   void draw(const vk::raii::CommandBuffer& cmdBuffer,
-            RenderFlags renderFlags = 0,
+            RenderFlags renderFlags = {},
             vk::PipelineLayout pipelineLayout = VK_NULL_HANDLE,
             uint32_t bindImageSet = 1);
 
