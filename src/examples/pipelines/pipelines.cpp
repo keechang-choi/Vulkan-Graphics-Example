@@ -12,7 +12,12 @@
 #include <memory>
 
 namespace vge {
-VgeExample::VgeExample() : VgeBase() { title = "Pipelines Example"; }
+VgeExample::VgeExample() : VgeBase() {
+  title = "Pipelines Example";
+  globalUbo.model = glm::scale(glm::mat4(1.0), glm::vec3(10.f));
+  globalUbo.normalMatrix = glm::mat4(glm::inverse(glm::mat3(globalUbo.model)));
+  globalUbo.lightPos = glm::vec4(0.f, 2.f, 1.f, 0.f);
+}
 VgeExample::~VgeExample() {}
 
 void VgeExample::initVulkan() {
@@ -47,7 +52,7 @@ void VgeExample::loadAssets() {
 
   scene = std::make_unique<vgeu::glTF::Model>(
       device, globalAllocator->getAllocator(), queue, commandPool);
-  scene->loadFromFile(getAssetsPath() + "/models/apple/food_apple_01_4k.gltf",
+  scene->loadFromFile(getAssetsPath() + "/models/apple-vertex-color.gltf",
                       glTFLoadingFlags);
 }
 
@@ -118,9 +123,9 @@ void VgeExample::createDescriptorSets() {
 
 void VgeExample::createPipelines() {
   auto vertCode =
-      vgeu::readFile(getShadersPath() + "/triangle/simple_shader.vert.spv");
+      vgeu::readFile(getShadersPath() + "/pipelines/phong.vert.spv");
   auto fragCode =
-      vgeu::readFile(getShadersPath() + "/triangle/simple_shader.frag.spv");
+      vgeu::readFile(getShadersPath() + "/pipelines/phong.frag.spv");
   // NOTE: after pipeline creation, shader modules can be destroyed.
   vk::raii::ShaderModule vertShaderModule =
       vgeu::createShaderModule(device, vertCode);
@@ -135,16 +140,6 @@ void VgeExample::createPipelines() {
                                         vk::ShaderStageFlagBits::eFragment,
                                         *fragShaderModule, "main", nullptr),
   };
-
-  vk::VertexInputBindingDescription vertexInputBindingDescription(
-      0, sizeof(Vertex));
-
-  std::vector<vk::VertexInputAttributeDescription>
-      vertexInputAttributeDescriptions;
-  vertexInputAttributeDescriptions.emplace_back(
-      0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, position));
-  vertexInputAttributeDescriptions.emplace_back(
-      1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color));
 
   vk::PipelineVertexInputStateCreateInfo vertexInputSCI =
       vgeu::glTF::Vertex::getPipelineVertexInputState({

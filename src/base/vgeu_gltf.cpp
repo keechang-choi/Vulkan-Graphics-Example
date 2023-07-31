@@ -115,6 +115,7 @@ void Texture::fromglTFImage(tinygltf::Image& gltfImage, std::string path,
                   [this](const vk::raii::CommandBuffer& cmdBuffer) {
                     this->generateMipmaps(cmdBuffer);
                   });
+    imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
 
   } else {
     // TODO: loading texture using KTX format
@@ -1065,11 +1066,11 @@ void Node::update() {
   }
 }
 
-vk::VertexInputBindingDescription Vertex::getInputBindingDescription(
+vk::VertexInputBindingDescription& Vertex::getInputBindingDescription(
     uint32_t binding) {
-  return vk::VertexInputBindingDescription(binding, sizeof(Vertex),
-                                           vk::VertexInputRate::eVertex);
-  ;
+  thread_local vk::VertexInputBindingDescription vertexInputBindingDescription(
+      binding, sizeof(Vertex), vk::VertexInputRate::eVertex);
+  return vertexInputBindingDescription;
 }
 
 vk::VertexInputAttributeDescription Vertex::getInputAttributeDescription(
@@ -1108,24 +1109,26 @@ vk::VertexInputAttributeDescription Vertex::getInputAttributeDescription(
   }
 }
 
-std::vector<vk::VertexInputAttributeDescription>
+std::vector<vk::VertexInputAttributeDescription>&
 Vertex::getInputAttributeDescriptions(
     uint32_t binding, const std::vector<VertexComponent>& components) {
-  std::vector<vk::VertexInputAttributeDescription> result;
+  thread_local std::vector<vk::VertexInputAttributeDescription>
+      vertexInputAttributeDescriptions;
+  vertexInputAttributeDescriptions.clear();
   uint32_t location = 0;
   for (VertexComponent component : components) {
-    result.push_back(
+    vertexInputAttributeDescriptions.push_back(
         Vertex::getInputAttributeDescription(binding, location, component));
     location++;
   }
-  return result;
+  return vertexInputAttributeDescriptions;
 }
 
 vk::PipelineVertexInputStateCreateInfo Vertex::getPipelineVertexInputState(
-    const std::vector<VertexComponent> components) {
-  vk::VertexInputBindingDescription vertexInputeBindingDescription =
+    const std::vector<VertexComponent>& components) {
+  vk::VertexInputBindingDescription& vertexInputeBindingDescription =
       getInputBindingDescription(0);
-  std::vector<vk::VertexInputAttributeDescription>
+  std::vector<vk::VertexInputAttributeDescription>&
       vertexInputAttributeDescriptions =
           getInputAttributeDescriptions(0, components);
   return vk::PipelineVertexInputStateCreateInfo(

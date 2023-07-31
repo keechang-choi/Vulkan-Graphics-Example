@@ -7,15 +7,13 @@
 #include <memory>
 #include <unordered_map>
 namespace vge {
-struct Vertex {
-  float position[3];
-  float color[3];
-};
 
 struct GlobalUbo {
   glm::mat4 projection{1.f};
   glm::mat4 model{1.f};
   glm::mat4 view{1.f};
+  glm::vec4 lightPos{0.f};
+  glm::mat4 normalMatrix{1.f};
 };
 class VgeExample : public VgeBase {
  public:

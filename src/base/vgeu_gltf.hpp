@@ -216,19 +216,21 @@ struct Vertex {
   glm::vec4 weight0;
   glm::vec4 tangent;
 
-  static vk::VertexInputBindingDescription getInputBindingDescription(
+  // NOTE: thread_local
+  static vk::VertexInputBindingDescription& getInputBindingDescription(
       uint32_t binding);
 
   static vk::VertexInputAttributeDescription getInputAttributeDescription(
       uint32_t binding, uint32_t location, VertexComponent component);
 
-  static std::vector<vk::VertexInputAttributeDescription>
+  // NOTE: thread_local
+  static std::vector<vk::VertexInputAttributeDescription>&
   getInputAttributeDescriptions(uint32_t binding,
                                 const std::vector<VertexComponent>& components);
 
   // TODO: check pointer and static members necessary
   static vk::PipelineVertexInputStateCreateInfo getPipelineVertexInputState(
-      const std::vector<VertexComponent> components);
+      const std::vector<VertexComponent>& components);
 };
 
 class Model {
