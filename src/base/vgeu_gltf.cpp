@@ -1023,25 +1023,77 @@ void Node::update() {
   }
 }
 
-vk::VertexInputBindingDescription Vertex::inputBindingDescription(
+static std::vector<vk::VertexInputAttributeDescription>
+    vertexInputAttributeDescriptions;
+static vk::PipelineVertexInputStateCreateInfo
+    pipelineVertexInputStateCreateInfo;
+
+vk::VertexInputBindingDescription Vertex::getInputBindingDescription(
     uint32_t binding) {
-  return vk::VertexInputBindingDescription();
+  return vk::VertexInputBindingDescription(binding, sizeof(Vertex),
+                                           vk::VertexInputRate::eVertex);
+  ;
 }
 
-vk::VertexInputAttributeDescription Vertex::inputAttributeDescription(
+vk::VertexInputAttributeDescription Vertex::getInputAttributeDescription(
     uint32_t binding, uint32_t location, VertexComponent component) {
-  return vk::VertexInputAttributeDescription();
+  switch (component) {
+    case VertexComponent::kPosition:
+      return vk::VertexInputAttributeDescription(location, binding,
+                                                 vk::Format::eR32G32B32Sfloat,
+                                                 offsetof(Vertex, pos));
+    case VertexComponent::kNormal:
+      return vk::VertexInputAttributeDescription(location, binding,
+                                                 vk::Format::eR32G32B32Sfloat,
+                                                 offsetof(Vertex, normal));
+    case VertexComponent::kUV:
+      return vk::VertexInputAttributeDescription(
+          location, binding, vk::Format::eR32G32Sfloat, offsetof(Vertex, uv));
+    case VertexComponent::kColor:
+      return vk::VertexInputAttributeDescription(
+          location, binding, vk::Format::eR32G32B32A32Sfloat,
+          offsetof(Vertex, color));
+    case VertexComponent::kTangent:
+      return vk::VertexInputAttributeDescription(
+          location, binding, vk::Format::eR32G32B32A32Sfloat,
+          offsetof(Vertex, tangent));
+    case VertexComponent::kJoint0:
+      return vk::VertexInputAttributeDescription(
+          location, binding, vk::Format::eR32G32B32A32Sfloat,
+          offsetof(Vertex, joint0));
+    case VertexComponent::kWeight0:
+      return vk::VertexInputAttributeDescription(
+          location, binding, vk::Format::eR32G32B32A32Sfloat,
+          offsetof(Vertex, weight0));
+    default:
+      assert(false && "failed: to get vertex input attribute description");
+      return vk::VertexInputAttributeDescription();
+  }
 }
 
 std::vector<vk::VertexInputAttributeDescription>
-Vertex::inputAttributeDescriptions(
-    uint32_t binding, const std::vector<VertexComponent> components) {
-  return std::vector<vk::VertexInputAttributeDescription>();
+Vertex::getInputAttributeDescriptions(
+    uint32_t binding, const std::vector<VertexComponent>& components) {
+  std::vector<vk::VertexInputAttributeDescription> result;
+  uint32_t location = 0;
+  for (VertexComponent component : components) {
+    result.push_back(
+        Vertex::getInputAttributeDescription(binding, location, component));
+    location++;
+  }
+  return result;
 }
 
 vk::PipelineVertexInputStateCreateInfo Vertex::getPipelineVertexInputState(
     const std::vector<VertexComponent> components) {
-  return vk::PipelineVertexInputStateCreateInfo();
+  vk::VertexInputBindingDescription vertexInputeBindingDescription =
+      getInputBindingDescription(0);
+  std::vector<vk::VertexInputAttributeDescription>
+      vertexInputAttributeDescriptions =
+          getInputAttributeDescriptions(0, components);
+  return vk::PipelineVertexInputStateCreateInfo(
+      vk::PipelineVertexInputStateCreateFlags{}, vertexInputeBindingDescription,
+      vertexInputAttributeDescriptions);
 }
 
 }  // namespace glTF
