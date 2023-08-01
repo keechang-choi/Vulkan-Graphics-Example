@@ -25,13 +25,17 @@ void VgeExample::initVulkan() {
   camera.setViewTarget(glm::vec3{-2.f, -2.f, -5.f}, glm::vec3{0.f, 0.f, 0.f});
   camera.setPerspectiveProjection(
       glm::radians(60.f),
-      static_cast<float>(width) / static_cast<float>(height), 0.1f, 256.f);
+      (static_cast<float>(width) / 3.f) / static_cast<float>(height), 0.1f,
+      256.f);
   VgeBase::initVulkan();
 }
 
 void VgeExample::getEnabledExtensions() {
   enabledFeatures.samplerAnisotropy =
       physicalDevice.getFeatures().samplerAnisotropy;
+  enabledFeatures.fillModeNonSolid =
+      physicalDevice.getFeatures().fillModeNonSolid;
+  enabledFeatures.wideLines = physicalDevice.getFeatures().wideLines;
 }
 
 void VgeExample::prepare() {
@@ -127,25 +131,6 @@ void VgeExample::createDescriptorSets() {
 }
 
 void VgeExample::createPipelines() {
-  auto vertCode =
-      vgeu::readFile(getShadersPath() + "/pipelines/phong.vert.spv");
-  auto fragCode =
-      vgeu::readFile(getShadersPath() + "/pipelines/phong.frag.spv");
-  // NOTE: after pipeline creation, shader modules can be destroyed.
-  vk::raii::ShaderModule vertShaderModule =
-      vgeu::createShaderModule(device, vertCode);
-  vk::raii::ShaderModule fragShaderModule =
-      vgeu::createShaderModule(device, fragCode);
-
-  std::array<vk::PipelineShaderStageCreateInfo, 2> shaderStageCIs{
-      vk::PipelineShaderStageCreateInfo(vk::PipelineShaderStageCreateFlags(),
-                                        vk::ShaderStageFlagBits::eVertex,
-                                        *vertShaderModule, "main", nullptr),
-      vk::PipelineShaderStageCreateInfo(vk::PipelineShaderStageCreateFlags(),
-                                        vk::ShaderStageFlagBits::eFragment,
-                                        *fragShaderModule, "main", nullptr),
-  };
-
   vk::PipelineVertexInputStateCreateInfo vertexInputSCI =
       vgeu::glTF::Vertex::getPipelineVertexInputState({
           vgeu::glTF::VertexComponent::kPosition,
@@ -192,13 +177,73 @@ void VgeExample::createPipelines() {
   vk::PipelineDynamicStateCreateInfo dynamicSCI(
       vk::PipelineDynamicStateCreateFlags(), dynamicStates);
 
-  vk::GraphicsPipelineCreateInfo graphicsPipelineCI(
-      vk::PipelineCreateFlags(), shaderStageCIs, &vertexInputSCI,
-      &inputAssemblySCI, nullptr, &viewportSCI, &rasterizationSCI,
-      &multisampleSCI, &depthStencilSCI, &colorBlendSCI, &dynamicSCI,
-      *pipelineLayout, *renderPass);
+  auto vertCode =
+      vgeu::readFile(getShadersPath() + "/pipelines/phong.vert.spv");
+  auto fragCode =
+      vgeu::readFile(getShadersPath() + "/pipelines/phong.frag.spv");
+  // NOTE: after pipeline creation, shader modules can be destroyed.
+  vk::raii::ShaderModule vertShaderModule =
+      vgeu::createShaderModule(device, vertCode);
+  vk::raii::ShaderModule fragShaderModule =
+      vgeu::createShaderModule(device, fragCode);
 
-  pipeline = vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
+  std::array<vk::PipelineShaderStageCreateInfo, 2> shaderStageCIs{
+      vk::PipelineShaderStageCreateInfo(vk::PipelineShaderStageCreateFlags(),
+                                        vk::ShaderStageFlagBits::eVertex,
+                                        *vertShaderModule, "main", nullptr),
+      vk::PipelineShaderStageCreateInfo(vk::PipelineShaderStageCreateFlags(),
+                                        vk::ShaderStageFlagBits::eFragment,
+                                        *fragShaderModule, "main", nullptr),
+  };
+
+  // base and derivatives
+  vk::GraphicsPipelineCreateInfo graphicsPipelineCI(
+      vk::PipelineCreateFlagBits::eAllowDerivatives, shaderStageCIs,
+      &vertexInputSCI, &inputAssemblySCI, nullptr, &viewportSCI,
+      &rasterizationSCI, &multisampleSCI, &depthStencilSCI, &colorBlendSCI,
+      &dynamicSCI, *pipelineLayout, *renderPass);
+
+  pipelines.phong =
+      vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
+
+  {
+    graphicsPipelineCI.flags = vk::PipelineCreateFlagBits::eDerivative;
+    graphicsPipelineCI.basePipelineHandle = *pipelines.phong;
+    // only handle or index
+    graphicsPipelineCI.basePipelineIndex = -1;
+
+    vertCode = vgeu::readFile(getShadersPath() + "/pipelines/toon.vert.spv");
+    fragCode = vgeu::readFile(getShadersPath() + "/pipelines/toon.frag.spv");
+    // NOTE: after pipeline creation, shader modules can be destroyed.
+    vertShaderModule = vgeu::createShaderModule(device, vertCode);
+    fragShaderModule = vgeu::createShaderModule(device, fragCode);
+    shaderStageCIs[0] = vk::PipelineShaderStageCreateInfo(
+        vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eVertex,
+        *vertShaderModule, "main", nullptr);
+    shaderStageCIs[1] = vk::PipelineShaderStageCreateInfo(
+        vk::PipelineShaderStageCreateFlags(),
+        vk::ShaderStageFlagBits::eFragment, *fragShaderModule, "main", nullptr);
+    pipelines.toon =
+        vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
+  }
+  if (enabledFeatures.fillModeNonSolid) {
+    rasterizationSCI.polygonMode = vk::PolygonMode::eLine;
+    vertCode =
+        vgeu::readFile(getShadersPath() + "/pipelines/wireframe.vert.spv");
+    fragCode =
+        vgeu::readFile(getShadersPath() + "/pipelines/wireframe.frag.spv");
+    // NOTE: after pipeline creation, shader modules can be destroyed.
+    vertShaderModule = vgeu::createShaderModule(device, vertCode);
+    fragShaderModule = vgeu::createShaderModule(device, fragCode);
+    shaderStageCIs[0] = vk::PipelineShaderStageCreateInfo(
+        vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eVertex,
+        *vertShaderModule, "main", nullptr);
+    shaderStageCIs[1] = vk::PipelineShaderStageCreateInfo(
+        vk::PipelineShaderStageCreateFlags(),
+        vk::ShaderStageFlagBits::eFragment, *fragShaderModule, "main", nullptr);
+    pipelines.wireframe =
+        vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
+  }
 }
 
 void VgeExample::render() {
@@ -261,11 +306,7 @@ void VgeExample::buildCommandBuffers() {
       renderPassBeginInfo, vk::SubpassContents::eInline);
 
   // set viewport and scissors
-  drawCmdBuffers[currentFrameIndex].setViewport(
-      0, vk::Viewport(0.0f, 0.0f,
-                      static_cast<float>(swapChainData->swapChainExtent.width),
-                      static_cast<float>(swapChainData->swapChainExtent.height),
-                      0.0f, 1.0f));
+
   drawCmdBuffers[currentFrameIndex].setScissor(
       0, vk::Rect2D(vk::Offset2D(0, 0), swapChainData->swapChainExtent));
 
@@ -277,12 +318,58 @@ void VgeExample::buildCommandBuffers() {
   // bind index buffer
   scene->bindBuffers(drawCmdBuffers[currentFrameIndex]);
 
-  // bind pipeline
-  drawCmdBuffers[currentFrameIndex].bindPipeline(
-      vk::PipelineBindPoint::eGraphics, *pipeline);
-  // draw indexed
-  scene->draw(drawCmdBuffers[currentFrameIndex],
-              vgeu::RenderFlagBits::kBindImages, *pipelineLayout, 1);
+  // Left view
+  {
+    drawCmdBuffers[currentFrameIndex].setViewport(
+        0, vk::Viewport(
+               0.0f, 0.0f,
+               static_cast<float>(swapChainData->swapChainExtent.width) / 3.f,
+               static_cast<float>(swapChainData->swapChainExtent.height), 0.0f,
+               1.0f));
+    // bind pipeline
+    drawCmdBuffers[currentFrameIndex].bindPipeline(
+        vk::PipelineBindPoint::eGraphics, *pipelines.phong);
+    // draw indexed
+    scene->draw(drawCmdBuffers[currentFrameIndex],
+                vgeu::RenderFlagBits::kBindImages, *pipelineLayout, 1);
+  }
+
+  // Center view
+  {
+    drawCmdBuffers[currentFrameIndex].setViewport(
+        0, vk::Viewport(
+               static_cast<float>(swapChainData->swapChainExtent.width) / 3.f,
+               0.0f,
+               static_cast<float>(swapChainData->swapChainExtent.width) / 3.f,
+               static_cast<float>(swapChainData->swapChainExtent.height), 0.0f,
+               1.0f));
+    // bind pipeline
+    drawCmdBuffers[currentFrameIndex].bindPipeline(
+        vk::PipelineBindPoint::eGraphics, *pipelines.toon);
+    // draw indexed
+    scene->draw(drawCmdBuffers[currentFrameIndex],
+                vgeu::RenderFlagBits::kBindImages, *pipelineLayout, 1);
+  }
+
+  if (enabledFeatures.wideLines) {
+    drawCmdBuffers[currentFrameIndex].setLineWidth(2.f);
+  }
+  if (enabledFeatures.fillModeNonSolid) {
+    drawCmdBuffers[currentFrameIndex].setViewport(
+        0, vk::Viewport(
+               static_cast<float>(swapChainData->swapChainExtent.width) / 3.f *
+                   2.f,
+               0.0f,
+               static_cast<float>(swapChainData->swapChainExtent.width) / 3.f,
+               static_cast<float>(swapChainData->swapChainExtent.height), 0.0f,
+               1.0f));
+    // bind pipeline
+    drawCmdBuffers[currentFrameIndex].bindPipeline(
+        vk::PipelineBindPoint::eGraphics, *pipelines.wireframe);
+    // draw indexed
+    scene->draw(drawCmdBuffers[currentFrameIndex],
+                vgeu::RenderFlagBits::kBindImages, *pipelineLayout, 1);
+  }
 
   // UI overlay draw
   drawUI(drawCmdBuffers[currentFrameIndex]);
@@ -295,7 +382,8 @@ void VgeExample::buildCommandBuffers() {
 }
 void VgeExample::viewChanged() {
   // std::cout << "Call: viewChanged()" << std::endl;
-  camera.setAspectRatio(static_cast<float>(width) / static_cast<float>(height));
+  camera.setAspectRatio((static_cast<float>(width) / 3.f) /
+                        static_cast<float>(height));
   // NOTE: moved updating ubo into render() to use frameindex.
 }
 
