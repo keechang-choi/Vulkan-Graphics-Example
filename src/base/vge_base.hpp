@@ -14,6 +14,7 @@
 
 // std
 #include <chrono>
+#include <memory>
 #include <stdexcept>
 
 namespace vge {
@@ -48,6 +49,7 @@ class VgeBase {
   virtual void render() = 0;
   virtual void buildCommandBuffers();
   std::string getShadersPath();
+  std::string getAssetsPath();
   void prepareFrame();
   void submitFrame();
   void drawUI(const vk::raii::CommandBuffer& commandBuffer);
@@ -76,8 +78,6 @@ class VgeBase {
   } settings;
 
  protected:
-  // should be initialized with nullptr
-  VmaAllocator globalAllocator = nullptr;
   std::unique_ptr<vk::raii::Context> context;
   vk::raii::Instance instance = nullptr;
   vk::raii::DebugUtilsMessengerEXT debugUtilsMessenger = nullptr;
@@ -85,6 +85,8 @@ class VgeBase {
   vk::PhysicalDeviceFeatures enabledFeatures{};
   std::vector<const char*> enabledDeviceExtensions;
   vk::raii::Device device = nullptr;
+  // NOTE: not sure, but vma alloctor should be destructed before the device's.
+  std::unique_ptr<vgeu::VgeuAllocator> globalAllocator;
   vgeu::QueueFamilyIndices queueFamilyIndices;
   void* deviceCreatepNextChain = nullptr;
   vk::raii::Queue queue = nullptr;
@@ -107,7 +109,7 @@ class VgeBase {
   vk::raii::CommandPool cmdPool = nullptr;
   // vector
   vk::raii::CommandBuffers drawCmdBuffers = nullptr;
-  vgeu::ImageData depthStencil = nullptr;
+  std::unique_ptr<vgeu::VgeuImage> depthStencil;
   vk::raii::RenderPass renderPass = nullptr;
   vk::raii::PipelineCache pipelineCache = nullptr;
   std::vector<vk::raii::Framebuffer> frameBuffers;
@@ -125,10 +127,11 @@ class VgeBase {
   uint32_t currentImageIndex;
 
  private:
-  uint32_t destWidth;
-  uint32_t destHeight;
   void windowResize();
   void updateUIOverlay();
+  // TODO: check it necessary
+  uint32_t destWidth;
+  uint32_t destHeight;
 };
 }  // namespace vge
 

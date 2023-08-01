@@ -1,9 +1,13 @@
 #include "triangle.hpp"
 
+// libs
+#define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#include <glm/glm.hpp>
+
 // std
 #include <array>
 #include <cstring>
-#include <glm/gtc/matrix_transform.hpp>
 #include <limits>
 
 namespace vge {
@@ -36,7 +40,7 @@ void VgeExample::createUniformBuffers() {
   uniformBuffers.reserve(MAX_CONCURRENT_FRAMES);
   for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
     uniformBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
-        globalAllocator, sizeof(GlobalUbo), 1,
+        globalAllocator->getAllocator(), sizeof(GlobalUbo), 1,
         vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_AUTO,
         VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
             VMA_ALLOCATION_CREATE_MAPPED_BIT |
@@ -54,7 +58,8 @@ void VgeExample::createVertexBuffer() {
   };
 
   vgeu::VgeuBuffer stagingBuffer(
-      globalAllocator, sizeof(Vertex), static_cast<uint32_t>(vertices.size()),
+      globalAllocator->getAllocator(), sizeof(Vertex),
+      static_cast<uint32_t>(vertices.size()),
       vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_AUTO,
       VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
           VMA_ALLOCATION_CREATE_MAPPED_BIT);
@@ -63,7 +68,8 @@ void VgeExample::createVertexBuffer() {
               stagingBuffer.getBufferSize());
 
   vertexBuffer = std::make_unique<vgeu::VgeuBuffer>(
-      globalAllocator, sizeof(Vertex), static_cast<uint32_t>(vertices.size()),
+      globalAllocator->getAllocator(), sizeof(Vertex),
+      static_cast<uint32_t>(vertices.size()),
       vk::BufferUsageFlagBits::eVertexBuffer |
           vk::BufferUsageFlagBits::eTransferDst,
       VMA_MEMORY_USAGE_AUTO,
@@ -85,7 +91,8 @@ void VgeExample::createIndexBuffer() {
   std::vector<uint32_t> indices{0, 1, 2};
 
   vgeu::VgeuBuffer stagingBuffer(
-      globalAllocator, sizeof(uint32_t), static_cast<uint32_t>(indices.size()),
+      globalAllocator->getAllocator(), sizeof(uint32_t),
+      static_cast<uint32_t>(indices.size()),
       vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_AUTO,
       VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
           VMA_ALLOCATION_CREATE_MAPPED_BIT);
@@ -94,7 +101,8 @@ void VgeExample::createIndexBuffer() {
               stagingBuffer.getBufferSize());
 
   indexBuffer = std::make_unique<vgeu::VgeuBuffer>(
-      globalAllocator, sizeof(uint32_t), static_cast<uint32_t>(indices.size()),
+      globalAllocator->getAllocator(), sizeof(uint32_t),
+      static_cast<uint32_t>(indices.size()),
       vk::BufferUsageFlagBits::eIndexBuffer |
           vk::BufferUsageFlagBits::eTransferDst,
       VMA_MEMORY_USAGE_AUTO,

@@ -24,10 +24,7 @@ VgeBase::VgeBase() {
 }
 VgeBase::~VgeBase() {
   // need to destroy non-RAII object created
-  if (globalAllocator != VK_NULL_HANDLE) {
-    vmaDestroyAllocator(globalAllocator);
-    globalAllocator = VK_NULL_HANDLE;
-  }
+  // NOTE: but order matters. members will be destroyed after this block.
 }
 
 void VgeBase::initVulkan() {
@@ -72,21 +69,10 @@ void VgeBase::initVulkan() {
                                   &surface_);
   surface = vk::raii::SurfaceKHR(instance, surface_);
 
-  // create VMA global allocator
-  VmaAllocatorCreateInfo allocatorCI{};
-  allocatorCI.physicalDevice = VkPhysicalDevice(*physicalDevice);
-  allocatorCI.device = VkDevice(*device);
-  allocatorCI.instance = VkInstance(*instance);
-  allocatorCI.vulkanApiVersion = apiVersion;
-  // TOOD: check vma flags
-  // for higher version Vulkan API
-  VmaVulkanFunctions vulkanFunctions = {};
-  vulkanFunctions.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
-  vulkanFunctions.vkGetDeviceProcAddr = vkGetDeviceProcAddr;
-  allocatorCI.pVulkanFunctions = &vulkanFunctions;
-
-  VkResult result = vmaCreateAllocator(&allocatorCI, &globalAllocator);
-  assert(result == VK_SUCCESS && "VMA allocator create Error");
+  globalAllocator = std::make_unique<vgeu::VgeuAllocator>(
+      static_cast<VkDevice>(*device),
+      static_cast<VkPhysicalDevice>(*physicalDevice),
+      static_cast<VkInstance>(*instance), apiVersion);
 }
 
 void VgeBase::getEnabledExtensions(){};
@@ -101,12 +87,13 @@ void VgeBase::prepare() {
   std::cout << "SwapChain image count: " << swapChainData->images.size()
             << std::endl;
 
-  depthStencil = vgeu::ImageData(
-      physicalDevice, device, depthFormat, swapChainData->swapChainExtent,
-      vk::ImageTiling::eOptimal,
+  depthStencil = std::make_unique<vgeu::VgeuImage>(
+      device, globalAllocator->getAllocator(), depthFormat,
+      swapChainData->swapChainExtent, vk::ImageTiling::eOptimal,
       vk::ImageUsageFlagBits::eDepthStencilAttachment,
-      vk::ImageLayout::eUndefined, vk::MemoryPropertyFlagBits::eDeviceLocal,
-      vk::ImageAspectFlagBits::eDepth);
+      vk::ImageLayout::eUndefined, VmaMemoryUsage::VMA_MEMORY_USAGE_AUTO,
+      VmaAllocationCreateFlagBits::VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
+      vk::ImageAspectFlagBits::eDepth, 1);
 
   renderPass =
       vgeu::createRenderPass(device, swapChainData->colorFormat, depthFormat);
@@ -116,8 +103,8 @@ void VgeBase::prepare() {
 
   // CHECK: vector move assigment operator and validity
   frameBuffers = vgeu::createFramebuffers(
-      device, renderPass, swapChainData->imageViews, &depthStencil.imageView,
-      swapChainData->swapChainExtent);
+      device, renderPass, swapChainData->imageViews,
+      &depthStencil->getImageView(), swapChainData->swapChainExtent);
 
   // create command pool
   vk::CommandPoolCreateInfo cmdPoolCI(
@@ -235,16 +222,17 @@ void VgeBase::windowResize() {
       queueFamilyIndices.graphics);
 
   // recreate framebuffers
-  depthStencil = vgeu::ImageData(
-      physicalDevice, device, depthFormat, swapChainData->swapChainExtent,
-      vk::ImageTiling::eOptimal,
+  depthStencil = std::make_unique<vgeu::VgeuImage>(
+      device, globalAllocator->getAllocator(), depthFormat,
+      swapChainData->swapChainExtent, vk::ImageTiling::eOptimal,
       vk::ImageUsageFlagBits::eDepthStencilAttachment,
-      vk::ImageLayout::eUndefined, vk::MemoryPropertyFlagBits::eDeviceLocal,
-      vk::ImageAspectFlagBits::eDepth);
+      vk::ImageLayout::eUndefined, VmaMemoryUsage::VMA_MEMORY_USAGE_AUTO,
+      VmaAllocationCreateFlagBits::VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
+      vk::ImageAspectFlagBits::eDepth, 1);
 
   frameBuffers = vgeu::createFramebuffers(
-      device, renderPass, swapChainData->imageViews, &depthStencil.imageView,
-      swapChainData->swapChainExtent);
+      device, renderPass, swapChainData->imageViews,
+      &depthStencil->getImageView(), swapChainData->swapChainExtent);
 
   // TODO: UI overlay resize
   if (width > 0 && height > 0) {
@@ -366,14 +354,17 @@ std::string VgeBase::getShadersPath() {
   std::filesystem::path p = "../shaders";
   return std::filesystem::absolute(p).string();
 }
+std::string VgeBase::getAssetsPath() {
+  std::filesystem::path p = "../assets";
+  return std::filesystem::absolute(p).string();
+}
 
 void VgeBase::setupCommandLineParser(CLI::App& app) {
   // dummy flag for empty arg "",
   // (some vscode launch inputs may produce empty string arg)
   bool emptyArg{false};
-  app.add_flag(
-      "-e,", emptyArg,
-      "empty arg \"\" to prevent vscode launching with empty string arg");
+  app.add_flag("--vs,", emptyArg,
+               "Dummy flag to prevent vscode launching with empty string arg");
   app.add_option("-v, --validation", settings.validation,
                  "Enable/Disable Validation Layer")
       ->capture_default_str();

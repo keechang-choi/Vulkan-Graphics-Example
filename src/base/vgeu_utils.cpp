@@ -541,4 +541,128 @@ vk::raii::ShaderModule createShaderModule(const vk::raii::Device& device,
   return vk::raii::ShaderModule(device, shaderModuleCI);
 }
 
+void setImageLayout(const vk::raii::CommandBuffer& commandBuffer,
+                    vk::Image image,
+                    vk::ImageSubresourceRange imageSubresourceRange,
+                    vk::ImageLayout oldImageLayout,
+                    vk::ImageLayout newImageLayout) {
+  vk::AccessFlags srcAccessMask{};  // NOTE: 0
+  switch (oldImageLayout) {
+    case vk::ImageLayout::eTransferSrcOptimal:
+      srcAccessMask = vk::AccessFlagBits::eTransferRead;
+      break;
+    case vk::ImageLayout::eTransferDstOptimal:
+      srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+      break;
+    case vk::ImageLayout::ePreinitialized:
+      srcAccessMask = vk::AccessFlagBits::eHostWrite;
+      break;
+    case vk::ImageLayout::eGeneral:  // srcAccessMask is empty
+    case vk::ImageLayout::eUndefined:
+      break;
+    default:
+      assert(false && "failed: to support oldImageLayout for srcAcessMask");
+      break;
+  }
+
+  vk::PipelineStageFlags srcStage{};  // NOTE: 0
+  switch (oldImageLayout) {
+    case vk::ImageLayout::eGeneral:
+    case vk::ImageLayout::ePreinitialized:
+      srcStage = vk::PipelineStageFlagBits::eHost;
+      break;
+    case vk::ImageLayout::eTransferSrcOptimal:
+    case vk::ImageLayout::eTransferDstOptimal:
+      srcStage = vk::PipelineStageFlagBits::eTransfer;
+      break;
+    case vk::ImageLayout::eUndefined:
+      srcStage = vk::PipelineStageFlagBits::eTopOfPipe;
+      break;
+    default:
+      assert(false && "failed: to support oldImageLayout for srcStage");
+      break;
+  }
+
+  vk::AccessFlags dstAccessMask{};
+  switch (newImageLayout) {
+    case vk::ImageLayout::eColorAttachmentOptimal:
+      dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+      break;
+    case vk::ImageLayout::eDepthStencilAttachmentOptimal:
+      dstAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentRead |
+                      vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+      break;
+    case vk::ImageLayout::eGeneral:  // empty dstAccessMask
+    case vk::ImageLayout::ePresentSrcKHR:
+      break;
+    case vk::ImageLayout::eShaderReadOnlyOptimal:
+      dstAccessMask = vk::AccessFlagBits::eShaderRead;
+      break;
+    case vk::ImageLayout::eTransferSrcOptimal:
+      dstAccessMask = vk::AccessFlagBits::eTransferRead;
+      break;
+    case vk::ImageLayout::eTransferDstOptimal:
+      dstAccessMask = vk::AccessFlagBits::eTransferWrite;
+      break;
+    default:
+      assert(false && "failed: to support newImageLayout for dstAccessMask");
+      break;
+  }
+
+  vk::PipelineStageFlags dstStage{};
+  switch (newImageLayout) {
+    case vk::ImageLayout::eColorAttachmentOptimal:
+      dstStage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+      break;
+    case vk::ImageLayout::eDepthStencilAttachmentOptimal:
+      dstStage = vk::PipelineStageFlagBits::eEarlyFragmentTests;
+      break;
+    case vk::ImageLayout::eGeneral:
+      dstStage = vk::PipelineStageFlagBits::eHost;
+      break;
+    case vk::ImageLayout::ePresentSrcKHR:
+      dstStage = vk::PipelineStageFlagBits::eBottomOfPipe;
+      break;
+    case vk::ImageLayout::eShaderReadOnlyOptimal:
+      dstStage = vk::PipelineStageFlagBits::eFragmentShader;
+      break;
+    case vk::ImageLayout::eTransferDstOptimal:
+    case vk::ImageLayout::eTransferSrcOptimal:
+      dstStage = vk::PipelineStageFlagBits::eTransfer;
+      break;
+    default:
+      assert(false && "failed: to support newImageLayout for dstStage");
+      break;
+  }
+
+  vk::ImageMemoryBarrier imageMemoryBarrier(
+      srcAccessMask, dstAccessMask, oldImageLayout, newImageLayout,
+      VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, image,
+      imageSubresourceRange);
+
+  commandBuffer.pipelineBarrier(srcStage, dstStage, {}, nullptr, nullptr,
+                                imageMemoryBarrier);
+}
+
+void setImageLayout(const vk::raii::CommandBuffer& commandBuffer,
+                    vk::Image image, vk::Format format, uint32_t baseMipLevel,
+                    uint32_t levelCount, vk::ImageLayout oldImageLayout,
+                    vk::ImageLayout newImageLayout) {
+  vk::ImageAspectFlags aspectMask;
+  if (newImageLayout == vk::ImageLayout::eDepthStencilAttachmentOptimal) {
+    aspectMask = vk::ImageAspectFlagBits::eDepth;
+    if (format == vk::Format::eD32SfloatS8Uint ||
+        format == vk::Format::eD24UnormS8Uint) {
+      aspectMask |= vk::ImageAspectFlagBits::eStencil;
+    }
+  } else {
+    aspectMask = vk::ImageAspectFlagBits::eColor;
+  }
+
+  vk::ImageSubresourceRange imageSubresourceRange(aspectMask, baseMipLevel,
+                                                  levelCount, 0, 1);
+  setImageLayout(commandBuffer, image, imageSubresourceRange, oldImageLayout,
+                 newImageLayout);
+}
+
 }  // namespace vgeu

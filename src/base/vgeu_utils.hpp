@@ -90,6 +90,7 @@ vk::SurfaceFormatKHR pickSurfaceFormat(
 vk::PresentModeKHR pickPresentMode(
     std::vector<vk::PresentModeKHR> const& presentModes);
 
+// NOTE:  Deprecated. Use VMA image
 struct ImageData {
   ImageData(vk::raii::PhysicalDevice const& physicalDevice,
             vk::raii::Device const& device, vk::Format format_,
@@ -131,6 +132,8 @@ std::vector<char> readFile(const std::string& filepath);
 vk::raii::ShaderModule createShaderModule(const vk::raii::Device& device,
                                           std::vector<char>& code);
 
+// create on command buffer from the pool
+// record, submit, then wait for the queue to be idle.
 template <typename Func>
 void oneTimeSubmit(const vk::raii::CommandBuffer& commandBuffer,
                    const vk::raii::Queue& queue, const Func& func) {
@@ -151,5 +154,19 @@ void oneTimeSubmit(const vk::raii::Device& device,
       device, {*commandPool, vk::CommandBufferLevel::ePrimary, 1});
   oneTimeSubmit(commandBuffers.front(), queue, func);
 }
+
+// transition by image memory barrier.
+// internally select stage, accessMask.
+void setImageLayout(const vk::raii::CommandBuffer& commandBuffer,
+                    vk::Image image, vk::Format format,
+                    vk::ImageSubresourceRange imageSubresourceRange,
+                    vk::ImageLayout oldImageLayout,
+                    vk::ImageLayout newImageLayout);
+
+// transition by image memory barrier with base and count for mipLevels
+void setImageLayout(const vk::raii::CommandBuffer& commandBuffer,
+                    vk::Image image, vk::Format format, uint32_t baseMipLevel,
+                    uint32_t levelCount, vk::ImageLayout oldImageLayout,
+                    vk::ImageLayout newImageLayout);
 
 }  // namespace vgeu

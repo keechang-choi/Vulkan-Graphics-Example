@@ -1,4 +1,5 @@
 function(buildExample EXAMPLE_NAME)
+    message(STATUS "Build Example: ${EXAMPLE_NAME}")
     set(EXAMPLE_FOLDER ${CMAKE_CURRENT_SOURCE_DIR}/${EXAMPLE_NAME})
     set(MAIN_CPP ${EXAMPLE_FOLDER}/${EXAMPLE_NAME}.cpp)
     file(GLOB SOURCE
@@ -21,8 +22,18 @@ function(buildExamples)
     endforeach(EXAMPLE)
 endfunction(buildExamples)
 
-set(EXAMPLES
-    triangle
-)
+# set(EXAMPLES
+# triangle
+# )
+file(GLOB CHILDREN RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "*")
+
+# list(FILTER EXAMPLES EXCLUDE REGEX ".*\\..*")
+set(EXAMPLES "")
+
+foreach(CHILD ${CHILDREN})
+    if(IS_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/${CHILD})
+        list(APPEND EXAMPLES ${CHILD})
+    endif()
+endforeach()
 
 buildExamples()
