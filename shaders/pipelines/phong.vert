@@ -31,5 +31,5 @@ void main()
 	outNormal = normalize(mat3(ubo.normalMatrix) * inNormal);
 	vec3 lPos = mat3(ubo.model) * ubo.lightPos.xyz;
 	outLightVec = normalize(lPos - pos.xyz);
-	outViewVec = ubo.inverseView[3].xyz - pos.xyz;		
+	outViewVec = normalize(ubo.inverseView[3].xyz - pos.xyz);		
 }
