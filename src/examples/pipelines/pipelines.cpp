@@ -12,15 +12,15 @@
 #include <memory>
 
 namespace vge {
-VgeExample::VgeExample() : VgeBase() {
-  title = "Pipelines Example";
-  globalUbo.model = glm::scale(glm::mat4(1.0), glm::vec3(10.f));
-  globalUbo.normalMatrix = glm::mat4(glm::inverse(glm::mat3(globalUbo.model)));
-  globalUbo.lightPos = glm::vec4(0.f, 2.f, 1.f, 0.f);
-}
+VgeExample::VgeExample() : VgeBase() { title = "Pipelines Example"; }
 VgeExample::~VgeExample() {}
 
 void VgeExample::initVulkan() {
+  // ubo setup
+  globalUbo.model = glm::scale(glm::mat4(1.0), glm::vec3(10.f));
+  globalUbo.normalMatrix = glm::mat4(glm::inverse(glm::mat3(globalUbo.model)));
+  // TODO: check coordinate space
+  globalUbo.lightPos = glm::vec4(-2.f, -4.f, -2.f, 0.f);
   // camera setup
   camera.setViewTarget(glm::vec3{-2.f, -2.f, -5.f}, glm::vec3{0.f, 0.f, 0.f});
   camera.setPerspectiveProjection(
@@ -72,14 +72,19 @@ void VgeExample::createUniformBuffers() {
 }
 
 void VgeExample::createDescriptorSetLayout() {
-  // binding 0
+  // set 0
   vk::DescriptorSetLayoutBinding layoutBinding(
       0, vk::DescriptorType::eUniformBuffer, 1,
       vk::ShaderStageFlagBits::eVertex);
   vk::DescriptorSetLayoutCreateInfo layoutCI({}, 1, &layoutBinding);
   descriptorSetLayout = vk::raii::DescriptorSetLayout(device, layoutCI);
 
-  vk::PipelineLayoutCreateInfo pipelineLayoutCI({}, *descriptorSetLayout);
+  // set 1
+  std::vector<vk::DescriptorSetLayout> setLayouts;
+  setLayouts.push_back(*descriptorSetLayout);
+  setLayouts.push_back(*scene->descriptorSetLayoutImage);
+
+  vk::PipelineLayoutCreateInfo pipelineLayoutCI({}, setLayouts);
   pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutCI);
 }
 
@@ -145,6 +150,7 @@ void VgeExample::createPipelines() {
       vgeu::glTF::Vertex::getPipelineVertexInputState({
           vgeu::glTF::VertexComponent::kPosition,
           vgeu::glTF::VertexComponent::kNormal,
+          vgeu::glTF::VertexComponent::kUV,
           vgeu::glTF::VertexComponent::kColor,
       });
 
@@ -202,6 +208,7 @@ void VgeExample::render() {
   // CHECK: ubo update frequency.
   globalUbo.view = camera.getView();
   globalUbo.projection = camera.getProjection();
+  globalUbo.inverseView = camera.getInverseView();
   std::memcpy(uniformBuffers[currentFrameIndex]->getMappedData(), &globalUbo,
               sizeof(GlobalUbo));
 
@@ -273,9 +280,9 @@ void VgeExample::buildCommandBuffers() {
   // bind pipeline
   drawCmdBuffers[currentFrameIndex].bindPipeline(
       vk::PipelineBindPoint::eGraphics, *pipeline);
-
   // draw indexed
-  scene->draw(drawCmdBuffers[currentFrameIndex]);
+  scene->draw(drawCmdBuffers[currentFrameIndex],
+              vgeu::RenderFlagBits::kBindImages, *pipelineLayout, 1);
 
   // UI overlay draw
   drawUI(drawCmdBuffers[currentFrameIndex]);

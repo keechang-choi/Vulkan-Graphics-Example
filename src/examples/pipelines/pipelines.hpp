@@ -14,6 +14,7 @@ struct GlobalUbo {
   glm::mat4 view{1.f};
   glm::vec4 lightPos{0.f};
   glm::mat4 normalMatrix{1.f};
+  glm::mat4 inverseView{1.f};
 };
 class VgeExample : public VgeBase {
  public:
