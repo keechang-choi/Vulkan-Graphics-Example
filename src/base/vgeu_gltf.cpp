@@ -368,25 +368,27 @@ void Model::loadFromFile(std::string filename,
         VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
             VMA_ALLOCATION_CREATE_MAPPED_BIT);
 
-    // index buffer
-    assert(indices.size() > 0);
-    vgeu::VgeuBuffer indexStagingBuffer(
-        allocator, sizeof(uint32_t), static_cast<uint32_t>(indices.size()),
-        vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_AUTO,
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-            VMA_ALLOCATION_CREATE_MAPPED_BIT);
+    // index buffer may be empty
+    std::unique_ptr<vgeu::VgeuBuffer> indexStagingBuffer;
+    if (indices.size() > 0) {
+      indexStagingBuffer = std::make_unique<vgeu::VgeuBuffer>(
+          allocator, sizeof(uint32_t), static_cast<uint32_t>(indices.size()),
+          vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_AUTO,
+          VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+              VMA_ALLOCATION_CREATE_MAPPED_BIT);
 
-    std::memcpy(indexStagingBuffer.getMappedData(), indices.data(),
-                indexStagingBuffer.getBufferSize());
+      std::memcpy(indexStagingBuffer->getMappedData(), indices.data(),
+                  indexStagingBuffer->getBufferSize());
 
-    indexBuffer = std::make_unique<vgeu::VgeuBuffer>(
-        allocator, sizeof(uint32_t), static_cast<uint32_t>(indices.size()),
-        (vk::BufferUsageFlagBits::eIndexBuffer |
-         vk::BufferUsageFlagBits::eTransferDst) |
-            additionalBufferUsageFlags,
-        VMA_MEMORY_USAGE_AUTO,
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-            VMA_ALLOCATION_CREATE_MAPPED_BIT);
+      indexBuffer = std::make_unique<vgeu::VgeuBuffer>(
+          allocator, sizeof(uint32_t), static_cast<uint32_t>(indices.size()),
+          (vk::BufferUsageFlagBits::eIndexBuffer |
+           vk::BufferUsageFlagBits::eTransferDst) |
+              additionalBufferUsageFlags,
+          VMA_MEMORY_USAGE_AUTO,
+          VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+              VMA_ALLOCATION_CREATE_MAPPED_BIT);
+    }
 
     // single Time command copy both buffers
     vgeu::oneTimeSubmit(
@@ -395,9 +397,11 @@ void Model::loadFromFile(std::string filename,
           cmdBuffer.copyBuffer(
               vertexStagingBuffer.getBuffer(), vertexBuffer->getBuffer(),
               vk::BufferCopy(0, 0, vertexStagingBuffer.getBufferSize()));
-          cmdBuffer.copyBuffer(
-              indexStagingBuffer.getBuffer(), indexBuffer->getBuffer(),
-              vk::BufferCopy(0, 0, indexStagingBuffer.getBufferSize()));
+          if (indexStagingBuffer.get()) {
+            cmdBuffer.copyBuffer(
+                indexStagingBuffer->getBuffer(), indexBuffer->getBuffer(),
+                vk::BufferCopy(0, 0, indexStagingBuffer->getBufferSize()));
+          }
         });
   }
   setSceneDimensions();
@@ -618,9 +622,7 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
     newNode->mesh->name = gltfMesh.name;
     for (size_t j = 0; j < gltfMesh.primitives.size(); j++) {
       const tinygltf::Primitive& gltfPrimitive = gltfMesh.primitives[j];
-      if (gltfPrimitive.indices < 0) {
-        continue;
-      }
+
       uint32_t indexStart = static_cast<uint32_t>(indices.size());
       uint32_t vertexStart = static_cast<uint32_t>(vertices.size());
       uint32_t indexCount = 0;
@@ -768,7 +770,7 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
         }
       }
       // Indices
-      {
+      if (gltfPrimitive.indices >= 0) {
         const tinygltf::Accessor& accessor =
             gltfModel.accessors[gltfPrimitive.indices];
         const tinygltf::BufferView& bufferView =
@@ -878,8 +880,12 @@ void Model::drawNode(const Node* node, const vk::raii::CommandBuffer& cmdBuffer,
                                        pipelineLayout, bindImageSet,
                                        *material.descriptorSet, nullptr);
         }
-        cmdBuffer.drawIndexed(primitive->indexCount, 1, primitive->firstIndex,
-                              0, 0);
+        if (primitive->indexCount > 0) {
+          cmdBuffer.drawIndexed(primitive->indexCount, 1, primitive->firstIndex,
+                                0, 0);
+        } else {
+          cmdBuffer.draw(primitive->vertexCount, 1, primitive->firstVertex, 0);
+        }
       }
     }
   }
@@ -891,8 +897,10 @@ void Model::drawNode(const Node* node, const vk::raii::CommandBuffer& cmdBuffer,
 void Model::bindBuffers(const vk::raii::CommandBuffer& cmdBuffer) {
   vk::DeviceSize offset(0);
   cmdBuffer.bindVertexBuffers(0, vertexBuffer->getBuffer(), offset);
-  cmdBuffer.bindIndexBuffer(indexBuffer->getBuffer(), 0,
-                            vk::IndexType::eUint32);
+  if (indexBuffer.get()) {
+    cmdBuffer.bindIndexBuffer(indexBuffer->getBuffer(), 0,
+                              vk::IndexType::eUint32);
+  }
   buffersBound = true;
 }
 
