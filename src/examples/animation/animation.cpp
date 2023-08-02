@@ -17,15 +17,17 @@ VgeExample::~VgeExample() {}
 
 void VgeExample::initVulkan() {
   // ubo setup
-  globalUbo.model = glm::scale(glm::mat4(1.0), glm::vec3(10.f));
+  globalUbo.model = glm::rotate(globalUbo.model, glm::radians(140.f),
+                                glm::vec3{0.f, -1.f, 0.f});
+  globalUbo.model = glm::scale(globalUbo.model, glm::vec3(.03f));
   globalUbo.normalMatrix = glm::mat4(glm::inverse(glm::mat3(globalUbo.model)));
   // TODO: check coordinate space
-  globalUbo.lightPos = glm::vec4(-2.f, -4.f, -2.f, 0.f);
+  globalUbo.lightPos = glm::vec4(20.f, -10.f, -10.f, 0.f);
   // camera setup
-  camera.setViewTarget(glm::vec3{-2.f, -2.f, -5.f}, glm::vec3{0.f, 0.f, 0.f});
+  camera.setViewTarget(glm::vec3{0.f, -4.f, -7.f}, glm::vec3{0.f, 0.f, 0.f});
   camera.setPerspectiveProjection(
       glm::radians(60.f),
-      (static_cast<float>(width) / 3.f) / static_cast<float>(height), 0.1f,
+      static_cast<float>(width) / (static_cast<float>(height) / 2.f), 0.1f,
       256.f);
   VgeBase::initVulkan();
 }
@@ -56,7 +58,7 @@ void VgeExample::loadAssets() {
 
   scene = std::make_unique<vgeu::glTF::Model>(
       device, globalAllocator->getAllocator(), queue, commandPool);
-  scene->loadFromFile(getAssetsPath() + "/models/fox/Fox.gltf",
+  scene->loadFromFile(getAssetsPath() + "/models/fox-normal/fox-normal.gltf",
                       glTFLoadingFlags);
 }
 
@@ -178,9 +180,9 @@ void VgeExample::createPipelines() {
       vk::PipelineDynamicStateCreateFlags(), dynamicStates);
 
   auto vertCode =
-      vgeu::readFile(getShadersPath() + "/pipelines/phong.vert.spv");
+      vgeu::readFile(getShadersPath() + "/animation/phong.vert.spv");
   auto fragCode =
-      vgeu::readFile(getShadersPath() + "/pipelines/phong.frag.spv");
+      vgeu::readFile(getShadersPath() + "/animation/phong.frag.spv");
   // NOTE: after pipeline creation, shader modules can be destroyed.
   vk::raii::ShaderModule vertShaderModule =
       vgeu::createShaderModule(device, vertCode);
@@ -206,32 +208,12 @@ void VgeExample::createPipelines() {
   pipelines.phong =
       vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
 
-  {
-    graphicsPipelineCI.flags = vk::PipelineCreateFlagBits::eDerivative;
-    graphicsPipelineCI.basePipelineHandle = *pipelines.phong;
-    // only handle or index
-    graphicsPipelineCI.basePipelineIndex = -1;
-
-    vertCode = vgeu::readFile(getShadersPath() + "/pipelines/toon.vert.spv");
-    fragCode = vgeu::readFile(getShadersPath() + "/pipelines/toon.frag.spv");
-    // NOTE: after pipeline creation, shader modules can be destroyed.
-    vertShaderModule = vgeu::createShaderModule(device, vertCode);
-    fragShaderModule = vgeu::createShaderModule(device, fragCode);
-    shaderStageCIs[0] = vk::PipelineShaderStageCreateInfo(
-        vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eVertex,
-        *vertShaderModule, "main", nullptr);
-    shaderStageCIs[1] = vk::PipelineShaderStageCreateInfo(
-        vk::PipelineShaderStageCreateFlags(),
-        vk::ShaderStageFlagBits::eFragment, *fragShaderModule, "main", nullptr);
-    pipelines.toon =
-        vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
-  }
   if (enabledFeatures.fillModeNonSolid) {
     rasterizationSCI.polygonMode = vk::PolygonMode::eLine;
     vertCode =
-        vgeu::readFile(getShadersPath() + "/pipelines/wireframe.vert.spv");
+        vgeu::readFile(getShadersPath() + "/animation/wireframe.vert.spv");
     fragCode =
-        vgeu::readFile(getShadersPath() + "/pipelines/wireframe.frag.spv");
+        vgeu::readFile(getShadersPath() + "/animation/wireframe.frag.spv");
     // NOTE: after pipeline creation, shader modules can be destroyed.
     vertShaderModule = vgeu::createShaderModule(device, vertCode);
     fragShaderModule = vgeu::createShaderModule(device, fragCode);
@@ -318,14 +300,14 @@ void VgeExample::buildCommandBuffers() {
   // bind index buffer
   scene->bindBuffers(drawCmdBuffers[currentFrameIndex]);
 
-  // Left view
+  // Top view
   {
     drawCmdBuffers[currentFrameIndex].setViewport(
         0, vk::Viewport(
                0.0f, 0.0f,
-               static_cast<float>(swapChainData->swapChainExtent.width) / 3.f,
-               static_cast<float>(swapChainData->swapChainExtent.height), 0.0f,
-               1.0f));
+               static_cast<float>(swapChainData->swapChainExtent.width),
+               static_cast<float>(swapChainData->swapChainExtent.height) / 2.f,
+               0.0f, 1.0f));
     // bind pipeline
     drawCmdBuffers[currentFrameIndex].bindPipeline(
         vk::PipelineBindPoint::eGraphics, *pipelines.phong);
@@ -333,36 +315,18 @@ void VgeExample::buildCommandBuffers() {
     scene->draw(drawCmdBuffers[currentFrameIndex],
                 vgeu::RenderFlagBits::kBindImages, *pipelineLayout, 1);
   }
-
-  // Center view
-  {
-    drawCmdBuffers[currentFrameIndex].setViewport(
-        0, vk::Viewport(
-               static_cast<float>(swapChainData->swapChainExtent.width) / 3.f,
-               0.0f,
-               static_cast<float>(swapChainData->swapChainExtent.width) / 3.f,
-               static_cast<float>(swapChainData->swapChainExtent.height), 0.0f,
-               1.0f));
-    // bind pipeline
-    drawCmdBuffers[currentFrameIndex].bindPipeline(
-        vk::PipelineBindPoint::eGraphics, *pipelines.toon);
-    // draw indexed
-    scene->draw(drawCmdBuffers[currentFrameIndex],
-                vgeu::RenderFlagBits::kBindImages, *pipelineLayout, 1);
-  }
-
+  // Bottom view
   if (enabledFeatures.wideLines) {
     drawCmdBuffers[currentFrameIndex].setLineWidth(2.f);
   }
   if (enabledFeatures.fillModeNonSolid) {
     drawCmdBuffers[currentFrameIndex].setViewport(
         0, vk::Viewport(
-               static_cast<float>(swapChainData->swapChainExtent.width) / 3.f *
-                   2.f,
                0.0f,
-               static_cast<float>(swapChainData->swapChainExtent.width) / 3.f,
-               static_cast<float>(swapChainData->swapChainExtent.height), 0.0f,
-               1.0f));
+               static_cast<float>(swapChainData->swapChainExtent.height) / 2.f,
+               static_cast<float>(swapChainData->swapChainExtent.width),
+               static_cast<float>(swapChainData->swapChainExtent.height) / 2.f,
+               0.0f, 1.0f));
     // bind pipeline
     drawCmdBuffers[currentFrameIndex].bindPipeline(
         vk::PipelineBindPoint::eGraphics, *pipelines.wireframe);
@@ -382,8 +346,8 @@ void VgeExample::buildCommandBuffers() {
 }
 void VgeExample::viewChanged() {
   // std::cout << "Call: viewChanged()" << std::endl;
-  camera.setAspectRatio((static_cast<float>(width) / 3.f) /
-                        static_cast<float>(height));
+  camera.setAspectRatio(static_cast<float>(width) /
+                        (static_cast<float>(height) / 2.f));
   // NOTE: moved updating ubo into render() to use frameindex.
 }
 
