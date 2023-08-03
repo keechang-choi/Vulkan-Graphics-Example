@@ -768,6 +768,17 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
               hasSkin ? glm::make_vec4(&bufferWeights[v * 4]) : glm::vec4(0.0f);
           vertices.push_back(vert);
         }
+        // for empty normal attribute
+        if (!bufferNormals) {
+          for (size_t i = 0; i < vertices.size() / 3; i++) {
+            glm::vec3 pos0(vertices[i * 3].pos);
+            glm::vec3 pos1(vertices[i * 3 + 1].pos);
+            glm::vec3 pos2(vertices[i * 3 + 2].pos);
+            vertices[i * 3].normal = glm::cross(pos1 - pos0, pos2 - pos1);
+            vertices[i * 3 + 1].normal = glm::cross(pos1 - pos0, pos2 - pos1);
+            vertices[i * 3 + 2].normal = glm::cross(pos1 - pos0, pos2 - pos1);
+          }
+        }
       }
       // Indices
       if (gltfPrimitive.indices >= 0) {

@@ -21,7 +21,7 @@ if(WIN32)
   message(STATUS "using ${CMAKE_GENERATOR}")
   message(STATUS "build type: ${CMAKE_BUILD_TYPE}")
 
-  if(CMAKE_GENERATOR STREQUAL "MinGW Makefiles")
+  if(WIN32)
     if("$ENV{MINGW_PATH}" STREQUAL "")
       set(MINGW_PATH "C:/Program\ Files/mingw-w64/x86_64-12.2.0-release-posix-seh-rt_v10-rev1/mingw64")
     else()

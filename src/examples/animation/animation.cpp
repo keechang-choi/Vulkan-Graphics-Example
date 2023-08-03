@@ -58,7 +58,7 @@ void VgeExample::loadAssets() {
 
   scene = std::make_unique<vgeu::glTF::Model>(
       device, globalAllocator->getAllocator(), queue, commandPool);
-  scene->loadFromFile(getAssetsPath() + "/models/fox-normal/fox-normal.gltf",
+  scene->loadFromFile(getAssetsPath() + "/models/fox/Fox.gltf",
                       glTFLoadingFlags);
 }
 
