@@ -17,6 +17,11 @@ struct GlobalUbo {
   glm::mat4 inverseView{1.f};
 };
 
+struct ModelUbo {
+  glm::mat4 model;
+  glm::mat4 normalMatrix;
+};
+
 class VgeExample : public VgeBase {
  public:
   VgeExample();
@@ -32,6 +37,7 @@ class VgeExample : public VgeBase {
   void createDescriptorSets();
   void createPipelines();
   void draw();
+  void drawSkeleton();
   void buildCommandBuffers();
   void viewChanged();
 
@@ -48,7 +54,6 @@ class VgeExample : public VgeBase {
 
   struct {
     vk::raii::Pipeline phong = nullptr;
-    vk::raii::Pipeline toon = nullptr;
     vk::raii::Pipeline wireframe = nullptr;
   } pipelines;
 };

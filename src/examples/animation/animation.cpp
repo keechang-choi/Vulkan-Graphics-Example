@@ -53,7 +53,6 @@ void VgeExample::prepare() {
 }
 void VgeExample::loadAssets() {
   vgeu::FileLoadingFlags glTFLoadingFlags =
-      vgeu::FileLoadingFlagBits::kPreTransformVertices |
       vgeu::FileLoadingFlagBits::kPreMultiplyVertexColors |
       vgeu::FileLoadingFlagBits::kFlipY;
 
@@ -350,6 +349,11 @@ void VgeExample::viewChanged() {
   camera.setAspectRatio(static_cast<float>(width) /
                         (static_cast<float>(height) / 2.f));
   // NOTE: moved updating ubo into render() to use frameindex.
+}
+
+void VgeExample::drawSkeleton() {
+  // uniforms?
+  // TODO: decide use how many uniform buffers.
 }
 
 }  // namespace vge
