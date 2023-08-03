@@ -286,14 +286,14 @@ void Model::loadFromFile(std::string filename,
     // loadAnimations(gltfModel);
   }
   // TODO:
-  // loadSkins(gltfModel);
+  loadSkins(gltfModel);
 
   for (auto node : linearNodes) {
     // TODO:
     // Assign skins
-    // if (node->skinIndex > -1) {
-    //   node->skin = skins[node->skinIndex];
-    // }
+    if (node->skinIndex > -1) {
+      node->skin = &skins[node->skinIndex];
+    }
     // Initial pose
     if (node->mesh) {
       node->update();
@@ -502,58 +502,61 @@ void Model::loadImages(tinygltf::Model& gltfModel) {
       std::make_unique<Texture>(device, allocator, transferQueue, commandPool);
 }
 
-void Model::loadMaterials(tinygltf::Model& gltfModel) {
-  for (tinygltf::Material& mat : gltfModel.materials) {
+void Model::loadMaterials(const tinygltf::Model& gltfModel) {
+  for (const tinygltf::Material& mat : gltfModel.materials) {
     Material& material = materials.emplace_back();
     if (mat.values.find("baseColorTexture") != mat.values.end()) {
       material.baseColorTexture = getTexture(
-          gltfModel.textures[mat.values["baseColorTexture"].TextureIndex()]
+          gltfModel.textures[mat.values.at("baseColorTexture").TextureIndex()]
               .source);
     }
     // Metallic roughness workflow
     if (mat.values.find("metallicRoughnessTexture") != mat.values.end()) {
-      material.metallicRoughnessTexture = getTexture(
-          gltfModel
-              .textures[mat.values["metallicRoughnessTexture"].TextureIndex()]
-              .source);
+      material.metallicRoughnessTexture =
+          getTexture(gltfModel
+                         .textures[mat.values.at("metallicRoughnessTexture")
+                                       .TextureIndex()]
+                         .source);
     }
     if (mat.values.find("roughnessFactor") != mat.values.end()) {
       material.roughnessFactor =
-          static_cast<float>(mat.values["roughnessFactor"].Factor());
+          static_cast<float>(mat.values.at("roughnessFactor").Factor());
     }
     if (mat.values.find("metallicFactor") != mat.values.end()) {
       material.metallicFactor =
-          static_cast<float>(mat.values["metallicFactor"].Factor());
+          static_cast<float>(mat.values.at("metallicFactor").Factor());
     }
     if (mat.values.find("baseColorFactor") != mat.values.end()) {
       material.baseColorFactor =
-          glm::make_vec4(mat.values["baseColorFactor"].ColorFactor().data());
+          glm::make_vec4(mat.values.at("baseColorFactor").ColorFactor().data());
     }
     if (mat.additionalValues.find("normalTexture") !=
         mat.additionalValues.end()) {
       material.normalTexture = getTexture(
           gltfModel
-              .textures[mat.additionalValues["normalTexture"].TextureIndex()]
+              .textures[mat.additionalValues.at("normalTexture").TextureIndex()]
               .source);
     } else {
       material.normalTexture = emptyTexture.get();
     }
     if (mat.additionalValues.find("emissiveTexture") !=
         mat.additionalValues.end()) {
-      material.emissiveTexture = getTexture(
-          gltfModel
-              .textures[mat.additionalValues["emissiveTexture"].TextureIndex()]
-              .source);
+      material.emissiveTexture =
+          getTexture(gltfModel
+                         .textures[mat.additionalValues.at("emissiveTexture")
+                                       .TextureIndex()]
+                         .source);
     }
     if (mat.additionalValues.find("occlusionTexture") !=
         mat.additionalValues.end()) {
-      material.occlusionTexture = getTexture(
-          gltfModel
-              .textures[mat.additionalValues["occlusionTexture"].TextureIndex()]
-              .source);
+      material.occlusionTexture =
+          getTexture(gltfModel
+                         .textures[mat.additionalValues.at("occlusionTexture")
+                                       .TextureIndex()]
+                         .source);
     }
     if (mat.additionalValues.find("alphaMode") != mat.additionalValues.end()) {
-      tinygltf::Parameter param = mat.additionalValues["alphaMode"];
+      tinygltf::Parameter param = mat.additionalValues.at("alphaMode");
       if (param.string_value == "BLEND") {
         material.alphaMode = Material::AlphaMode::kALPHAMODE_BLEND;
       }
@@ -564,7 +567,7 @@ void Model::loadMaterials(tinygltf::Model& gltfModel) {
     if (mat.additionalValues.find("alphaCutoff") !=
         mat.additionalValues.end()) {
       material.alphaCutoff =
-          static_cast<float>(mat.additionalValues["alphaCutoff"].Factor());
+          static_cast<float>(mat.additionalValues.at("alphaCutoff").Factor());
     }
   }
   // Push a default material at the end of the list for meshes with no material
@@ -856,6 +859,40 @@ const Texture* Model::getTexture(uint32_t index) const {
     return textures[index].get();
   }
   return nullptr;
+}
+
+void Model::loadSkins(const tinygltf::Model& gltfModel) {
+  for (const tinygltf::Skin& source : gltfModel.skins) {
+    Skin& newSkin = skins.emplace_back();
+
+    newSkin.name = source.name;
+
+    // Find skeleton root node
+    if (source.skeleton > -1) {
+      newSkin.skeletonRoot = nodeFromIndex(source.skeleton);
+    }
+
+    // Find joint nodes
+    for (int jointIndex : source.joints) {
+      const Node* node = nodeFromIndex(jointIndex);
+      if (node) {
+        newSkin.joints.push_back(nodeFromIndex(jointIndex));
+      }
+    }
+
+    // Get inverse bind matrices from buffer
+    if (source.inverseBindMatrices > -1) {
+      const tinygltf::Accessor& accessor =
+          gltfModel.accessors[source.inverseBindMatrices];
+      const tinygltf::BufferView& bufferView =
+          gltfModel.bufferViews[accessor.bufferView];
+      const tinygltf::Buffer& buffer = gltfModel.buffers[bufferView.buffer];
+      newSkin.inverseBindMatrices.resize(accessor.count);
+      memcpy(newSkin.inverseBindMatrices.data(),
+             &buffer.data[accessor.byteOffset + bufferView.byteOffset],
+             accessor.count * sizeof(glm::mat4));
+    }
+  }
 }
 
 void Model::draw(const vk::raii::CommandBuffer& cmdBuffer,

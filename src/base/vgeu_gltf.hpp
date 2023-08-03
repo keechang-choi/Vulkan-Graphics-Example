@@ -141,12 +141,12 @@ struct Primitive {
   uint32_t indexCount;
   uint32_t firstVertex;
   uint32_t vertexCount;
-  Material& material;
+  const Material& material;
 
   Dimensions dimensions;
 
   void setDimensions(glm::vec3 min, glm::vec3 max);
-  Primitive(uint32_t firstIndex, uint32_t indexCount, Material& material)
+  Primitive(uint32_t firstIndex, uint32_t indexCount, const Material& material)
       : firstIndex(firstIndex), indexCount(indexCount), material(material){};
 };
 
@@ -168,10 +168,14 @@ struct Mesh {
 };
 
 // TODO: skin
+struct Skin {
+  std::string name;
+  const Node* skeletonRoot = nullptr;
+  std::vector<glm::mat4> inverseBindMatrices;
+  std::vector<const Node*> joints;
+};
 
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#nodes-and-hierarchy
-// TODO: check nodes are used as DAG
-
 // node hierarchy is tree -> children can be unique_ptr
 // techically forest
 struct Node {
@@ -184,8 +188,8 @@ struct Node {
   std::string name;
   // TODO: unique_ptr
   std::unique_ptr<Mesh> mesh;
-  // TODO: skin
-  // Skin* skin;
+  // TODO: skin, check ptr necessary.
+  const Skin* skin = nullptr;
   int32_t skinIndex = -1;
   glm::vec3 translation{};
   glm::vec3 scale{1.0f};
@@ -285,14 +289,16 @@ class Model {
   std::unique_ptr<VgeuBuffer> indexBuffer;
 
  private:
+  // load images from files
   void loadImages(tinygltf::Model& gltfModel);
 
-  void loadMaterials(tinygltf::Model& gltfModel);
+  void loadMaterials(const tinygltf::Model& gltfModel);
 
   void loadNode(Node* parent, const tinygltf::Node& node, uint32_t nodeIndex,
                 const tinygltf::Model& model, std::vector<uint32_t>& indices,
                 std::vector<Vertex>& vertices, float globalscale);
   // TODO: skins
+  void loadSkins(const tinygltf::Model& gltfModel);
 
   // TODO: animation
   const Texture* getTexture(uint32_t index) const;
@@ -317,8 +323,8 @@ class Model {
   // all nodes without ownership
   std::vector<Node*> linearNodes;
 
-  // TODO: skin
-  // std::vector<Skin*> skins;
+  // TODO: skin, unique_ptr?
+  std::vector<Skin> skins;
 
   std::vector<std::unique_ptr<Texture>> textures;
   // TODO: unique_ptr?

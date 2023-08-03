@@ -13,5 +13,5 @@ if "%arg1%" equ "Release" (
 REM cmake -S ../ -B . -G "MinGW Makefiles" %arg1%
 REM mingw32-make.exe && mingw32-make.exe Shaders
 cmake -S ../ -B . -G "Ninja" %arg1%
-ninja.exe -v all && mingw32-make.exe Shaders
+ninja.exe all && mingw32-make.exe Shaders
 cd ..
