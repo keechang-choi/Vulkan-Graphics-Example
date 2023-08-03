@@ -321,8 +321,9 @@ void Model::loadFromFile(std::string filename,
           // Pre-transform vertex positions by node-hierarchy
           if (preTransform) {
             vertex.pos = glm::vec3(localMatrix * glm::vec4(vertex.pos, 1.0f));
-            vertex.normal =
-                glm::normalize(glm::mat3(localMatrix) * vertex.normal);
+            vertex.normal = glm::normalize(
+                glm::mat3(glm::inverse(glm::transpose(localMatrix))) *
+                vertex.normal);
           }
           // Flip Y-Axis of vertex positions
           if (flipY) {
@@ -1110,8 +1111,20 @@ glm::mat4 Node::getMatrix() const {
 void Node::update() {
   if (mesh) {
     glm::mat4 m = getMatrix();
-    // TODO: skin
-    if (/*skin*/ false) {
+    if (skin) {
+      mesh->uniformBlock.matrix = m;
+      // Update join matrices
+      glm::mat4 inverseTransform = glm::inverse(m);
+      for (size_t i = 0; i < skin->joints.size(); i++) {
+        const Node* jointNode = skin->joints[i];
+        glm::mat4 jointMat =
+            jointNode->getMatrix() * skin->inverseBindMatrices[i];
+        jointMat = inverseTransform * jointMat;
+        mesh->uniformBlock.jointMatrix[i] = jointMat;
+      }
+      mesh->uniformBlock.jointcount = static_cast<float>(skin->joints.size());
+      memcpy(mesh->uniformBuffer->getMappedData(), &mesh->uniformBlock,
+             sizeof(mesh->uniformBlock));
     } else {
       memcpy(mesh->uniformBuffer->getMappedData(), &m, sizeof(glm::mat4));
     }

@@ -17,6 +17,7 @@ https://github.com/SaschaWillems/Vulkan/blob/master/base/VulkanglTFModel.h
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
 //
@@ -284,10 +285,6 @@ class Model {
   DescriptorBindingFlags descriptorBindingFlags =
       DescriptorBindingFlagBits::kImageBaseColor;
 
-  vk::raii::DescriptorPool descriptorPool = nullptr;
-  std::unique_ptr<VgeuBuffer> vertexBuffer;
-  std::unique_ptr<VgeuBuffer> indexBuffer;
-
  private:
   // load images from files
   void loadImages(tinygltf::Model& gltfModel);
@@ -317,7 +314,11 @@ class Model {
   const vk::raii::Queue& transferQueue;
   const vk::raii::CommandPool& commandPool;
 
-  // TODO: takes ownership since root nodes or each tree.
+  vk::raii::DescriptorPool descriptorPool = nullptr;
+  std::unique_ptr<VgeuBuffer> vertexBuffer;
+  std::unique_ptr<VgeuBuffer> indexBuffer;
+
+  // TODO: takes ownership since thoese are root nodes of each tree.
   // unique_ptr
   std::vector<std::unique_ptr<Node>> nodes;
   // all nodes without ownership

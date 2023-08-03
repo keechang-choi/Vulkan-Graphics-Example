@@ -20,7 +20,8 @@ void VgeExample::initVulkan() {
   globalUbo.model = glm::rotate(globalUbo.model, glm::radians(140.f),
                                 glm::vec3{0.f, -1.f, 0.f});
   globalUbo.model = glm::scale(globalUbo.model, glm::vec3(.03f));
-  globalUbo.normalMatrix = glm::mat4(glm::inverse(glm::mat3(globalUbo.model)));
+  globalUbo.normalMatrix =
+      glm::mat4(glm::inverse(glm::transpose(glm::mat3(globalUbo.model))));
   // TODO: check coordinate space
   globalUbo.lightPos = glm::vec4(20.f, -10.f, -10.f, 0.f);
   // camera setup
