@@ -20,7 +20,8 @@ void VgeExample::initVulkan() {
   globalUbo.model = glm::rotate(globalUbo.model, glm::radians(140.f),
                                 glm::vec3{0.f, -1.f, 0.f});
   globalUbo.model = glm::scale(globalUbo.model, glm::vec3(.03f));
-  globalUbo.normalMatrix = glm::mat4(glm::inverse(glm::mat3(globalUbo.model)));
+  globalUbo.normalMatrix =
+      glm::mat4(glm::inverse(glm::transpose(glm::mat3(globalUbo.model))));
   // TODO: check coordinate space
   globalUbo.lightPos = glm::vec4(20.f, -10.f, -10.f, 0.f);
   // camera setup
@@ -52,13 +53,12 @@ void VgeExample::prepare() {
 }
 void VgeExample::loadAssets() {
   vgeu::FileLoadingFlags glTFLoadingFlags =
-      vgeu::FileLoadingFlagBits::kPreTransformVertices |
       vgeu::FileLoadingFlagBits::kPreMultiplyVertexColors |
       vgeu::FileLoadingFlagBits::kFlipY;
 
   scene = std::make_unique<vgeu::glTF::Model>(
       device, globalAllocator->getAllocator(), queue, commandPool);
-  scene->loadFromFile(getAssetsPath() + "/models/fox-normal/fox-normal.gltf",
+  scene->loadFromFile(getAssetsPath() + "/models/fox/Fox.gltf",
                       glTFLoadingFlags);
 }
 
@@ -349,6 +349,11 @@ void VgeExample::viewChanged() {
   camera.setAspectRatio(static_cast<float>(width) /
                         (static_cast<float>(height) / 2.f));
   // NOTE: moved updating ubo into render() to use frameindex.
+}
+
+void VgeExample::drawSkeleton() {
+  // uniforms?
+  // TODO: decide use how many uniform buffers.
 }
 
 }  // namespace vge

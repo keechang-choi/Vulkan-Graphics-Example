@@ -286,14 +286,14 @@ void Model::loadFromFile(std::string filename,
     // loadAnimations(gltfModel);
   }
   // TODO:
-  // loadSkins(gltfModel);
+  loadSkins(gltfModel);
 
   for (auto node : linearNodes) {
     // TODO:
     // Assign skins
-    // if (node->skinIndex > -1) {
-    //   node->skin = skins[node->skinIndex];
-    // }
+    if (node->skinIndex > -1) {
+      node->skin = &skins[node->skinIndex];
+    }
     // Initial pose
     if (node->mesh) {
       node->update();
@@ -321,8 +321,9 @@ void Model::loadFromFile(std::string filename,
           // Pre-transform vertex positions by node-hierarchy
           if (preTransform) {
             vertex.pos = glm::vec3(localMatrix * glm::vec4(vertex.pos, 1.0f));
-            vertex.normal =
-                glm::normalize(glm::mat3(localMatrix) * vertex.normal);
+            vertex.normal = glm::normalize(
+                glm::mat3(glm::inverse(glm::transpose(localMatrix))) *
+                vertex.normal);
           }
           // Flip Y-Axis of vertex positions
           if (flipY) {
@@ -502,58 +503,61 @@ void Model::loadImages(tinygltf::Model& gltfModel) {
       std::make_unique<Texture>(device, allocator, transferQueue, commandPool);
 }
 
-void Model::loadMaterials(tinygltf::Model& gltfModel) {
-  for (tinygltf::Material& mat : gltfModel.materials) {
+void Model::loadMaterials(const tinygltf::Model& gltfModel) {
+  for (const tinygltf::Material& mat : gltfModel.materials) {
     Material& material = materials.emplace_back();
     if (mat.values.find("baseColorTexture") != mat.values.end()) {
       material.baseColorTexture = getTexture(
-          gltfModel.textures[mat.values["baseColorTexture"].TextureIndex()]
+          gltfModel.textures[mat.values.at("baseColorTexture").TextureIndex()]
               .source);
     }
     // Metallic roughness workflow
     if (mat.values.find("metallicRoughnessTexture") != mat.values.end()) {
-      material.metallicRoughnessTexture = getTexture(
-          gltfModel
-              .textures[mat.values["metallicRoughnessTexture"].TextureIndex()]
-              .source);
+      material.metallicRoughnessTexture =
+          getTexture(gltfModel
+                         .textures[mat.values.at("metallicRoughnessTexture")
+                                       .TextureIndex()]
+                         .source);
     }
     if (mat.values.find("roughnessFactor") != mat.values.end()) {
       material.roughnessFactor =
-          static_cast<float>(mat.values["roughnessFactor"].Factor());
+          static_cast<float>(mat.values.at("roughnessFactor").Factor());
     }
     if (mat.values.find("metallicFactor") != mat.values.end()) {
       material.metallicFactor =
-          static_cast<float>(mat.values["metallicFactor"].Factor());
+          static_cast<float>(mat.values.at("metallicFactor").Factor());
     }
     if (mat.values.find("baseColorFactor") != mat.values.end()) {
       material.baseColorFactor =
-          glm::make_vec4(mat.values["baseColorFactor"].ColorFactor().data());
+          glm::make_vec4(mat.values.at("baseColorFactor").ColorFactor().data());
     }
     if (mat.additionalValues.find("normalTexture") !=
         mat.additionalValues.end()) {
       material.normalTexture = getTexture(
           gltfModel
-              .textures[mat.additionalValues["normalTexture"].TextureIndex()]
+              .textures[mat.additionalValues.at("normalTexture").TextureIndex()]
               .source);
     } else {
       material.normalTexture = emptyTexture.get();
     }
     if (mat.additionalValues.find("emissiveTexture") !=
         mat.additionalValues.end()) {
-      material.emissiveTexture = getTexture(
-          gltfModel
-              .textures[mat.additionalValues["emissiveTexture"].TextureIndex()]
-              .source);
+      material.emissiveTexture =
+          getTexture(gltfModel
+                         .textures[mat.additionalValues.at("emissiveTexture")
+                                       .TextureIndex()]
+                         .source);
     }
     if (mat.additionalValues.find("occlusionTexture") !=
         mat.additionalValues.end()) {
-      material.occlusionTexture = getTexture(
-          gltfModel
-              .textures[mat.additionalValues["occlusionTexture"].TextureIndex()]
-              .source);
+      material.occlusionTexture =
+          getTexture(gltfModel
+                         .textures[mat.additionalValues.at("occlusionTexture")
+                                       .TextureIndex()]
+                         .source);
     }
     if (mat.additionalValues.find("alphaMode") != mat.additionalValues.end()) {
-      tinygltf::Parameter param = mat.additionalValues["alphaMode"];
+      tinygltf::Parameter param = mat.additionalValues.at("alphaMode");
       if (param.string_value == "BLEND") {
         material.alphaMode = Material::AlphaMode::kALPHAMODE_BLEND;
       }
@@ -564,7 +568,7 @@ void Model::loadMaterials(tinygltf::Model& gltfModel) {
     if (mat.additionalValues.find("alphaCutoff") !=
         mat.additionalValues.end()) {
       material.alphaCutoff =
-          static_cast<float>(mat.additionalValues["alphaCutoff"].Factor());
+          static_cast<float>(mat.additionalValues.at("alphaCutoff").Factor());
     }
   }
   // Push a default material at the end of the list for meshes with no material
@@ -768,6 +772,17 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
               hasSkin ? glm::make_vec4(&bufferWeights[v * 4]) : glm::vec4(0.0f);
           vertices.push_back(vert);
         }
+        // for empty normal attribute
+        if (!bufferNormals) {
+          for (size_t i = 0; i < vertices.size() / 3; i++) {
+            glm::vec3 pos0(vertices[i * 3].pos);
+            glm::vec3 pos1(vertices[i * 3 + 1].pos);
+            glm::vec3 pos2(vertices[i * 3 + 2].pos);
+            vertices[i * 3].normal = glm::cross(pos1 - pos0, pos2 - pos1);
+            vertices[i * 3 + 1].normal = glm::cross(pos1 - pos0, pos2 - pos1);
+            vertices[i * 3 + 2].normal = glm::cross(pos1 - pos0, pos2 - pos1);
+          }
+        }
       }
       // Indices
       if (gltfPrimitive.indices >= 0) {
@@ -845,6 +860,40 @@ const Texture* Model::getTexture(uint32_t index) const {
     return textures[index].get();
   }
   return nullptr;
+}
+
+void Model::loadSkins(const tinygltf::Model& gltfModel) {
+  for (const tinygltf::Skin& source : gltfModel.skins) {
+    Skin& newSkin = skins.emplace_back();
+
+    newSkin.name = source.name;
+
+    // Find skeleton root node
+    if (source.skeleton > -1) {
+      newSkin.skeletonRoot = nodeFromIndex(source.skeleton);
+    }
+
+    // Find joint nodes
+    for (int jointIndex : source.joints) {
+      const Node* node = nodeFromIndex(jointIndex);
+      if (node) {
+        newSkin.joints.push_back(nodeFromIndex(jointIndex));
+      }
+    }
+
+    // Get inverse bind matrices from buffer
+    if (source.inverseBindMatrices > -1) {
+      const tinygltf::Accessor& accessor =
+          gltfModel.accessors[source.inverseBindMatrices];
+      const tinygltf::BufferView& bufferView =
+          gltfModel.bufferViews[accessor.bufferView];
+      const tinygltf::Buffer& buffer = gltfModel.buffers[bufferView.buffer];
+      newSkin.inverseBindMatrices.resize(accessor.count);
+      memcpy(newSkin.inverseBindMatrices.data(),
+             &buffer.data[accessor.byteOffset + bufferView.byteOffset],
+             accessor.count * sizeof(glm::mat4));
+    }
+  }
 }
 
 void Model::draw(const vk::raii::CommandBuffer& cmdBuffer,
@@ -1062,8 +1111,20 @@ glm::mat4 Node::getMatrix() const {
 void Node::update() {
   if (mesh) {
     glm::mat4 m = getMatrix();
-    // TODO: skin
-    if (/*skin*/ false) {
+    if (skin) {
+      mesh->uniformBlock.matrix = m;
+      // Update join matrices
+      glm::mat4 inverseTransform = glm::inverse(m);
+      for (size_t i = 0; i < skin->joints.size(); i++) {
+        const Node* jointNode = skin->joints[i];
+        glm::mat4 jointMat =
+            jointNode->getMatrix() * skin->inverseBindMatrices[i];
+        jointMat = inverseTransform * jointMat;
+        mesh->uniformBlock.jointMatrix[i] = jointMat;
+      }
+      mesh->uniformBlock.jointcount = static_cast<float>(skin->joints.size());
+      memcpy(mesh->uniformBuffer->getMappedData(), &mesh->uniformBlock,
+             sizeof(mesh->uniformBlock));
     } else {
       memcpy(mesh->uniformBuffer->getMappedData(), &m, sizeof(glm::mat4));
     }
@@ -1142,6 +1203,16 @@ vk::PipelineVertexInputStateCreateInfo Vertex::getPipelineVertexInputState(
   return vk::PipelineVertexInputStateCreateInfo(
       vk::PipelineVertexInputStateCreateFlags{}, vertexInputeBindingDescription,
       vertexInputAttributeDescriptions);
+}
+
+void Model::getSkeleton(std::vector<std::vector<glm::mat4>>& jointMatrices) {
+  jointMatrices.resize(skins.size());
+  for (size_t i = 0; i < skins.size(); i++) {
+    jointMatrices[i].reserve(skins[i].joints.size());
+    for (const auto node : skins[i].joints) {
+      jointMatrices[i].push_back(node->getMatrix());
+    }
+  }
 }
 
 }  // namespace glTF

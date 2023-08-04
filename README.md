@@ -16,10 +16,12 @@ supposed to run example apps on multi-platforms, but mainly tested on Windows OS
 Prerequisites
 - CMake tools
 - MinGW-w64
+- ninja-build (optional)
 - Vulkan SDK
 - third-party [externals](external)
   - Vulkan-hpp  for  vulkan c++-API wrapper
   - VMA for memory allocation
+- assets [liscene](assets)
 
 ```
 git submodule init
