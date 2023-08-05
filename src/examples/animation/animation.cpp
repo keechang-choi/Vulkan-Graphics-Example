@@ -70,7 +70,7 @@ void VgeExample::loadAssets() {
 void VgeExample::setupDynamicUbo() {
   dynamicUbo.resize(modelInstances.size());
   dynamicUbo[0].modelMatrix =
-      glm::translate(glm::mat4{1.f}, glm::vec3{-2.f, 0.f, 0.f});
+      glm::translate(glm::mat4{1.f}, glm::vec3{-3.f, 0.f, 0.f});
   dynamicUbo[0].modelMatrix =
       glm::rotate(dynamicUbo[0].modelMatrix, glm::radians(140.f),
                   glm::vec3{0.f, -1.f, 0.f});
@@ -78,9 +78,9 @@ void VgeExample::setupDynamicUbo() {
       glm::scale(dynamicUbo[0].modelMatrix, glm::vec3(.03f));
 
   dynamicUbo[1].modelMatrix =
-      glm::translate(glm::mat4{1.f}, glm::vec3{2.f, 0.f, 0.f});
+      glm::translate(glm::mat4{1.f}, glm::vec3{3.f, 0.f, 0.f});
   dynamicUbo[1].modelMatrix =
-      glm::rotate(dynamicUbo[1].modelMatrix, glm::radians(140.f),
+      glm::rotate(dynamicUbo[1].modelMatrix, glm::radians(140.f + 180.f),
                   glm::vec3{0.f, -1.f, 0.f});
   dynamicUbo[1].modelMatrix =
       glm::scale(dynamicUbo[1].modelMatrix, glm::vec3(.03f));
