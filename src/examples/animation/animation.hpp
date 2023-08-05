@@ -15,14 +15,14 @@ struct GlobalUbo {
   glm::mat4 inverseView{1.f};
 };
 
-struct DynamicUboElt {
-  glm::mat4 model{1.f};
-  glm::mat4 joints[63];
-};
-
 struct ModelInstance {
   std::shared_ptr<vgeu::glTF::Model> model;
+  uint32_t id = 0u;
+};
+
+struct DynamicUboElt {
   glm::mat4 modelMatrix{1.f};
+  glm::vec4 color{1.f};
 };
 
 class VgeExample : public VgeBase {
@@ -43,22 +43,25 @@ class VgeExample : public VgeBase {
   void drawSkeleton();
   void buildCommandBuffers();
   void viewChanged();
-
-  std::unique_ptr<vgeu::glTF::Model> scene;
+  void setupDynamicUbo();
+  size_t padUniformBufferSize(size_t originalSize);
 
   // NOTE: movable element;
   std::vector<std::unique_ptr<vgeu::VgeuBuffer>> globalUniformBuffers;
-  std::vector<std::unique_ptr<vgeu::VgeuBuffer>> dynamicUniformBuffers;
-
-  struct {
-    GlobalUbo globalUbo;
-    std::vector<DynamicUboElt> dynamicUbo;
-  } Ubo;
-
+  GlobalUbo globalUbo;
   // vk::raii::DescriptorSets?
-  std::vector<vk::raii::DescriptorSet> descriptorSets;
+  std::vector<vk::raii::DescriptorSet> globalUboDescriptorSets;
 
-  vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
+  std::vector<ModelInstance> modelInstances;
+
+  std::vector<DynamicUboElt> dynamicUbo;
+  size_t alignedSizeDynamicUboElt = 0;
+  std::vector<std::unique_ptr<vgeu::VgeuBuffer>> dynamicUniformBuffers;
+  std::vector<vk::raii::DescriptorSet> dynamicUboDescriptorSets;
+
+  vk::raii::DescriptorSetLayout globalUboDescriptorSetLayout = nullptr;
+  vk::raii::DescriptorSetLayout dynamicUboDescriptorSetLayout = nullptr;
+
   vk::raii::PipelineLayout pipelineLayout = nullptr;
 
   struct {

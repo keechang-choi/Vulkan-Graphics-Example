@@ -16,20 +16,14 @@ VgeExample::VgeExample() : VgeBase() { title = "Animation Example"; }
 VgeExample::~VgeExample() {}
 
 void VgeExample::initVulkan() {
-  // ubo setup
-  globalUbo.model = glm::rotate(globalUbo.model, glm::radians(140.f),
-                                glm::vec3{0.f, -1.f, 0.f});
-  globalUbo.model = glm::scale(globalUbo.model, glm::vec3(.03f));
-  globalUbo.normalMatrix =
-      glm::mat4(glm::inverse(glm::transpose(glm::mat3(globalUbo.model))));
-  // TODO: check coordinate space
-  globalUbo.lightPos = glm::vec4(20.f, -10.f, -10.f, 0.f);
   // camera setup
   camera.setViewTarget(glm::vec3{0.f, -4.f, -7.f}, glm::vec3{0.f, 0.f, 0.f});
   camera.setPerspectiveProjection(
       glm::radians(60.f),
       static_cast<float>(width) / (static_cast<float>(height) / 2.f), 0.1f,
       256.f);
+  // TODO: check coordinate space
+  globalUbo.lightPos = glm::vec4(20.f, -10.f, -10.f, 0.f);
   VgeBase::initVulkan();
 }
 
@@ -44,6 +38,7 @@ void VgeExample::getEnabledExtensions() {
 void VgeExample::prepare() {
   VgeBase::prepare();
   loadAssets();
+  setupDynamicUbo();
   createUniformBuffers();
   createDescriptorSetLayout();
   createDescriptorPool();
@@ -55,40 +50,101 @@ void VgeExample::loadAssets() {
   vgeu::FileLoadingFlags glTFLoadingFlags =
       vgeu::FileLoadingFlagBits::kPreMultiplyVertexColors |
       vgeu::FileLoadingFlagBits::kFlipY;
-
-  scene = std::make_unique<vgeu::glTF::Model>(
+  std::shared_ptr<vgeu::glTF::Model> fox;
+  fox = std::make_shared<vgeu::glTF::Model>(
       device, globalAllocator->getAllocator(), queue, commandPool);
-  scene->loadFromFile(getAssetsPath() + "/models/fox/Fox.gltf",
-                      glTFLoadingFlags);
+  fox->loadFromFile(getAssetsPath() + "/models/fox/Fox.gltf", glTFLoadingFlags);
+
+  {
+    ModelInstance& modelInstance = modelInstances.emplace_back();
+    modelInstance.model = fox;
+    modelInstance.id = modelInstances.size() - 1;
+  }
+
+  {
+    ModelInstance& modelInstance = modelInstances.emplace_back();
+    modelInstance.model = fox;
+    modelInstance.id = modelInstances.size() - 1;
+  }
+}
+void VgeExample::setupDynamicUbo() {
+  dynamicUbo.resize(modelInstances.size());
+  dynamicUbo[0].modelMatrix =
+      glm::translate(glm::mat4{1.f}, glm::vec3{-2.f, 0.f, 0.f});
+  dynamicUbo[0].modelMatrix =
+      glm::rotate(dynamicUbo[0].modelMatrix, glm::radians(140.f),
+                  glm::vec3{0.f, -1.f, 0.f});
+  dynamicUbo[0].modelMatrix =
+      glm::scale(dynamicUbo[0].modelMatrix, glm::vec3(.03f));
+
+  dynamicUbo[1].modelMatrix =
+      glm::translate(glm::mat4{1.f}, glm::vec3{2.f, 0.f, 0.f});
+  dynamicUbo[1].modelMatrix =
+      glm::rotate(dynamicUbo[1].modelMatrix, glm::radians(140.f),
+                  glm::vec3{0.f, -1.f, 0.f});
+  dynamicUbo[1].modelMatrix =
+      glm::scale(dynamicUbo[1].modelMatrix, glm::vec3(.03f));
 }
 
 void VgeExample::createUniformBuffers() {
+  alignedSizeDynamicUboElt = padUniformBufferSize(sizeof(DynamicUboElt));
   // NOTE: prevent move during vector element creation.
-  uniformBuffers.reserve(MAX_CONCURRENT_FRAMES);
+  globalUniformBuffers.reserve(MAX_CONCURRENT_FRAMES);
+  dynamicUniformBuffers.reserve(MAX_CONCURRENT_FRAMES);
   for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
-    uniformBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
+    globalUniformBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
         globalAllocator->getAllocator(), sizeof(GlobalUbo), 1,
         vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_AUTO,
         VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
             VMA_ALLOCATION_CREATE_MAPPED_BIT |
             VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT));
-    std::memcpy(uniformBuffers[i]->getMappedData(), &globalUbo,
+    std::memcpy(globalUniformBuffers[i]->getMappedData(), &globalUbo,
                 sizeof(GlobalUbo));
+
+    dynamicUniformBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
+        globalAllocator->getAllocator(), alignedSizeDynamicUboElt,
+        dynamicUbo.size(), vk::BufferUsageFlagBits::eUniformBuffer,
+        VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT |
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT));
+    for (size_t j = 0; j < dynamicUbo.size(); j++) {
+      std::memcpy(
+          static_cast<char*>(dynamicUniformBuffers[i]->getMappedData()) +
+              j * alignedSizeDynamicUboElt,
+          &dynamicUbo[j], alignedSizeDynamicUboElt);
+    }
   }
 }
 
 void VgeExample::createDescriptorSetLayout() {
+  std::vector<vk::DescriptorSetLayout> setLayouts;
+
   // set 0
-  vk::DescriptorSetLayoutBinding layoutBinding(
-      0, vk::DescriptorType::eUniformBuffer, 1,
-      vk::ShaderStageFlagBits::eVertex);
-  vk::DescriptorSetLayoutCreateInfo layoutCI({}, 1, &layoutBinding);
-  descriptorSetLayout = vk::raii::DescriptorSetLayout(device, layoutCI);
+  {
+    vk::DescriptorSetLayoutBinding layoutBinding(
+        0, vk::DescriptorType::eUniformBuffer, 1,
+        vk::ShaderStageFlagBits::eVertex);
+    vk::DescriptorSetLayoutCreateInfo layoutCI({}, 1, &layoutBinding);
+    globalUboDescriptorSetLayout =
+        vk::raii::DescriptorSetLayout(device, layoutCI);
+    setLayouts.push_back(*globalUboDescriptorSetLayout);
+  }
 
   // set 1
-  std::vector<vk::DescriptorSetLayout> setLayouts;
-  setLayouts.push_back(*descriptorSetLayout);
-  setLayouts.push_back(*scene->descriptorSetLayoutImage);
+  {
+    vk::DescriptorSetLayoutBinding layoutBinding(
+        0, vk::DescriptorType::eUniformBufferDynamic, 1,
+        vk::ShaderStageFlagBits::eVertex);
+    vk::DescriptorSetLayoutCreateInfo layoutCI({}, 1, &layoutBinding);
+    dynamicUboDescriptorSetLayout =
+        vk::raii::DescriptorSetLayout(device, layoutCI);
+    setLayouts.push_back(*dynamicUboDescriptorSetLayout);
+  }
+
+  // set 2
+  // TODO: need to improve structure. descriptorSetLayout per model
+  setLayouts.push_back(*modelInstances[0].model->descriptorSetLayoutImage);
 
   vk::PipelineLayoutCreateInfo pipelineLayoutCI({}, setLayouts);
   pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutCI);
@@ -98,38 +154,64 @@ void VgeExample::createDescriptorPool() {
   std::vector<vk::DescriptorPoolSize> poolSizes;
   poolSizes.emplace_back(vk::DescriptorType::eUniformBuffer,
                          MAX_CONCURRENT_FRAMES);
+  poolSizes.emplace_back(vk::DescriptorType::eUniformBufferDynamic,
+                         MAX_CONCURRENT_FRAMES);
   // NOTE: need to check flag
   vk::DescriptorPoolCreateInfo descriptorPoolCI(
       vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-      MAX_CONCURRENT_FRAMES, poolSizes);
+      MAX_CONCURRENT_FRAMES * 2, poolSizes);
   descriptorPool = vk::raii::DescriptorPool(device, descriptorPoolCI);
 }
 
 void VgeExample::createDescriptorSets() {
-  vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
-                                          *descriptorSetLayout);
-
-  descriptorSets.reserve(MAX_CONCURRENT_FRAMES);
-  for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
-    // NOTE: move descriptor set
-    descriptorSets.push_back(
-        std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
+  // global UBO
+  {
+    vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
+                                            *globalUboDescriptorSetLayout);
+    globalUboDescriptorSets.reserve(MAX_CONCURRENT_FRAMES);
+    for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      // NOTE: move descriptor set
+      globalUboDescriptorSets.push_back(
+          std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
+    }
+    std::vector<vk::DescriptorBufferInfo> bufferInfos;
+    bufferInfos.reserve(globalUniformBuffers.size());
+    std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
+    writeDescriptorSets.reserve(globalUniformBuffers.size());
+    for (int i = 0; i < globalUniformBuffers.size(); i++) {
+      // copy
+      bufferInfos.push_back(globalUniformBuffers[i]->descriptorInfo());
+      // NOTE: ArrayProxyNoTemporaries has no T rvalue constructor.
+      writeDescriptorSets.emplace_back(*globalUboDescriptorSets[i], 0, 0,
+                                       vk::DescriptorType::eUniformBuffer,
+                                       nullptr, bufferInfos.back());
+    }
+    device.updateDescriptorSets(writeDescriptorSets, nullptr);
   }
-
-  std::vector<vk::DescriptorBufferInfo> bufferInfos;
-  bufferInfos.reserve(uniformBuffers.size());
-
-  std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
-  writeDescriptorSets.reserve(uniformBuffers.size());
-  for (int i = 0; i < uniformBuffers.size(); i++) {
-    // copy
-    bufferInfos.push_back(uniformBuffers[i]->descriptorInfo());
-    // NOTE: ArrayProxyNoTemporaries has no T rvalue constructor.
-    writeDescriptorSets.emplace_back(*descriptorSets[i], 0, 0,
-                                     vk::DescriptorType::eUniformBuffer,
-                                     nullptr, bufferInfos.back());
+  // dynamic UBO
+  {
+    vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
+                                            *dynamicUboDescriptorSetLayout);
+    dynamicUboDescriptorSets.reserve(MAX_CONCURRENT_FRAMES);
+    for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      dynamicUboDescriptorSets.push_back(
+          std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
+    }
+    std::vector<vk::DescriptorBufferInfo> bufferInfos;
+    bufferInfos.reserve(dynamicUniformBuffers.size());
+    std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
+    writeDescriptorSets.reserve(dynamicUniformBuffers.size());
+    for (int i = 0; i < dynamicUniformBuffers.size(); i++) {
+      // NOTE: descriptorBufferInfo range be alignedSizeDynamicUboElt
+      bufferInfos.push_back(dynamicUniformBuffers[i]->descriptorInfo(
+          alignedSizeDynamicUboElt, 0));
+      writeDescriptorSets.emplace_back(
+          *dynamicUboDescriptorSets[i], 0, 0,
+          vk::DescriptorType::eUniformBufferDynamic, nullptr,
+          bufferInfos.back());
+    }
+    device.updateDescriptorSets(writeDescriptorSets, nullptr);
   }
-  device.updateDescriptorSets(writeDescriptorSets, nullptr);
 }
 
 void VgeExample::createPipelines() {
@@ -236,8 +318,8 @@ void VgeExample::render() {
   globalUbo.view = camera.getView();
   globalUbo.projection = camera.getProjection();
   globalUbo.inverseView = camera.getInverseView();
-  std::memcpy(uniformBuffers[currentFrameIndex]->getMappedData(), &globalUbo,
-              sizeof(GlobalUbo));
+  std::memcpy(globalUniformBuffers[currentFrameIndex]->getMappedData(),
+              &globalUbo, sizeof(GlobalUbo));
 
   draw();
 }
@@ -294,11 +376,8 @@ void VgeExample::buildCommandBuffers() {
 
   // bind ubo descriptor
   drawCmdBuffers[currentFrameIndex].bindDescriptorSets(
-      vk::PipelineBindPoint::eGraphics, *pipelineLayout, 0,
-      {*descriptorSets[currentFrameIndex]}, nullptr);
-  // bind vertex buffer
-  // bind index buffer
-  scene->bindBuffers(drawCmdBuffers[currentFrameIndex]);
+      vk::PipelineBindPoint::eGraphics, *pipelineLayout, 0 /*set 0*/,
+      {*globalUboDescriptorSets[currentFrameIndex]}, nullptr);
 
   // Top view
   {
@@ -311,9 +390,21 @@ void VgeExample::buildCommandBuffers() {
     // bind pipeline
     drawCmdBuffers[currentFrameIndex].bindPipeline(
         vk::PipelineBindPoint::eGraphics, *pipelines.phong);
-    // draw indexed
-    scene->draw(drawCmdBuffers[currentFrameIndex],
-                vgeu::RenderFlagBits::kBindImages, *pipelineLayout, 1);
+
+    for (auto& modelInstance : modelInstances) {
+      // bind dynamic
+      drawCmdBuffers[currentFrameIndex].bindDescriptorSets(
+          vk::PipelineBindPoint::eGraphics, *pipelineLayout, 1 /*set 1*/,
+          {*dynamicUboDescriptorSets[currentFrameIndex]},
+          alignedSizeDynamicUboElt * modelInstance.id);
+      // bind vertex buffer
+      // bind index buffer
+      modelInstance.model->bindBuffers(drawCmdBuffers[currentFrameIndex]);
+      // draw indexed
+      modelInstance.model->draw(drawCmdBuffers[currentFrameIndex],
+                                vgeu::RenderFlagBits::kBindImages,
+                                *pipelineLayout, 2 /*set 2*/);
+    }
   }
   // Bottom view
   if (enabledFeatures.wideLines) {
@@ -330,9 +421,20 @@ void VgeExample::buildCommandBuffers() {
     // bind pipeline
     drawCmdBuffers[currentFrameIndex].bindPipeline(
         vk::PipelineBindPoint::eGraphics, *pipelines.wireframe);
-    // draw indexed
-    scene->draw(drawCmdBuffers[currentFrameIndex],
-                vgeu::RenderFlagBits::kBindImages, *pipelineLayout, 1);
+    for (auto& modelInstance : modelInstances) {
+      // bind dynamic
+      drawCmdBuffers[currentFrameIndex].bindDescriptorSets(
+          vk::PipelineBindPoint::eGraphics, *pipelineLayout, 1 /*set 1*/,
+          {*dynamicUboDescriptorSets[currentFrameIndex]},
+          alignedSizeDynamicUboElt * modelInstance.id);
+      // bind vertex buffer
+      // bind index buffer
+      modelInstance.model->bindBuffers(drawCmdBuffers[currentFrameIndex]);
+      // draw indexed
+      modelInstance.model->draw(drawCmdBuffers[currentFrameIndex],
+                                vgeu::RenderFlagBits::kBindImages,
+                                *pipelineLayout, 2 /*set 2*/);
+    }
   }
 
   // UI overlay draw
@@ -354,6 +456,16 @@ void VgeExample::viewChanged() {
 void VgeExample::drawSkeleton() {
   // uniforms?
   // TODO: decide use how many uniform buffers.
+}
+
+size_t VgeExample::padUniformBufferSize(size_t originalSize) {
+  size_t minUboAlignment =
+      physicalDevice.getProperties().limits.minUniformBufferOffsetAlignment;
+  size_t alignedSize = originalSize;
+  if (minUboAlignment > 0) {
+    alignedSize = (alignedSize + minUboAlignment - 1) & ~(minUboAlignment - 1);
+  }
+  return alignedSize;
 }
 
 }  // namespace vge

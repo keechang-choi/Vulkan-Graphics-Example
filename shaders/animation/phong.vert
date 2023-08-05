@@ -5,15 +5,19 @@ layout (location = 1) in vec3 inNormal;
 layout (location = 2) in vec2 inUV;
 layout (location = 3) in vec3 inColor;
 
-layout (set = 0, binding = 0) uniform UBO 
+layout (set = 0, binding = 0) uniform GlobalUbo 
 {
 	mat4 projection;
-	mat4 model;
     mat4 view;
 	vec4 lightPos;
-	mat4 normalMatrix;
 	mat4 inverseView;
-} ubo;
+} globalUbo;
+
+layout (set = 1, binding = 0) uniform ModelUbo 
+{
+	mat4 model;
+	vec4 modelColor;
+} modelUbo;
 
 layout (location = 0) out vec3 outNormal;
 layout (location = 1) out vec3 outColor;
@@ -25,11 +29,12 @@ void main()
 {
 	outColor = inColor;
 	outUV = inUV;
-	gl_Position = ubo.projection * ubo.view * ubo.model  * vec4(inPos.xyz, 1.0);
+	gl_Position = globalUbo.projection * globalUbo.view * modelUbo.model  * vec4(inPos.xyz, 1.0);
 	
-	vec4 pos = ubo.model * vec4(inPos, 1.0);
-	outNormal = normalize(mat3(ubo.normalMatrix) * inNormal);
-	vec3 lPos = ubo.lightPos.xyz;
+	vec4 pos = modelUbo.model * vec4(inPos, 1.0);
+	mat3 normalMatrix = inverse(transpose(mat3(modelUbo.model)));
+	outNormal = normalize(normalMatrix * inNormal);
+	vec3 lPos = globalUbo.lightPos.xyz;
 	outLightVec = normalize(lPos - pos.xyz);
-	outViewVec = normalize(ubo.inverseView[3].xyz - pos.xyz);		
+	outViewVec = normalize(globalUbo.inverseView[3].xyz - pos.xyz);		
 }
