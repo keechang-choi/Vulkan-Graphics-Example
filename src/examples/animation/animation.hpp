@@ -18,6 +18,7 @@ struct GlobalUbo {
 struct ModelInstance {
   std::shared_ptr<vgeu::glTF::Model> model;
   uint32_t id = 0u;
+  bool isBone = false;
 };
 
 struct DynamicUboElt {

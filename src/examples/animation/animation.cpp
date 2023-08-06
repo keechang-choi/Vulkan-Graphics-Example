@@ -66,6 +66,16 @@ void VgeExample::loadAssets() {
     modelInstance.model = fox;
     modelInstance.id = modelInstances.size() - 1;
   }
+
+  std::shared_ptr<vgeu::glTF::Model> bone = std::make_shared<vgeu::glTF::Model>(
+      device, globalAllocator->getAllocator(), queue, commandPool);
+  bone->loadFromFile(getAssetsPath() + "/models/bone.gltf", glTFLoadingFlags);
+  {
+    ModelInstance& modelInstance = modelInstances.emplace_back();
+    modelInstance.model = bone;
+    modelInstance.id = modelInstances.size() - 1;
+    modelInstance.isBone = true;
+  }
 }
 void VgeExample::setupDynamicUbo() {
   dynamicUbo.resize(modelInstances.size());
@@ -84,6 +94,8 @@ void VgeExample::setupDynamicUbo() {
                   glm::vec3{0.f, -1.f, 0.f});
   dynamicUbo[1].modelMatrix =
       glm::scale(dynamicUbo[1].modelMatrix, glm::vec3(.03f));
+
+  dynamicUbo[2].modelMatrix = dynamicUbo[0].modelMatrix;
 }
 
 void VgeExample::createUniformBuffers() {
@@ -392,6 +404,9 @@ void VgeExample::buildCommandBuffers() {
         vk::PipelineBindPoint::eGraphics, *pipelines.phong);
 
     for (auto& modelInstance : modelInstances) {
+      if (modelInstance.isBone) {
+        continue;
+      }
       // bind dynamic
       drawCmdBuffers[currentFrameIndex].bindDescriptorSets(
           vk::PipelineBindPoint::eGraphics, *pipelineLayout, 1 /*set 1*/,

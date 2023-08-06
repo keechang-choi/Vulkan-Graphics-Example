@@ -573,7 +573,7 @@ void Model::loadMaterials(const tinygltf::Model& gltfModel) {
   }
   // Push a default material at the end of the list for meshes with no material
   // assigned
-  materials.emplace_back();
+  materials.emplace_back().baseColorTexture = emptyTexture.get();
 }
 void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
                      uint32_t nodeIndex, const tinygltf::Model& gltfModel,
