@@ -1205,12 +1205,15 @@ vk::PipelineVertexInputStateCreateInfo Vertex::getPipelineVertexInputState(
       vertexInputAttributeDescriptions);
 }
 
-void Model::getSkeleton(std::vector<std::vector<glm::mat4>>& jointMatrices) {
-  jointMatrices.resize(skins.size());
-  for (size_t i = 0; i < skins.size(); i++) {
-    jointMatrices[i].reserve(skins[i].joints.size());
-    for (const auto node : skins[i].joints) {
-      jointMatrices[i].push_back(node->getMatrix());
+void Model::getSkeletonMatrices(
+    std::vector<std::vector<glm::mat4>>& jointMatrices) {
+  jointMatrices.clear();
+  jointMatrices.reserve(skins.size());
+  for (const auto& skin : skins) {
+    auto& jointMatricesEachSkin = jointMatrices.emplace_back();
+    jointMatricesEachSkin.reserve(skin.joints.size());
+    for (const auto node : skin.joints) {
+      jointMatricesEachSkin.push_back(node->getMatrix());
     }
   }
 }

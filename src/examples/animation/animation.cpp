@@ -70,11 +70,16 @@ void VgeExample::loadAssets() {
   std::shared_ptr<vgeu::glTF::Model> bone = std::make_shared<vgeu::glTF::Model>(
       device, globalAllocator->getAllocator(), queue, commandPool);
   bone->loadFromFile(getAssetsPath() + "/models/bone.gltf", glTFLoadingFlags);
-  {
-    ModelInstance& modelInstance = modelInstances.emplace_back();
-    modelInstance.model = bone;
-    modelInstance.id = modelInstances.size() - 1;
-    modelInstance.isBone = true;
+
+  std::vector<std::vector<glm::mat4>> jointMatrices;
+  fox->getSkeletonMatrices(jointMatrices);
+  for (const auto& jointMatricesEachSkin : jointMatrices) {
+    for (const auto& jointMatrix : jointMatricesEachSkin) {
+      ModelInstance& modelInstance = modelInstances.emplace_back();
+      modelInstance.model = bone;
+      modelInstance.id = modelInstances.size() - 1;
+      modelInstance.isBone = true;
+    }
   }
 }
 void VgeExample::setupDynamicUbo() {
@@ -95,7 +100,25 @@ void VgeExample::setupDynamicUbo() {
   dynamicUbo[1].modelMatrix =
       glm::scale(dynamicUbo[1].modelMatrix, glm::vec3(.03f));
 
-  dynamicUbo[2].modelMatrix = dynamicUbo[0].modelMatrix;
+  // 2~25 -> bones for instance 0
+  {
+    size_t boneInstanceIdx = 2;
+    std::vector<std::vector<glm::mat4>> jointMatrices;
+    modelInstances[0].model->getSkeletonMatrices(jointMatrices);
+    glm::mat4 boneRotate{1.f};
+    boneRotate =
+        glm::rotate(boneRotate, glm::radians(90.f), glm::vec3{1.f, 0.f, 0.f});
+    for (const auto& jointMatricesEachSkin : jointMatrices) {
+      for (size_t i = 0; i < jointMatricesEachSkin.size(); i++) {
+        const auto& jointMatrix = jointMatricesEachSkin[i];
+
+        dynamicUbo[boneInstanceIdx].color = glm::vec4{1.f, 1.f, 1.f, 1.f};
+        dynamicUbo[boneInstanceIdx].modelMatrix =
+            dynamicUbo[0].modelMatrix * jointMatrix * boneRotate;
+        boneInstanceIdx++;
+      }
+    }
+  }
 }
 
 void VgeExample::createUniformBuffers() {
