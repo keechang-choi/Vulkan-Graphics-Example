@@ -71,7 +71,7 @@ void VgeExample::loadAssets() {
 
   std::shared_ptr<vgeu::glTF::Model> bone = std::make_shared<vgeu::glTF::Model>(
       device, globalAllocator->getAllocator(), queue, commandPool);
-  bone->loadFromFile(getAssetsPath() + "/models/bone.gltf",
+  bone->loadFromFile(getAssetsPath() + "/models/bone3.gltf",
                      vgeu::FileLoadingFlags{});
 
   std::vector<std::vector<glm::mat4>> jointMatrices;
@@ -117,9 +117,7 @@ void VgeExample::setupDynamicUbo() {
       for (size_t i = 0; i < jointMatricesEachSkin.size(); i++) {
         const auto& jointMatrix = jointMatricesEachSkin[i];
 
-        dynamicUbo[boneInstanceIdx].color = glm::vec4{1.f, 1.f, 1.f, 1.f};
-        dynamicUbo[boneInstanceIdx].modelMatrix =
-            dynamicUbo[0].modelMatrix * jointMatrix * boneRotate;
+        dynamicUbo[boneInstanceIdx].modelColor = glm::vec4{1.f, 1.f, 1.f, 1.f};
         dynamicUbo[boneInstanceIdx].modelMatrix =
             flipY * dynamicUbo[0].modelMatrix * boneAxisChange;
         boneInstanceIdx++;
@@ -136,28 +134,34 @@ void VgeExample::setupDynamicUbo() {
         joint0 = glm::toMat4(q);
         // std::cout << glm::to_string(joint0) << std::endl;
       }
+      dynamicUbo[2].modelColor = glm::vec4{1.f, 0.f, 0.f, 1.f};
       dynamicUbo[2].modelMatrix =
           dynamicUbo[0].modelMatrix * flipY * joint0 * boneAxisChange;
       glm::mat4 joint1{1.f};
       joint1 = glm::translate(
           joint1, glm::vec3{0, 26.748403549194336, 42.93817138671875});
-      {
-        glm::quat q(0.695481840425441,
-                    glm::vec3{0.12769094176175547, -0.6954820192393762,
-                              -0.12769022650601444});
-        joint1 = joint1 * glm::toMat4(q);
-      }
+
+      glm::quat q(0.695481840425441,
+                  glm::vec3{0.12769094176175547, -0.6954820192393762,
+                            -0.12769022650601444});
+      joint1 = joint1 * glm::toMat4(q);
+
       std::cout << glm::to_string(joint1) << std::endl;
       std::cout << glm::to_string(boneAxisChange) << std::endl;
       std::cout << glm::to_string(joint1 * boneAxisChange) << std::endl;
+      std::cout << glm::to_string(joint0 * boneAxisChange) << std::endl;
+      dynamicUbo[3].modelColor = glm::vec4{0.f, 1.f, 0.f, 1.f};
       dynamicUbo[3].modelMatrix =
           dynamicUbo[0].modelMatrix * flipY * joint0 * joint1;
+      dynamicUbo[4].modelColor = glm::vec4{0.f, 0.f, 1.f, 1.f};
       dynamicUbo[4].modelMatrix =
           dynamicUbo[0].modelMatrix * flipY * joint0 * joint1 * boneAxisChange;
-      dynamicUbo[5].modelMatrix =
-          dynamicUbo[0].modelMatrix * flipY * joint0 * joint1 *
-          glm::rotate(glm::mat4{1.f}, glm::radians(90.f),
-                      glm::vec3{1.f, 0.f, 0.f});
+      dynamicUbo[5].modelColor = glm::vec4{1.f, 1.f, 0.f, 1.f};
+      dynamicUbo[5].modelMatrix = dynamicUbo[0].modelMatrix * flipY * joint0 *
+                                  glm::toMat4(q) * boneAxisChange;
+      dynamicUbo[6].modelColor = glm::vec4{0.f, 1.f, 1.f, 1.f};
+      dynamicUbo[6].modelMatrix =
+          dynamicUbo[0].modelMatrix * flipY * glm::toMat4(q) * boneAxisChange;
     }
   }
 }
@@ -332,8 +336,11 @@ void VgeExample::createPipelines() {
       vk::PipelineColorBlendStateCreateFlags(), false, vk::LogicOp::eNoOp,
       colorBlendAttachmentState, {{1.0f, 1.0f, 1.0f, 1.0f}});
 
-  std::array<vk::DynamicState, 2> dynamicStates = {vk::DynamicState::eViewport,
-                                                   vk::DynamicState::eScissor};
+  std::array<vk::DynamicState, 3> dynamicStates = {
+      vk::DynamicState::eViewport,
+      vk::DynamicState::eScissor,
+      vk::DynamicState::eLineWidth,
+  };
   vk::PipelineDynamicStateCreateInfo dynamicSCI(
       vk::PipelineDynamicStateCreateFlags(), dynamicStates);
 
@@ -457,6 +464,7 @@ void VgeExample::buildCommandBuffers() {
 
   // Top view
   {
+    drawCmdBuffers[currentFrameIndex].setLineWidth(1.f);
     drawCmdBuffers[currentFrameIndex].setViewport(
         0, vk::Viewport(
                0.0f, 0.0f,
@@ -486,9 +494,7 @@ void VgeExample::buildCommandBuffers() {
     }
   }
   // Bottom view
-  if (enabledFeatures.wideLines) {
-    drawCmdBuffers[currentFrameIndex].setLineWidth(2.f);
-  }
+
   if (enabledFeatures.fillModeNonSolid) {
     drawCmdBuffers[currentFrameIndex].setViewport(
         0, vk::Viewport(
@@ -509,6 +515,13 @@ void VgeExample::buildCommandBuffers() {
       // bind vertex buffer
       // bind index buffer
       modelInstance.model->bindBuffers(drawCmdBuffers[currentFrameIndex]);
+      if (enabledFeatures.wideLines) {
+        float lineWidth = 1.f;
+        if (modelInstance.isBone) {
+          lineWidth = 3.f;
+        }
+        drawCmdBuffers[currentFrameIndex].setLineWidth(lineWidth);
+      }
       // draw indexed
       modelInstance.model->draw(drawCmdBuffers[currentFrameIndex],
                                 vgeu::RenderFlagBits::kBindImages,

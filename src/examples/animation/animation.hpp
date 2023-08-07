@@ -23,7 +23,7 @@ struct ModelInstance {
 
 struct DynamicUboElt {
   glm::mat4 modelMatrix{1.f};
-  glm::vec4 color{1.f};
+  glm::vec4 modelColor{0.f};
 };
 
 class VgeExample : public VgeBase {
