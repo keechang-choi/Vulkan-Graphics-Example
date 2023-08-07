@@ -119,9 +119,27 @@ void VgeExample::setupDynamicUbo() {
 
         dynamicUbo[boneInstanceIdx].modelColor = glm::vec4{1.f, 1.f, 1.f, 1.f};
         dynamicUbo[boneInstanceIdx].modelMatrix =
-            flipY * dynamicUbo[0].modelMatrix * boneAxisChange;
+            dynamicUbo[0].modelMatrix * jointMatrix;
         boneInstanceIdx++;
       }
+    }
+
+    {
+      // test
+      std::cout << "---------test------------" << std::endl;
+      glm::quat q0(0.7071054698831242,
+                   glm::vec3{-0.7071080924875391, 0.0, 0.0});
+      glm::mat4 t1 = glm::translate(
+          glm::mat4{1.f}, glm::vec3{0, 26.748403549194336, 42.93817138671875});
+      glm::quat q1(0.695481840425441,
+                   glm::vec3{0.12769094176175547, -0.6954820192393762,
+                             -0.12769022650601444});
+      glm::mat4 m1 = t1 * glm::toMat4(q1);
+      glm::vec4 head{0, 26.748403549194336, 42.93817138671875, 1.f};
+      glm::vec4 tail{0, 23.227, 52.205, 1.f};
+      std::cout << glm::to_string(m1 * head) << std::endl;
+      std::cout << glm::to_string(m1 * tail) << std::endl;
+      std::cout << "---------test------------" << std::endl;
     }
     {
       glm::mat4 joint0{1.f};
@@ -162,6 +180,22 @@ void VgeExample::setupDynamicUbo() {
       dynamicUbo[6].modelColor = glm::vec4{0.f, 1.f, 1.f, 1.f};
       dynamicUbo[6].modelMatrix =
           dynamicUbo[0].modelMatrix * flipY * glm::toMat4(q) * boneAxisChange;
+
+      dynamicUbo[7].modelColor = glm::vec4{1.f, 0.f, 1.f, 1.f};
+      dynamicUbo[7].modelMatrix = dynamicUbo[0].modelMatrix * glm::toMat4(q);
+
+      dynamicUbo[8].modelColor = glm::vec4{0.1f, 0.2f, 0.4f, 1.f};
+      dynamicUbo[8].modelMatrix =
+          dynamicUbo[0].modelMatrix * flipY * glm::toMat4(q);
+
+      dynamicUbo[9].modelColor = glm::vec4{0.1f, 0.4f, 0.2f, 1.f};
+      dynamicUbo[9].modelMatrix = dynamicUbo[0].modelMatrix * flipY * joint1;
+
+      dynamicUbo[10].modelColor = glm::vec4{0.8f, 0.3f, 0.2f, 1.f};
+      dynamicUbo[10].modelMatrix =
+          dynamicUbo[0].modelMatrix * flipY *
+          glm::translate(glm::mat4{1.f},
+                         glm::vec3{0, 26.748403549194336, 42.93817138671875});
     }
   }
 }
