@@ -1104,8 +1104,9 @@ void Model::prepareNodeDescriptor(
     vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
                                             *descriptorSetLayout);
     for (size_t i = 0; i < framesInFlight; i++) {
-      node->mesh->descriptorSets[i] =
-          std::move(vk::raii::DescriptorSets(device, allocInfo).front());
+      // TODO: improve not initialized descriptorSets
+      node->mesh->descriptorSets.push_back(
+          std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
       vk::DescriptorBufferInfo descriptorInfo =
           node->mesh->uniformBuffers[i]->descriptorInfo();
       // NOTE: no temporaries for descriptorBufferInfo
@@ -1230,8 +1231,7 @@ void Primitive::setDimensions(glm::vec3 min, glm::vec3 max) {
 }
 
 Mesh::Mesh(VmaAllocator allocator, glm::mat4 matrix,
-           const uint32_t framesInFlight)
-    : descriptorSets(framesInFlight, nullptr) {
+           const uint32_t framesInFlight) {
   vk::BufferUsageFlags b = {};
   uniformBlock.matrix = matrix;
 
@@ -1276,7 +1276,7 @@ void Node::update(const uint32_t frameIndex) {
         jointMat = inverseTransform * jointMat;
         mesh->uniformBlock.jointMatrices[i] = jointMat;
       }
-      mesh->uniformBlock.jointcount = static_cast<float>(skin->joints.size());
+      mesh->uniformBlock.jointcount.x = static_cast<float>(skin->joints.size());
       std::memcpy(mesh->uniformBuffers[frameIndex]->getMappedData(),
                   &mesh->uniformBlock, sizeof(mesh->uniformBlock));
     } else {

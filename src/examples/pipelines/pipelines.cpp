@@ -55,7 +55,8 @@ void VgeExample::loadAssets() {
       vgeu::FileLoadingFlagBits::kFlipY;
 
   scene = std::make_unique<vgeu::glTF::Model>(
-      device, globalAllocator->getAllocator(), queue, commandPool);
+      device, globalAllocator->getAllocator(), queue, commandPool,
+      MAX_CONCURRENT_FRAMES);
   scene->loadFromFile(getAssetsPath() + "/models/apple-vertex-color.gltf",
                       glTFLoadingFlags);
 }
@@ -330,7 +331,7 @@ void VgeExample::buildCommandBuffers() {
     drawCmdBuffers[currentFrameIndex].bindPipeline(
         vk::PipelineBindPoint::eGraphics, *pipelines.phong);
     // draw indexed
-    scene->draw(drawCmdBuffers[currentFrameIndex],
+    scene->draw(currentFrameIndex, drawCmdBuffers[currentFrameIndex],
                 vgeu::RenderFlagBits::kBindImages, *pipelineLayout, 1);
   }
 
@@ -347,7 +348,7 @@ void VgeExample::buildCommandBuffers() {
     drawCmdBuffers[currentFrameIndex].bindPipeline(
         vk::PipelineBindPoint::eGraphics, *pipelines.toon);
     // draw indexed
-    scene->draw(drawCmdBuffers[currentFrameIndex],
+    scene->draw(currentFrameIndex, drawCmdBuffers[currentFrameIndex],
                 vgeu::RenderFlagBits::kBindImages, *pipelineLayout, 1);
   }
 
@@ -367,7 +368,7 @@ void VgeExample::buildCommandBuffers() {
     drawCmdBuffers[currentFrameIndex].bindPipeline(
         vk::PipelineBindPoint::eGraphics, *pipelines.wireframe);
     // draw indexed
-    scene->draw(drawCmdBuffers[currentFrameIndex],
+    scene->draw(currentFrameIndex, drawCmdBuffers[currentFrameIndex],
                 vgeu::RenderFlagBits::kBindImages, *pipelineLayout, 1);
   }
 

@@ -163,7 +163,7 @@ struct Mesh {
   struct UniformBlock {
     glm::mat4 matrix{1.f};
     glm::mat4 jointMatrices[64]{};
-    float jointcount{0};
+    glm::vec4 jointcount{0.f};
   } uniformBlock;
 
   Mesh(VmaAllocator allocator, glm::mat4 matrix, const uint32_t framesInFlight);

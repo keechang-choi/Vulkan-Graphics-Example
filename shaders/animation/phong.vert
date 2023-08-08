@@ -19,11 +19,11 @@ layout (set = 1, binding = 0) uniform ModelUbo
 	vec4 modelColor;
 } modelUbo;
 
-layout (std430, set = 3, binding = 0) uniform MeshUbo
+layout (set = 3, binding = 0) uniform MeshUbo
 {
 	mat4 nodeMatrix;
 	mat4 jointMatrices[64];
-	float jointCount;
+	vec4 jointCount;
 } meshUbo;
 
 layout (location = 0) out vec3 outNormal;
