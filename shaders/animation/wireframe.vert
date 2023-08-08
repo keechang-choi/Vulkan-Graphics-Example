@@ -42,6 +42,9 @@ void main()
 		inJointWeights.y * meshUbo.jointMatrices[int(inJointIndices.y)] +
 		inJointWeights.z * meshUbo.jointMatrices[int(inJointIndices.z)] +
 		inJointWeights.w * meshUbo.jointMatrices[int(inJointIndices.w)];
+	
+	float skinned = float(meshUbo.jointCount.x > 0.0f);
+	skinMatrix = skinMatrix * skinned  + mat4(1.0f)*(1.0f-skinned);
 
 	gl_Position = globalUbo.projection * globalUbo.view * modelUbo.modelMatrix * meshUbo.nodeMatrix * skinMatrix * vec4(inPos.xyz, 1.0);	
 }

@@ -286,12 +286,12 @@ class Model {
                 const vk::raii::CommandBuffer& cmdBuffer,
                 RenderFlags renderFlags = {},
                 vk::PipelineLayout pipelineLayout = VK_NULL_HANDLE,
-                uint32_t bindImageSet = 1, uint32_t bindSkinSet = 2);
+                uint32_t bindImageSet = 1, int bindSkinSet = -1);
 
   void draw(const uint32_t frameIndex, const vk::raii::CommandBuffer& cmdBuffer,
             RenderFlags renderFlags = {},
             vk::PipelineLayout pipelineLayout = VK_NULL_HANDLE,
-            uint32_t bindImageSet = 1, uint32_t bindSkinSet = 2);
+            uint32_t bindImageSet = 1, int bindSkinSet = -1);
 
   void getSkeletonMatrices(std::vector<std::vector<glm::mat4>>& jointMatrices);
   void updateAnimation(const uint32_t frameIndex, const int Animationindex,

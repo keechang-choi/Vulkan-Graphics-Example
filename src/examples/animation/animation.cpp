@@ -84,7 +84,7 @@ void VgeExample::loadAssets() {
     ModelInstance& modelInstance = modelInstances.emplace_back();
     modelInstance.model = fox2;
     modelInstance.id = modelInstances.size() - 1;
-    modelInstance.animationIndex = -1;
+    modelInstance.animationIndex = 1;
   }
 
   std::shared_ptr<vgeu::glTF::Model> bone = std::make_shared<vgeu::glTF::Model>(
@@ -146,8 +146,9 @@ void VgeExample::setupDynamicUbo() {
         const auto& jointMatrix = jointMatricesEachSkin[i];
 
         dynamicUbo[boneInstanceIdx].modelColor = glm::vec4{1.f, 1.f, 1.f, 1.f};
-        dynamicUbo[boneInstanceIdx].modelMatrix =
-            dynamicUbo[0].modelMatrix * jointMatrix;
+        dynamicUbo[boneInstanceIdx].modelMatrix = dynamicUbo[0].modelMatrix *
+                                                  jointMatrix * boneAxisChange *
+                                                  glm::mat4{10.f};
         boneInstanceIdx++;
       }
     }
@@ -559,7 +560,7 @@ void VgeExample::buildCommandBuffers() {
       modelInstance.model->draw(currentFrameIndex,
                                 drawCmdBuffers[currentFrameIndex],
                                 vgeu::RenderFlagBits::kBindImages,
-                                *pipelineLayout, 2u /*set 2*/, 3u /*set 3*/);
+                                *pipelineLayout, 2u /*set 2*/, 3 /*set 3*/);
     }
   }
   // Bottom view
@@ -594,7 +595,7 @@ void VgeExample::buildCommandBuffers() {
       modelInstance.model->draw(currentFrameIndex,
                                 drawCmdBuffers[currentFrameIndex],
                                 vgeu::RenderFlagBits::kBindImages,
-                                *pipelineLayout, 2u /*set 2*/, 3u /*set 3*/);
+                                *pipelineLayout, 2u /*set 2*/, 3 /*set 3*/);
     }
   }
 
@@ -629,6 +630,7 @@ size_t VgeExample::padUniformBufferSize(size_t originalSize) {
   return alignedSize;
 }
 
+// update UniformBuffers for currentFrameIndex
 void VgeExample::updateUniforms() {
   // CHECK: ubo update frequency.
   globalUbo.view = camera.getView();
@@ -650,6 +652,37 @@ void VgeExample::updateUniforms() {
       modelInstance.model->updateAnimation(currentFrameIndex,
                                            modelInstance.animationIndex,
                                            modelInstance.animationTime, true);
+    }
+  }
+
+  // update bone
+  {
+    size_t boneInstanceIdx = 3;
+    std::vector<std::vector<glm::mat4>> jointMatrices;
+    modelInstances[0].model->getSkeletonMatrices(jointMatrices);
+    glm::mat4 boneAxisChange{1.f};
+    boneAxisChange[1] = glm::vec4{0.f, 0.f, 1.f, 0.f};
+    boneAxisChange[2] = glm::vec4{0.f, 1.f, 0.f, 0.f};
+    glm::mat4 flipY{1.f};
+    flipY[1][1] = -1.f;
+    for (const auto& jointMatricesEachSkin : jointMatrices) {
+      for (size_t i = 0; i < jointMatricesEachSkin.size(); i++) {
+        const auto& jointMatrix = jointMatricesEachSkin[i];
+
+        dynamicUbo[boneInstanceIdx].modelColor = glm::vec4{0.f, 1.f, 0.f, 1.f};
+        dynamicUbo[boneInstanceIdx].modelMatrix =
+            dynamicUbo[0].modelMatrix * jointMatrix *
+            glm::scale(glm::mat4{1.f}, glm::vec3{10.f, 10.f, 10.f});
+
+        boneInstanceIdx++;
+      }
+    }
+    for (size_t j = 0; j < dynamicUbo.size(); j++) {
+      std::memcpy(
+          static_cast<char*>(
+              dynamicUniformBuffers[currentFrameIndex]->getMappedData()) +
+              j * alignedSizeDynamicUboElt,
+          &dynamicUbo[j], alignedSizeDynamicUboElt);
     }
   }
 }

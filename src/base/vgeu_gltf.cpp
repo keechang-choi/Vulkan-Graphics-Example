@@ -1035,7 +1035,7 @@ void Model::loadAnimations(const tinygltf::Model& gltfModel) {
 void Model::draw(const uint32_t frameIndex,
                  const vk::raii::CommandBuffer& cmdBuffer,
                  RenderFlags renderFlags, vk::PipelineLayout pipelineLayout,
-                 uint32_t bindImageSet, uint32_t bindSkinSet) {
+                 uint32_t bindImageSet, int bindSkinSet) {
   assert(frameIndex < framesInFlight);
   if (!buffersBound) {
     bindBuffers(cmdBuffer);
@@ -1049,7 +1049,7 @@ void Model::draw(const uint32_t frameIndex,
 void Model::drawNode(const uint32_t frameIndex, const Node* node,
                      const vk::raii::CommandBuffer& cmdBuffer,
                      RenderFlags renderFlags, vk::PipelineLayout pipelineLayout,
-                     uint32_t bindImageSet, uint32_t bindSkinSet) {
+                     uint32_t bindImageSet, int bindSkinSet) {
   if (node->mesh) {
     for (const auto& primitive : node->mesh->primitives) {
       bool skip = false;
@@ -1065,9 +1065,10 @@ void Model::drawNode(const uint32_t frameIndex, const Node* node,
       }
       if (!skip) {
         // bind mesh ubo when model has any skins
-        if (skins.size() != 0) {
+        if (bindSkinSet != -1) {
           cmdBuffer.bindDescriptorSets(
-              vk::PipelineBindPoint::eGraphics, pipelineLayout, bindSkinSet,
+              vk::PipelineBindPoint::eGraphics, pipelineLayout,
+              static_cast<uint32_t>(bindSkinSet),
               *node->mesh->descriptorSets[frameIndex], nullptr);
         }
         if (renderFlags & RenderFlagBits::kBindImages) {
@@ -1283,8 +1284,10 @@ void Node::update(const uint32_t frameIndex) {
       std::memcpy(mesh->uniformBuffers[frameIndex]->getMappedData(),
                   &mesh->uniformBlock, sizeof(mesh->uniformBlock));
     } else {
-      std::memcpy(mesh->uniformBuffers[frameIndex]->getMappedData(), &m,
-                  sizeof(glm::mat4));
+      Mesh::UniformBlock emptySkinUniformBlock;
+      emptySkinUniformBlock.matrix = m;
+      std::memcpy(mesh->uniformBuffers[frameIndex]->getMappedData(),
+                  &emptySkinUniformBlock, sizeof(emptySkinUniformBlock));
     }
   }
 
