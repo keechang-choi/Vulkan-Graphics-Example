@@ -1064,7 +1064,7 @@ void Model::drawNode(const uint32_t frameIndex, const Node* node,
         skip = (material.alphaMode != Material::AlphaMode::kALPHAMODE_BLEND);
       }
       if (!skip) {
-        // bind always unless not updated, if model has any skins
+        // bind mesh ubo when model has any skins
         if (skins.size() != 0) {
           cmdBuffer.bindDescriptorSets(
               vk::PipelineBindPoint::eGraphics, pipelineLayout, bindSkinSet,

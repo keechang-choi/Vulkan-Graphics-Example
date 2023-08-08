@@ -4,6 +4,9 @@ layout (location = 0) in vec3 inPos;
 layout (location = 1) in vec3 inNormal;
 layout (location = 2) in vec2 inUV;
 layout (location = 3) in vec3 inColor;
+layout (location = 4) in vec4 inJointIndices;
+layout (location = 5) in vec4 inJointWeights;
+
 
 layout (set = 0, binding = 0) uniform GlobalUbo 
 {
@@ -34,6 +37,11 @@ void main()
 	outColor.rgb = inColor*(1.0-modelUbo.modelColor.a) + modelUbo.modelColor.rgb*(modelUbo.modelColor.a);
 	outColor.a = modelUbo.modelColor.a;
 	outUV = inUV;
-	gl_Position = globalUbo.projection * globalUbo.view * modelUbo.modelMatrix  * vec4(inPos.xyz, 1.0);
-	
+	mat4 skinMatrix = 		
+		inJointWeights.x * meshUbo.jointMatrices[int(inJointIndices.x)] +
+		inJointWeights.y * meshUbo.jointMatrices[int(inJointIndices.y)] +
+		inJointWeights.z * meshUbo.jointMatrices[int(inJointIndices.z)] +
+		inJointWeights.w * meshUbo.jointMatrices[int(inJointIndices.w)];
+
+	gl_Position = globalUbo.projection * globalUbo.view * modelUbo.modelMatrix * meshUbo.nodeMatrix * skinMatrix * vec4(inPos.xyz, 1.0);	
 }

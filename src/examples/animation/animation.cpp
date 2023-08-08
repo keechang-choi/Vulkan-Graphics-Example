@@ -63,6 +63,7 @@ void VgeExample::loadAssets() {
     ModelInstance& modelInstance = modelInstances.emplace_back();
     modelInstance.model = fox;
     modelInstance.id = modelInstances.size() - 1;
+    modelInstance.animationIndex = 0;
   }
 
   {
@@ -339,6 +340,8 @@ void VgeExample::createPipelines() {
           vgeu::glTF::VertexComponent::kNormal,
           vgeu::glTF::VertexComponent::kUV,
           vgeu::glTF::VertexComponent::kColor,
+          vgeu::glTF::VertexComponent::kJoint0,
+          vgeu::glTF::VertexComponent::kWeight0,
       });
 
   vk::PipelineInputAssemblyStateCreateInfo inputAssemblySCI(
