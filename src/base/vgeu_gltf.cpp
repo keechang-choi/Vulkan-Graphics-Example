@@ -6,6 +6,8 @@
 #include "vgeu_utils.hpp"
 
 // std
+#include <algorithm>
+#include <cmath>
 #include <stdexcept>
 
 namespace {
@@ -797,9 +799,10 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
         switch (accessor.componentType) {
           case TINYGLTF_PARAMETER_TYPE_UNSIGNED_INT: {
             std::vector<uint32_t> buf(accessor.count);
-            memcpy(buf.data(),
-                   &buffer.data[accessor.byteOffset + bufferView.byteOffset],
-                   accessor.count * sizeof(uint32_t));
+            std::memcpy(
+                buf.data(),
+                &buffer.data[accessor.byteOffset + bufferView.byteOffset],
+                accessor.count * sizeof(uint32_t));
             for (size_t index = 0; index < accessor.count; index++) {
               indices.push_back(buf[index] + vertexStart);
             }
@@ -807,9 +810,10 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
           }
           case TINYGLTF_PARAMETER_TYPE_UNSIGNED_SHORT: {
             std::vector<uint16_t> buf(accessor.count);
-            memcpy(buf.data(),
-                   &buffer.data[accessor.byteOffset + bufferView.byteOffset],
-                   accessor.count * sizeof(uint16_t));
+            std::memcpy(
+                buf.data(),
+                &buffer.data[accessor.byteOffset + bufferView.byteOffset],
+                accessor.count * sizeof(uint16_t));
             for (size_t index = 0; index < accessor.count; index++) {
               indices.push_back(buf[index] + vertexStart);
             }
@@ -817,9 +821,10 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
           }
           case TINYGLTF_PARAMETER_TYPE_UNSIGNED_BYTE: {
             std::vector<uint8_t> buf(accessor.count);
-            memcpy(buf.data(),
-                   &buffer.data[accessor.byteOffset + bufferView.byteOffset],
-                   accessor.count * sizeof(uint8_t));
+            std::memcpy(
+                buf.data(),
+                &buffer.data[accessor.byteOffset + bufferView.byteOffset],
+                accessor.count * sizeof(uint8_t));
             for (size_t index = 0; index < accessor.count; index++) {
               indices.push_back(buf[index] + vertexStart);
             }
@@ -886,9 +891,9 @@ void Model::loadSkins(const tinygltf::Model& gltfModel) {
           gltfModel.bufferViews[accessor.bufferView];
       const tinygltf::Buffer& buffer = gltfModel.buffers[bufferView.buffer];
       newSkin.inverseBindMatrices.resize(accessor.count);
-      memcpy(newSkin.inverseBindMatrices.data(),
-             &buffer.data[accessor.byteOffset + bufferView.byteOffset],
-             accessor.count * sizeof(glm::mat4));
+      std::memcpy(newSkin.inverseBindMatrices.data(),
+                  &buffer.data[accessor.byteOffset + bufferView.byteOffset],
+                  accessor.count * sizeof(glm::mat4));
     }
   }
 }
@@ -928,9 +933,9 @@ void Model::loadAnimations(const tinygltf::Model& gltfModel) {
 
         {
           std::vector<float> buf(accessor.count);
-          memcpy(buf.data(),
-                 &buffer.data[accessor.byteOffset + bufferView.byteOffset],
-                 accessor.count * sizeof(float));
+          std::memcpy(buf.data(),
+                      &buffer.data[accessor.byteOffset + bufferView.byteOffset],
+                      accessor.count * sizeof(float));
           for (size_t index = 0; index < accessor.count; index++) {
             sampler.inputs.push_back(buf[index]);
           }
@@ -958,9 +963,10 @@ void Model::loadAnimations(const tinygltf::Model& gltfModel) {
         switch (accessor.type) {
           case TINYGLTF_TYPE_VEC3: {
             std::vector<glm::vec3> buf(accessor.count);
-            memcpy(buf.data(),
-                   &buffer.data[accessor.byteOffset + bufferView.byteOffset],
-                   accessor.count * sizeof(glm::vec3));
+            std::memcpy(
+                buf.data(),
+                &buffer.data[accessor.byteOffset + bufferView.byteOffset],
+                accessor.count * sizeof(glm::vec3));
             for (size_t index = 0; index < accessor.count; index++) {
               sampler.outputsVec4.push_back(glm::vec4(buf[index], 0.0f));
             }
@@ -968,9 +974,10 @@ void Model::loadAnimations(const tinygltf::Model& gltfModel) {
           }
           case TINYGLTF_TYPE_VEC4: {
             std::vector<glm::vec4> buf(accessor.count);
-            memcpy(buf.data(),
-                   &buffer.data[accessor.byteOffset + bufferView.byteOffset],
-                   accessor.count * sizeof(glm::vec4));
+            std::memcpy(
+                buf.data(),
+                &buffer.data[accessor.byteOffset + bufferView.byteOffset],
+                accessor.count * sizeof(glm::vec4));
             for (size_t index = 0; index < accessor.count; index++) {
               sampler.outputsVec4.push_back(buf[index]);
             }
@@ -1246,10 +1253,10 @@ void Node::update() {
         mesh->uniformBlock.jointMatrix[i] = jointMat;
       }
       mesh->uniformBlock.jointcount = static_cast<float>(skin->joints.size());
-      memcpy(mesh->uniformBuffer->getMappedData(), &mesh->uniformBlock,
-             sizeof(mesh->uniformBlock));
+      std::memcpy(mesh->uniformBuffer->getMappedData(), &mesh->uniformBlock,
+                  sizeof(mesh->uniformBlock));
     } else {
-      memcpy(mesh->uniformBuffer->getMappedData(), &m, sizeof(glm::mat4));
+      std::memcpy(mesh->uniformBuffer->getMappedData(), &m, sizeof(glm::mat4));
     }
   }
 
@@ -1337,6 +1344,85 @@ void Model::getSkeletonMatrices(
     jointMatricesEachSkin.reserve(skin.joints.size());
     for (const auto node : skin.joints) {
       jointMatricesEachSkin.push_back(node->getMatrix());
+    }
+  }
+}
+
+void Model::updateAnimation(int index, float time, bool repeat) {
+  if (index < 0) {
+    return;
+  }
+  if (index > animations.size() - 1) {
+    std::cout << "No animation with index " << index << std::endl;
+    assert(false && "failed to update animation with the index");
+    return;
+  }
+  Animation& animation = animations[index];
+  bool updated = false;
+  for (auto& channel : animation.channels) {
+    AnimationSampler& sampler = animation.samplers[channel.samplerIndex];
+    if (sampler.inputs.size() > sampler.outputsVec4.size()) {
+      assert(false &&
+             "failed to update animation. more sampler inputs than outputs");
+      continue;
+    }
+    if (time > sampler.inputs.back()) {
+      if (repeat) {
+        time = std::fmod(time, sampler.inputs.back());
+      } else {
+        continue;
+      }
+    }
+
+    auto iter =
+        std::upper_bound(sampler.inputs.begin(), sampler.inputs.end(), time);
+    size_t samplerInputIndex = iter - sampler.inputs.begin();
+    if (samplerInputIndex == 0 || samplerInputIndex >= sampler.inputs.size()) {
+      continue;
+    }
+    size_t i = samplerInputIndex - 1;
+    assert(sampler.inputs[i + 1] > sampler.inputs[i]);
+    assert(time >= sampler.inputs[i] && time <= sampler.inputs[i + 1]);
+    float u = (time - sampler.inputs[i]) /
+              (sampler.inputs[i + 1] - sampler.inputs[i]);
+    switch (channel.path) {
+      case AnimationChannel::PathType::kTranslation: {
+        glm::vec4 trans =
+            glm::mix(sampler.outputsVec4[i], sampler.outputsVec4[i + 1], u);
+        channel.node->translation = glm::vec3(trans);
+        break;
+      }
+      case AnimationChannel::PathType::kScale: {
+        glm::vec4 trans =
+            glm::mix(sampler.outputsVec4[i], sampler.outputsVec4[i + 1], u);
+        channel.node->scale = glm::vec3(trans);
+        break;
+      }
+      case AnimationChannel::PathType::kRotation: {
+        glm::quat q1;
+        q1.x = sampler.outputsVec4[i].x;
+        q1.y = sampler.outputsVec4[i].y;
+        q1.z = sampler.outputsVec4[i].z;
+        q1.w = sampler.outputsVec4[i].w;
+        glm::quat q2;
+        q2.x = sampler.outputsVec4[i + 1].x;
+        q2.y = sampler.outputsVec4[i + 1].y;
+        q2.z = sampler.outputsVec4[i + 1].z;
+        q2.w = sampler.outputsVec4[i + 1].w;
+        channel.node->rotation = glm::normalize(glm::slerp(q1, q2, u));
+        break;
+      }
+      default: {
+        assert(false &&
+               "failed to update animation with the channel path type");
+        continue;
+      }
+    }
+    updated = true;
+  }
+  if (updated) {
+    for (auto& node : nodes) {
+      node->update();
     }
   }
 }

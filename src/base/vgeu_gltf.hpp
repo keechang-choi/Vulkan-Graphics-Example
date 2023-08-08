@@ -292,7 +292,7 @@ class Model {
             uint32_t bindImageSet = 1);
 
   void getSkeletonMatrices(std::vector<std::vector<glm::mat4>>& jointMatrices);
-
+  void updateAnimation(int index, float time, bool repeat = false);
   Dimensions getDimensions() const { return dimensions; };
   // TODO: update animation
 
