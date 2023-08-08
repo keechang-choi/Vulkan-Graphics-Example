@@ -300,6 +300,8 @@ class Model {
   void loadSkins(const tinygltf::Model& gltfModel);
 
   // TODO: animation
+  void loadAnimations(const tinygltf::Model& gltfModel);
+
   const Texture* getTexture(uint32_t index) const;
   const Node* findNode(const Node* parent, uint32_t index) const;
   const Node* nodeFromIndex(uint32_t index) const;
@@ -335,6 +337,7 @@ class Model {
 
   // TODO: animation
   // std::vector<Animation> animations;
+
   Dimensions dimensions;
 
   std::unique_ptr<Texture> emptyTexture;

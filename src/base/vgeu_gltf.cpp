@@ -796,36 +796,33 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
 
         switch (accessor.componentType) {
           case TINYGLTF_PARAMETER_TYPE_UNSIGNED_INT: {
-            uint32_t* buf = new uint32_t[accessor.count];
-            memcpy(buf,
+            std::vector<uint32_t> buf(accessor.count);
+            memcpy(buf.data(),
                    &buffer.data[accessor.byteOffset + bufferView.byteOffset],
                    accessor.count * sizeof(uint32_t));
             for (size_t index = 0; index < accessor.count; index++) {
               indices.push_back(buf[index] + vertexStart);
             }
-            delete[] buf;
             break;
           }
           case TINYGLTF_PARAMETER_TYPE_UNSIGNED_SHORT: {
-            uint16_t* buf = new uint16_t[accessor.count];
-            memcpy(buf,
+            std::vector<uint16_t> buf(accessor.count);
+            memcpy(buf.data(),
                    &buffer.data[accessor.byteOffset + bufferView.byteOffset],
                    accessor.count * sizeof(uint16_t));
             for (size_t index = 0; index < accessor.count; index++) {
               indices.push_back(buf[index] + vertexStart);
             }
-            delete[] buf;
             break;
           }
           case TINYGLTF_PARAMETER_TYPE_UNSIGNED_BYTE: {
-            uint8_t* buf = new uint8_t[accessor.count];
-            memcpy(buf,
+            std::vector<uint8_t> buf(accessor.count);
+            memcpy(buf.data(),
                    &buffer.data[accessor.byteOffset + bufferView.byteOffset],
                    accessor.count * sizeof(uint8_t));
             for (size_t index = 0; index < accessor.count; index++) {
               indices.push_back(buf[index] + vertexStart);
             }
-            delete[] buf;
             break;
           }
           default:
