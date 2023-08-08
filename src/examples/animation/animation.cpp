@@ -54,7 +54,8 @@ void VgeExample::loadAssets() {
       vgeu::FileLoadingFlagBits::kFlipY;
   std::shared_ptr<vgeu::glTF::Model> fox;
   fox = std::make_shared<vgeu::glTF::Model>(
-      device, globalAllocator->getAllocator(), queue, commandPool);
+      device, globalAllocator->getAllocator(), queue, commandPool,
+      MAX_CONCURRENT_FRAMES);
   fox->loadFromFile(getAssetsPath() + "/models/fox/Fox.gltf", glTFLoadingFlags);
 
   {
@@ -70,7 +71,8 @@ void VgeExample::loadAssets() {
   }
 
   std::shared_ptr<vgeu::glTF::Model> bone = std::make_shared<vgeu::glTF::Model>(
-      device, globalAllocator->getAllocator(), queue, commandPool);
+      device, globalAllocator->getAllocator(), queue, commandPool,
+      MAX_CONCURRENT_FRAMES);
   bone->loadFromFile(getAssetsPath() + "/models/bone3.gltf",
                      vgeu::FileLoadingFlags{});
 
@@ -259,6 +261,7 @@ void VgeExample::createDescriptorSetLayout() {
   // set 2
   // TODO: need to improve structure. descriptorSetLayout per model
   setLayouts.push_back(*modelInstances[0].model->descriptorSetLayoutImage);
+  setLayouts.push_back(*modelInstances[0].model->descriptorSetLayoutUbo);
 
   vk::PipelineLayoutCreateInfo pipelineLayoutCI({}, setLayouts);
   pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutCI);
@@ -522,9 +525,10 @@ void VgeExample::buildCommandBuffers() {
       // bind index buffer
       modelInstance.model->bindBuffers(drawCmdBuffers[currentFrameIndex]);
       // draw indexed
-      modelInstance.model->draw(drawCmdBuffers[currentFrameIndex],
+      modelInstance.model->draw(currentFrameIndex,
+                                drawCmdBuffers[currentFrameIndex],
                                 vgeu::RenderFlagBits::kBindImages,
-                                *pipelineLayout, 2 /*set 2*/);
+                                *pipelineLayout, 2u /*set 2*/, 3u /*set 3*/);
     }
   }
   // Bottom view
@@ -557,9 +561,10 @@ void VgeExample::buildCommandBuffers() {
         drawCmdBuffers[currentFrameIndex].setLineWidth(lineWidth);
       }
       // draw indexed
-      modelInstance.model->draw(drawCmdBuffers[currentFrameIndex],
+      modelInstance.model->draw(currentFrameIndex,
+                                drawCmdBuffers[currentFrameIndex],
                                 vgeu::RenderFlagBits::kBindImages,
-                                *pipelineLayout, 2 /*set 2*/);
+                                *pipelineLayout, 2u /*set 2*/, 3u /*set 3*/);
     }
   }
 

@@ -156,16 +156,17 @@ struct Mesh {
   std::vector<std::unique_ptr<Primitive>> primitives;
   std::string name;
 
-  std::unique_ptr<VgeuBuffer> uniformBuffer;
-  vk::DescriptorBufferInfo descriptorInfo;
-  vk::raii::DescriptorSet descriptorSet = nullptr;
+  // NOTE: for skinning, update ubos each frame
+  // we need separate uniformBuffers and descriptorSets
+  std::vector<std::unique_ptr<VgeuBuffer>> uniformBuffers;
+  std::vector<vk::raii::DescriptorSet> descriptorSets;
   struct UniformBlock {
-    glm::mat4 matrix;
+    glm::mat4 matrix{1.f};
     glm::mat4 jointMatrix[64]{};
     float jointcount{0};
   } uniformBlock;
 
-  Mesh(VmaAllocator allocator, glm::mat4 matrix);
+  Mesh(VmaAllocator allocator, glm::mat4 matrix, const uint32_t framesInFlight);
 };
 
 // TODO: skin
@@ -197,7 +198,7 @@ struct Node {
   glm::quat rotation{};
   glm::mat4 localMatrix() const;
   glm::mat4 getMatrix() const;
-  void update();
+  void update(const uint32_t frameIndex);
 };
 
 // TODO: animation
@@ -265,7 +266,7 @@ class Model {
   // setup common resources
   Model(const vk::raii::Device& device, VmaAllocator allocator,
         const vk::raii::Queue& transferQueue,
-        const vk::raii::CommandPool& commandPool);
+        const vk::raii::CommandPool& commandPool, uint32_t framesInFlight);
   ~Model();
 
   Model(const Model&) = delete;
@@ -281,18 +282,20 @@ class Model {
   void bindBuffers(const vk::raii::CommandBuffer& cmdBuffer);
 
   // NOTE: nullable pipelinelayout
-  void drawNode(const Node* node, const vk::raii::CommandBuffer& cmdBuffer,
+  void drawNode(const uint32_t frameIndex, const Node* node,
+                const vk::raii::CommandBuffer& cmdBuffer,
                 RenderFlags renderFlags = {},
                 vk::PipelineLayout pipelineLayout = VK_NULL_HANDLE,
-                uint32_t bindImageSet = 1);
+                uint32_t bindImageSet = 1, uint32_t bindSkinSet = 2);
 
-  void draw(const vk::raii::CommandBuffer& cmdBuffer,
+  void draw(const uint32_t frameIndex, const vk::raii::CommandBuffer& cmdBuffer,
             RenderFlags renderFlags = {},
             vk::PipelineLayout pipelineLayout = VK_NULL_HANDLE,
-            uint32_t bindImageSet = 1);
+            uint32_t bindImageSet = 1, uint32_t bindSkinSet = 2);
 
   void getSkeletonMatrices(std::vector<std::vector<glm::mat4>>& jointMatrices);
-  void updateAnimation(int index, float time, bool repeat = false);
+  void updateAnimation(const uint32_t frameIndex, const int Animationindex,
+                       const float time, const bool repeat = false);
   Dimensions getDimensions() const { return dimensions; };
   // TODO: update animation
 
@@ -340,6 +343,7 @@ class Model {
   VmaAllocator allocator;
   const vk::raii::Queue& transferQueue;
   const vk::raii::CommandPool& commandPool;
+  const uint32_t framesInFlight;
 
   vk::raii::DescriptorPool descriptorPool = nullptr;
   std::unique_ptr<VgeuBuffer> vertexBuffer;

@@ -240,11 +240,12 @@ void Texture::updateDescriptorInfo() {
 }
 Model::Model(const vk::raii::Device& device, VmaAllocator allocator,
              const vk::raii::Queue& transferQueue,
-             const vk::raii::CommandPool& commandPool)
+             const vk::raii::CommandPool& commandPool, uint32_t framesInFlight)
     : device(device),
       allocator(allocator),
       transferQueue(transferQueue),
-      commandPool(commandPool) {}
+      commandPool(commandPool),
+      framesInFlight{framesInFlight} {}
 
 Model::~Model() {}
 
@@ -298,7 +299,9 @@ void Model::loadFromFile(std::string filename,
     }
     // Initial pose
     if (node->mesh) {
-      node->update();
+      for (size_t i = 0; i < framesInFlight; i++) {
+        node->update(i);
+      }
     }
   }
 
@@ -624,7 +627,8 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
   // Node contains mesh data
   if (gltfNode.mesh > -1) {
     const tinygltf::Mesh gltfMesh = gltfModel.meshes[gltfNode.mesh];
-    newNode->mesh = std::make_unique<Mesh>(allocator, newNode->matrix);
+    newNode->mesh =
+        std::make_unique<Mesh>(allocator, newNode->matrix, framesInFlight);
     newNode->mesh->name = gltfMesh.name;
     for (size_t j = 0; j < gltfMesh.primitives.size(); j++) {
       const tinygltf::Primitive& gltfPrimitive = gltfMesh.primitives[j];
@@ -1026,20 +1030,24 @@ void Model::loadAnimations(const tinygltf::Model& gltfModel) {
   }
 }
 
-void Model::draw(const vk::raii::CommandBuffer& cmdBuffer,
+void Model::draw(const uint32_t frameIndex,
+                 const vk::raii::CommandBuffer& cmdBuffer,
                  RenderFlags renderFlags, vk::PipelineLayout pipelineLayout,
-                 uint32_t bindImageSet) {
+                 uint32_t bindImageSet, uint32_t bindSkinSet) {
+  assert(frameIndex < framesInFlight);
   if (!buffersBound) {
     bindBuffers(cmdBuffer);
   }
   for (const auto& node : nodes) {
-    drawNode(node.get(), cmdBuffer, renderFlags, pipelineLayout, bindImageSet);
+    drawNode(frameIndex, node.get(), cmdBuffer, renderFlags, pipelineLayout,
+             bindImageSet, bindSkinSet);
   }
 }
 
-void Model::drawNode(const Node* node, const vk::raii::CommandBuffer& cmdBuffer,
+void Model::drawNode(const uint32_t frameIndex, const Node* node,
+                     const vk::raii::CommandBuffer& cmdBuffer,
                      RenderFlags renderFlags, vk::PipelineLayout pipelineLayout,
-                     uint32_t bindImageSet) {
+                     uint32_t bindImageSet, uint32_t bindSkinSet) {
   if (node->mesh) {
     for (const auto& primitive : node->mesh->primitives) {
       bool skip = false;
@@ -1054,6 +1062,10 @@ void Model::drawNode(const Node* node, const vk::raii::CommandBuffer& cmdBuffer,
         skip = (material.alphaMode != Material::AlphaMode::kALPHAMODE_BLEND);
       }
       if (!skip) {
+        // bind always unless not updated
+        cmdBuffer.bindDescriptorSets(
+            vk::PipelineBindPoint::eGraphics, pipelineLayout, bindSkinSet,
+            *node->mesh->descriptorSets[frameIndex], nullptr);
         if (renderFlags & RenderFlagBits::kBindImages) {
           cmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
                                        pipelineLayout, bindImageSet,
@@ -1069,7 +1081,8 @@ void Model::drawNode(const Node* node, const vk::raii::CommandBuffer& cmdBuffer,
     }
   }
   for (const auto& child : node->children) {
-    drawNode(child.get(), cmdBuffer, renderFlags, pipelineLayout, bindImageSet);
+    drawNode(frameIndex, child.get(), cmdBuffer, renderFlags, pipelineLayout,
+             bindImageSet);
   }
 }
 
@@ -1089,13 +1102,17 @@ void Model::prepareNodeDescriptor(
   if (node->mesh) {
     vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
                                             *descriptorSetLayout);
-    node->mesh->descriptorSet =
-        std::move(vk::raii::DescriptorSets(device, allocInfo).front());
-
-    vk::WriteDescriptorSet writeDescriptorSet(
-        *node->mesh->descriptorSet, 0, 0, vk::DescriptorType::eUniformBuffer,
-        nullptr, node->mesh->descriptorInfo);
-    device.updateDescriptorSets(writeDescriptorSet, nullptr);
+    for (size_t i = 0; i < framesInFlight; i++) {
+      node->mesh->descriptorSets[i] =
+          std::move(vk::raii::DescriptorSets(device, allocInfo).front());
+      vk::DescriptorBufferInfo descriptorInfo =
+          node->mesh->uniformBuffers[i]->descriptorInfo();
+      // NOTE: no temporaries for descriptorBufferInfo
+      vk::WriteDescriptorSet writeDescriptorSet(
+          *node->mesh->descriptorSets[i], 0, 0,
+          vk::DescriptorType::eUniformBuffer, nullptr, descriptorInfo);
+      device.updateDescriptorSets(writeDescriptorSet, nullptr);
+    }
   }
   for (const auto& child : node->children) {
     prepareNodeDescriptor(child.get(), descriptorSetLayout);
@@ -1211,16 +1228,21 @@ void Primitive::setDimensions(glm::vec3 min, glm::vec3 max) {
   dimensions.radius = glm::distance(min, max) / 2.0f;
 }
 
-Mesh::Mesh(VmaAllocator allocator, glm::mat4 matrix) {
+Mesh::Mesh(VmaAllocator allocator, glm::mat4 matrix,
+           const uint32_t framesInFlight)
+    : descriptorSets(framesInFlight, nullptr) {
   vk::BufferUsageFlags b = {};
   uniformBlock.matrix = matrix;
-  uniformBuffer = std::make_unique<vgeu::VgeuBuffer>(
-      allocator, sizeof(uniformBlock), 1,
-      vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_AUTO,
-      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-          VMA_ALLOCATION_CREATE_MAPPED_BIT |
-          VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
-  descriptorInfo = uniformBuffer->descriptorInfo();
+
+  uniformBuffers.reserve(framesInFlight);
+  for (size_t i = 0; i < framesInFlight; i++) {
+    uniformBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
+        allocator, sizeof(uniformBlock), 1,
+        vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT |
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT));
+  }
 }
 
 glm::mat4 Node::localMatrix() const {
@@ -1238,8 +1260,9 @@ glm::mat4 Node::getMatrix() const {
   return m;
 }
 
-void Node::update() {
+void Node::update(const uint32_t frameIndex) {
   if (mesh) {
+    assert(frameIndex < mesh->uniformBuffers.size());
     glm::mat4 m = getMatrix();
     if (skin) {
       mesh->uniformBlock.matrix = m;
@@ -1253,15 +1276,16 @@ void Node::update() {
         mesh->uniformBlock.jointMatrix[i] = jointMat;
       }
       mesh->uniformBlock.jointcount = static_cast<float>(skin->joints.size());
-      std::memcpy(mesh->uniformBuffer->getMappedData(), &mesh->uniformBlock,
-                  sizeof(mesh->uniformBlock));
+      std::memcpy(mesh->uniformBuffers[frameIndex]->getMappedData(),
+                  &mesh->uniformBlock, sizeof(mesh->uniformBlock));
     } else {
-      std::memcpy(mesh->uniformBuffer->getMappedData(), &m, sizeof(glm::mat4));
+      std::memcpy(mesh->uniformBuffers[frameIndex]->getMappedData(), &m,
+                  sizeof(glm::mat4));
     }
   }
 
   for (auto& child : children) {
-    child->update();
+    child->update(frameIndex);
   }
 }
 
@@ -1348,16 +1372,17 @@ void Model::getSkeletonMatrices(
   }
 }
 
-void Model::updateAnimation(int index, float time, bool repeat) {
-  if (index < 0) {
+void Model::updateAnimation(const uint32_t frameIndex, const int Animationindex,
+                            const float time, const bool repeat) {
+  if (Animationindex < 0) {
     return;
   }
-  if (index > animations.size() - 1) {
-    std::cout << "No animation with index " << index << std::endl;
+  if (Animationindex > animations.size() - 1) {
+    std::cout << "No animation with index " << Animationindex << std::endl;
     assert(false && "failed to update animation with the index");
     return;
   }
-  Animation& animation = animations[index];
+  Animation& animation = animations[Animationindex];
   bool updated = false;
   for (auto& channel : animation.channels) {
     AnimationSampler& sampler = animation.samplers[channel.samplerIndex];
@@ -1366,24 +1391,26 @@ void Model::updateAnimation(int index, float time, bool repeat) {
              "failed to update animation. more sampler inputs than outputs");
       continue;
     }
-    if (time > sampler.inputs.back()) {
+    float samplerTime = time;
+    if (samplerTime > sampler.inputs.back()) {
       if (repeat) {
-        time = std::fmod(time, sampler.inputs.back());
+        samplerTime = std::fmod(samplerTime, sampler.inputs.back());
       } else {
         continue;
       }
     }
 
-    auto iter =
-        std::upper_bound(sampler.inputs.begin(), sampler.inputs.end(), time);
+    auto iter = std::upper_bound(sampler.inputs.begin(), sampler.inputs.end(),
+                                 samplerTime);
     size_t samplerInputIndex = iter - sampler.inputs.begin();
     if (samplerInputIndex == 0 || samplerInputIndex >= sampler.inputs.size()) {
       continue;
     }
     size_t i = samplerInputIndex - 1;
     assert(sampler.inputs[i + 1] > sampler.inputs[i]);
-    assert(time >= sampler.inputs[i] && time <= sampler.inputs[i + 1]);
-    float u = (time - sampler.inputs[i]) /
+    assert(samplerTime >= sampler.inputs[i] &&
+           samplerTime <= sampler.inputs[i + 1]);
+    float u = (samplerTime - sampler.inputs[i]) /
               (sampler.inputs[i + 1] - sampler.inputs[i]);
     switch (channel.path) {
       case AnimationChannel::PathType::kTranslation: {
@@ -1422,7 +1449,7 @@ void Model::updateAnimation(int index, float time, bool repeat) {
   }
   if (updated) {
     for (auto& node : nodes) {
-      node->update();
+      node->update(frameIndex);
     }
   }
 }
