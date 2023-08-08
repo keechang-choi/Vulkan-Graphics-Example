@@ -428,7 +428,8 @@ void Model::loadFromFile(std::string filename,
   }
 
   std::vector<vk::DescriptorPoolSize> poolSizes;
-  poolSizes.emplace_back(vk::DescriptorType::eUniformBuffer, uboCount);
+  poolSizes.emplace_back(vk::DescriptorType::eUniformBuffer,
+                         uboCount * framesInFlight);
 
   if (imageCount > 0) {
     if (descriptorBindingFlags & DescriptorBindingFlagBits::kImageBaseColor) {
@@ -445,7 +446,7 @@ void Model::loadFromFile(std::string filename,
   // one DescriptorSet of material may contain two textures (as binding).
   vk::DescriptorPoolCreateInfo descriptorPoolCI(
       vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-      uboCount + imageCount, poolSizes);
+      uboCount * framesInFlight + imageCount, poolSizes);
   descriptorPool = vk::raii::DescriptorPool(device, descriptorPoolCI);
 
   // Descriptors for per-node uniform buffers
