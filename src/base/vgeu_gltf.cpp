@@ -240,7 +240,8 @@ void Texture::updateDescriptorInfo() {
 }
 Model::Model(const vk::raii::Device& device, VmaAllocator allocator,
              const vk::raii::Queue& transferQueue,
-             const vk::raii::CommandPool& commandPool, uint32_t framesInFlight)
+             const vk::raii::CommandPool& commandPool,
+             const uint32_t framesInFlight)
     : device(device),
       allocator(allocator),
       transferQueue(transferQueue),
@@ -1273,7 +1274,7 @@ void Node::update(const uint32_t frameIndex) {
         glm::mat4 jointMat =
             jointNode->getMatrix() * skin->inverseBindMatrices[i];
         jointMat = inverseTransform * jointMat;
-        mesh->uniformBlock.jointMatrix[i] = jointMat;
+        mesh->uniformBlock.jointMatrices[i] = jointMat;
       }
       mesh->uniformBlock.jointcount = static_cast<float>(skin->joints.size());
       std::memcpy(mesh->uniformBuffers[frameIndex]->getMappedData(),

@@ -12,6 +12,7 @@
 #include <cstring>
 #include <limits>
 #include <memory>
+#include <unordered_set>
 
 namespace vge {
 VgeExample::VgeExample() : VgeBase() { title = "Animation Example"; }
@@ -434,12 +435,6 @@ void VgeExample::render() {
   if (!prepared) {
     return;
   }
-  // CHECK: ubo update frequency.
-  globalUbo.view = camera.getView();
-  globalUbo.projection = camera.getProjection();
-  globalUbo.inverseView = camera.getInverseView();
-  std::memcpy(globalUniformBuffers[currentFrameIndex]->getMappedData(),
-              &globalUbo, sizeof(GlobalUbo));
 
   draw();
 }
@@ -454,6 +449,9 @@ void VgeExample::draw() {
   device.resetFences(*waitFences[currentFrameIndex]);
 
   prepareFrame();
+
+  // update uniform buffers;
+  updateUniforms();
 
   // draw cmds recording or command buffers should be built already.
   buildCommandBuffers();
@@ -532,7 +530,6 @@ void VgeExample::buildCommandBuffers() {
     }
   }
   // Bottom view
-
   if (enabledFeatures.fillModeNonSolid) {
     drawCmdBuffers[currentFrameIndex].setViewport(
         0, vk::Viewport(
@@ -597,6 +594,31 @@ size_t VgeExample::padUniformBufferSize(size_t originalSize) {
     alignedSize = (alignedSize + minUboAlignment - 1) & ~(minUboAlignment - 1);
   }
   return alignedSize;
+}
+
+void VgeExample::updateUniforms() {
+  // CHECK: ubo update frequency.
+  globalUbo.view = camera.getView();
+  globalUbo.projection = camera.getProjection();
+  globalUbo.inverseView = camera.getInverseView();
+  std::memcpy(globalUniformBuffers[currentFrameIndex]->getMappedData(),
+              &globalUbo, sizeof(GlobalUbo));
+
+  // update animation joint matrices for each shared model
+  {
+    std::unordered_set<const vgeu::glTF::Model*> updatedSharedModelSet;
+    for (auto& modelInstance : modelInstances) {
+      if (updatedSharedModelSet.find(modelInstance.model.get()) !=
+          updatedSharedModelSet.end()) {
+        continue;
+      }
+      updatedSharedModelSet.insert(modelInstance.model.get());
+      modelInstance.animationTime += frameTimer;
+      modelInstance.model->updateAnimation(currentFrameIndex,
+                                           modelInstance.animationIndex,
+                                           modelInstance.animationTime, true);
+    }
+  }
 }
 
 }  // namespace vge

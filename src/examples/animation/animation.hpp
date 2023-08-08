@@ -15,10 +15,14 @@ struct GlobalUbo {
   glm::mat4 inverseView{1.f};
 };
 
+// NOTE: for current animation implementation,
+// each instance need its own uniformBuffers
 struct ModelInstance {
   std::shared_ptr<vgeu::glTF::Model> model;
   uint32_t id = 0u;
   bool isBone = false;
+  int animationIndex = -1;
+  float animationTime = 0.f;
 };
 
 struct DynamicUboElt {
@@ -46,6 +50,7 @@ class VgeExample : public VgeBase {
   void viewChanged();
   void setupDynamicUbo();
   size_t padUniformBufferSize(size_t originalSize);
+  void updateUniforms();
 
   // NOTE: movable element;
   std::vector<std::unique_ptr<vgeu::VgeuBuffer>> globalUniformBuffers;

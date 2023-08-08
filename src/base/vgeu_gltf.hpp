@@ -162,7 +162,7 @@ struct Mesh {
   std::vector<vk::raii::DescriptorSet> descriptorSets;
   struct UniformBlock {
     glm::mat4 matrix{1.f};
-    glm::mat4 jointMatrix[64]{};
+    glm::mat4 jointMatrices[64]{};
     float jointcount{0};
   } uniformBlock;
 
