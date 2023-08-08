@@ -51,8 +51,9 @@ void VgeExample::prepare() {
 }
 void VgeExample::loadAssets() {
   vgeu::FileLoadingFlags glTFLoadingFlags =
-      vgeu::FileLoadingFlagBits::kPreMultiplyVertexColors |
-      vgeu::FileLoadingFlagBits::kFlipY;
+      vgeu::FileLoadingFlagBits::kPreMultiplyVertexColors;
+  // NOTE: no flip or preTransform for animation and skinning
+  //| vgeu::FileLoadingFlagBits::kFlipY;
   std::shared_ptr<vgeu::glTF::Model> fox;
   fox = std::make_shared<vgeu::glTF::Model>(
       device, globalAllocator->getAllocator(), queue, commandPool,
@@ -72,6 +73,20 @@ void VgeExample::loadAssets() {
     modelInstance.id = modelInstances.size() - 1;
   }
 
+  // NOTE: different animation to fox1
+  std::shared_ptr<vgeu::glTF::Model> fox2;
+  fox2 = std::make_shared<vgeu::glTF::Model>(
+      device, globalAllocator->getAllocator(), queue, commandPool,
+      MAX_CONCURRENT_FRAMES);
+  fox2->loadFromFile(getAssetsPath() + "/models/fox/Fox.gltf",
+                     glTFLoadingFlags);
+  {
+    ModelInstance& modelInstance = modelInstances.emplace_back();
+    modelInstance.model = fox2;
+    modelInstance.id = modelInstances.size() - 1;
+    modelInstance.animationIndex = -1;
+  }
+
   std::shared_ptr<vgeu::glTF::Model> bone = std::make_shared<vgeu::glTF::Model>(
       device, globalAllocator->getAllocator(), queue, commandPool,
       MAX_CONCURRENT_FRAMES);
@@ -89,13 +104,14 @@ void VgeExample::loadAssets() {
     }
   }
 }
+
 void VgeExample::setupDynamicUbo() {
   dynamicUbo.resize(modelInstances.size());
   dynamicUbo[0].modelMatrix =
       glm::translate(glm::mat4{1.f}, glm::vec3{-3.f, 0.f, 0.f});
-  dynamicUbo[0].modelMatrix =
-      glm::rotate(dynamicUbo[0].modelMatrix, glm::radians(140.f),
-                  glm::vec3{0.f, -1.f, 0.f});
+  // dynamicUbo[0].modelMatrix =
+  //     glm::rotate(dynamicUbo[0].modelMatrix, glm::radians(140.f),
+  //                 glm::vec3{0.f, -1.f, 0.f});
   dynamicUbo[0].modelMatrix =
       glm::scale(dynamicUbo[0].modelMatrix, glm::vec3(.03f));
 
@@ -107,9 +123,17 @@ void VgeExample::setupDynamicUbo() {
   dynamicUbo[1].modelMatrix =
       glm::scale(dynamicUbo[1].modelMatrix, glm::vec3(.03f));
 
-  // 2~25 -> bones for instance 0
+  dynamicUbo[2].modelMatrix =
+      glm::translate(glm::mat4{1.f}, glm::vec3{0.f, 0.f, 3.f});
+  // dynamicUbo[2].modelMatrix =
+  //     glm::rotate(dynamicUbo[1].modelMatrix, glm::radians(140.f + 180.f),
+  //                 glm::vec3{0.f, -1.f, 0.f});
+  dynamicUbo[2].modelMatrix =
+      glm::scale(dynamicUbo[2].modelMatrix, glm::vec3(.03f));
+
+  // 3~26 -> bones for instance 0
   {
-    size_t boneInstanceIdx = 2;
+    size_t boneInstanceIdx = 3;
     std::vector<std::vector<glm::mat4>> jointMatrices;
     modelInstances[0].model->getSkeletonMatrices(jointMatrices);
     glm::mat4 boneAxisChange{1.f};
@@ -131,75 +155,81 @@ void VgeExample::setupDynamicUbo() {
     {
       // test
       std::cout << "---------test------------" << std::endl;
-      glm::quat q0(0.7071054698831242,
-                   glm::vec3{-0.7071080924875391, 0.0, 0.0});
+      glm::quat q0(0.7071054698831242f,
+                   glm::vec3{-0.7071080924875391f, 0.0f, 0.0f});
       glm::mat4 t1 = glm::translate(
-          glm::mat4{1.f}, glm::vec3{0, 26.748403549194336, 42.93817138671875});
-      glm::quat q1(0.695481840425441,
-                   glm::vec3{0.12769094176175547, -0.6954820192393762,
-                             -0.12769022650601444});
+          glm::mat4{1.f},
+          glm::vec3{0.f, 26.748403549194336f, 42.93817138671875f});
+      glm::quat q1(0.695481840425441f,
+                   glm::vec3{0.12769094176175547f, -0.6954820192393762f,
+                             -0.12769022650601444f});
       glm::mat4 m1 = t1 * glm::toMat4(q1);
-      glm::vec4 head{0, 26.748403549194336, 42.93817138671875, 1.f};
-      glm::vec4 tail{0, 23.227, 52.205, 1.f};
+      glm::vec4 head{0.f, 26.748403549194336f, 42.93817138671875f, 1.f};
+      glm::vec4 tail{0.f, 23.227f, 52.205f, 1.f};
       std::cout << glm::to_string(m1 * head) << std::endl;
       std::cout << glm::to_string(m1 * tail) << std::endl;
       std::cout << "---------test------------" << std::endl;
     }
     {
+      size_t boneInstanceIdx = 3;
+
       glm::mat4 joint0{1.f};
       {
         // NOTE: constructor gets wxyz
         // but internal order is xyzw(for make_quat)
-        glm::quat q(0.7071054698831242,
-                    glm::vec3{-0.7071080924875391, 0.0, 0.0});
+        glm::quat q(0.7071054698831242f,
+                    glm::vec3{-0.7071080924875391f, 0.0f, 0.0f});
         // NOTE:: same as glm::Mat4
         joint0 = glm::toMat4(q);
         // std::cout << glm::to_string(joint0) << std::endl;
       }
-      dynamicUbo[2].modelColor = glm::vec4{1.f, 0.f, 0.f, 1.f};
-      dynamicUbo[2].modelMatrix =
+      dynamicUbo[boneInstanceIdx].modelColor = glm::vec4{1.f, 0.f, 0.f, 1.f};
+      dynamicUbo[boneInstanceIdx++].modelMatrix =
           dynamicUbo[0].modelMatrix * flipY * joint0 * boneAxisChange;
       glm::mat4 joint1{1.f};
       joint1 = glm::translate(
-          joint1, glm::vec3{0, 26.748403549194336, 42.93817138671875});
+          joint1, glm::vec3{0.f, 26.748403549194336f, 42.93817138671875f});
 
-      glm::quat q(0.695481840425441,
-                  glm::vec3{0.12769094176175547, -0.6954820192393762,
-                            -0.12769022650601444});
+      glm::quat q(0.695481840425441f,
+                  glm::vec3{0.12769094176175547f, -0.6954820192393762f,
+                            -0.12769022650601444f});
       joint1 = joint1 * glm::toMat4(q);
 
       std::cout << glm::to_string(joint1) << std::endl;
       std::cout << glm::to_string(boneAxisChange) << std::endl;
       std::cout << glm::to_string(joint1 * boneAxisChange) << std::endl;
       std::cout << glm::to_string(joint0 * boneAxisChange) << std::endl;
-      dynamicUbo[3].modelColor = glm::vec4{0.f, 1.f, 0.f, 1.f};
-      dynamicUbo[3].modelMatrix =
+      dynamicUbo[boneInstanceIdx].modelColor = glm::vec4{0.f, 1.f, 0.f, 1.f};
+      dynamicUbo[boneInstanceIdx++].modelMatrix =
           dynamicUbo[0].modelMatrix * flipY * joint0 * joint1;
-      dynamicUbo[4].modelColor = glm::vec4{0.f, 0.f, 1.f, 1.f};
-      dynamicUbo[4].modelMatrix =
+      dynamicUbo[boneInstanceIdx].modelColor = glm::vec4{0.f, 0.f, 1.f, 1.f};
+      dynamicUbo[boneInstanceIdx++].modelMatrix =
           dynamicUbo[0].modelMatrix * flipY * joint0 * joint1 * boneAxisChange;
-      dynamicUbo[5].modelColor = glm::vec4{1.f, 1.f, 0.f, 1.f};
-      dynamicUbo[5].modelMatrix = dynamicUbo[0].modelMatrix * flipY * joint0 *
-                                  glm::toMat4(q) * boneAxisChange;
-      dynamicUbo[6].modelColor = glm::vec4{0.f, 1.f, 1.f, 1.f};
-      dynamicUbo[6].modelMatrix =
+      dynamicUbo[boneInstanceIdx].modelColor = glm::vec4{1.f, 1.f, 0.f, 1.f};
+      dynamicUbo[boneInstanceIdx++].modelMatrix =
+          dynamicUbo[0].modelMatrix * flipY * joint0 * glm::toMat4(q) *
+          boneAxisChange;
+      dynamicUbo[boneInstanceIdx].modelColor = glm::vec4{0.f, 1.f, 1.f, 1.f};
+      dynamicUbo[boneInstanceIdx++].modelMatrix =
           dynamicUbo[0].modelMatrix * flipY * glm::toMat4(q) * boneAxisChange;
 
-      dynamicUbo[7].modelColor = glm::vec4{1.f, 0.f, 1.f, 1.f};
-      dynamicUbo[7].modelMatrix = dynamicUbo[0].modelMatrix * glm::toMat4(q);
+      dynamicUbo[boneInstanceIdx].modelColor = glm::vec4{1.f, 0.f, 1.f, 1.f};
+      dynamicUbo[boneInstanceIdx++].modelMatrix =
+          dynamicUbo[0].modelMatrix * glm::toMat4(q);
 
-      dynamicUbo[8].modelColor = glm::vec4{0.1f, 0.2f, 0.4f, 1.f};
-      dynamicUbo[8].modelMatrix =
+      dynamicUbo[boneInstanceIdx].modelColor = glm::vec4{0.1f, 0.2f, 0.4f, 1.f};
+      dynamicUbo[boneInstanceIdx++].modelMatrix =
           dynamicUbo[0].modelMatrix * flipY * glm::toMat4(q);
 
-      dynamicUbo[9].modelColor = glm::vec4{0.1f, 0.4f, 0.2f, 1.f};
-      dynamicUbo[9].modelMatrix = dynamicUbo[0].modelMatrix * flipY * joint1;
+      dynamicUbo[boneInstanceIdx].modelColor = glm::vec4{0.1f, 0.4f, 0.2f, 1.f};
+      dynamicUbo[boneInstanceIdx++].modelMatrix =
+          dynamicUbo[0].modelMatrix * flipY * joint1;
 
-      dynamicUbo[10].modelColor = glm::vec4{0.8f, 0.3f, 0.2f, 1.f};
-      dynamicUbo[10].modelMatrix =
+      dynamicUbo[boneInstanceIdx].modelColor = glm::vec4{0.8f, 0.3f, 0.2f, 1.f};
+      dynamicUbo[boneInstanceIdx++].modelMatrix =
           dynamicUbo[0].modelMatrix * flipY *
-          glm::translate(glm::mat4{1.f},
-                         glm::vec3{0, 26.748403549194336, 42.93817138671875});
+          glm::translate(glm::mat4{1.f}, glm::vec3{0.f, 26.748403549194336f,
+                                                   42.93817138671875f});
     }
   }
 }
