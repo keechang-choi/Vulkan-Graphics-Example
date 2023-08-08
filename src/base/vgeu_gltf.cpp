@@ -283,7 +283,7 @@ void Model::loadFromFile(std::string filename,
   }
   if (gltfModel.animations.size() > 0) {
     // TODO:
-    // loadAnimations(gltfModel);
+    loadAnimations(gltfModel);
   }
   // TODO:
   loadSkins(gltfModel);
@@ -893,6 +893,132 @@ void Model::loadSkins(const tinygltf::Model& gltfModel) {
   }
 }
 
+void Model::loadAnimations(const tinygltf::Model& gltfModel) {
+  for (const tinygltf::Animation& gltfAnim : gltfModel.animations) {
+    Animation animation{};
+    animation.name = gltfAnim.name;
+    if (gltfAnim.name.empty()) {
+      animation.name = std::to_string(animations.size());
+    }
+
+    // Samplers
+    for (const auto& gltfSamp : gltfAnim.samplers) {
+      AnimationSampler sampler{};
+
+      if (gltfSamp.interpolation == "LINEAR") {
+        sampler.interpolation = AnimationSampler::InterpolationType::kLinear;
+      }
+      if (gltfSamp.interpolation == "STEP") {
+        sampler.interpolation = AnimationSampler::InterpolationType::kStep;
+      }
+      if (gltfSamp.interpolation == "CUBICSPLINE") {
+        sampler.interpolation =
+            AnimationSampler::InterpolationType::kCubicSpline;
+      }
+
+      // Read sampler input time values
+      {
+        const tinygltf::Accessor& accessor =
+            gltfModel.accessors[gltfSamp.input];
+        const tinygltf::BufferView& bufferView =
+            gltfModel.bufferViews[accessor.bufferView];
+        const tinygltf::Buffer& buffer = gltfModel.buffers[bufferView.buffer];
+
+        assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+
+        {
+          std::vector<float> buf(accessor.count);
+          memcpy(buf.data(),
+                 &buffer.data[accessor.byteOffset + bufferView.byteOffset],
+                 accessor.count * sizeof(float));
+          for (size_t index = 0; index < accessor.count; index++) {
+            sampler.inputs.push_back(buf[index]);
+          }
+        }
+        for (auto input : sampler.inputs) {
+          if (input < animation.start) {
+            animation.start = input;
+          };
+          if (input > animation.end) {
+            animation.end = input;
+          }
+        }
+      }
+
+      // Read sampler output T/R/S values
+      {
+        const tinygltf::Accessor& accessor =
+            gltfModel.accessors[gltfSamp.output];
+        const tinygltf::BufferView& bufferView =
+            gltfModel.bufferViews[accessor.bufferView];
+        const tinygltf::Buffer& buffer = gltfModel.buffers[bufferView.buffer];
+
+        assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+
+        switch (accessor.type) {
+          case TINYGLTF_TYPE_VEC3: {
+            std::vector<glm::vec3> buf(accessor.count);
+            memcpy(buf.data(),
+                   &buffer.data[accessor.byteOffset + bufferView.byteOffset],
+                   accessor.count * sizeof(glm::vec3));
+            for (size_t index = 0; index < accessor.count; index++) {
+              sampler.outputsVec4.push_back(glm::vec4(buf[index], 0.0f));
+            }
+            break;
+          }
+          case TINYGLTF_TYPE_VEC4: {
+            std::vector<glm::vec4> buf(accessor.count);
+            memcpy(buf.data(),
+                   &buffer.data[accessor.byteOffset + bufferView.byteOffset],
+                   accessor.count * sizeof(glm::vec4));
+            for (size_t index = 0; index < accessor.count; index++) {
+              sampler.outputsVec4.push_back(buf[index]);
+            }
+            break;
+          }
+          default: {
+            std::cout << "unknown type" << std::endl;
+            assert(false && "failed to load animation sampler");
+            break;
+          }
+        }
+      }
+
+      animation.samplers.push_back(sampler);
+    }
+
+    // Channels
+    for (auto& source : gltfAnim.channels) {
+      AnimationChannel channel{};
+
+      if (source.target_path == "rotation") {
+        channel.path = AnimationChannel::PathType::kRotation;
+      }
+      if (source.target_path == "translation") {
+        channel.path = AnimationChannel::PathType::kTranslation;
+      }
+      if (source.target_path == "scale") {
+        channel.path = AnimationChannel::PathType::kScale;
+      }
+      if (source.target_path == "weights") {
+        std::cout << "weights not yet supported, skipping channel" << std::endl;
+        assert(false && "failed to load animation channel");
+        continue;
+      }
+      channel.samplerIndex = source.sampler;
+      channel.node = nodeFromIndex(source.target_node);
+      if (!channel.node) {
+        assert(false && "failed to find node in animation channel loading");
+        continue;
+      }
+
+      animation.channels.push_back(channel);
+    }
+
+    animations.push_back(animation);
+  }
+}
+
 void Model::draw(const vk::raii::CommandBuffer& cmdBuffer,
                  RenderFlags renderFlags, vk::PipelineLayout pipelineLayout,
                  uint32_t bindImageSet) {
@@ -1013,8 +1139,8 @@ void Model::setSceneDimensions() {
   dimensions.radius = glm::distance(dimensions.min, dimensions.max) / 2.0f;
 }
 
-const Node* Model::findNode(const Node* parent, uint32_t index) const {
-  const Node* nodeFound = nullptr;
+Node* Model::findNode(Node* parent, uint32_t index) const {
+  Node* nodeFound = nullptr;
   if (parent->index == index) {
     return parent;
   }
@@ -1027,8 +1153,8 @@ const Node* Model::findNode(const Node* parent, uint32_t index) const {
   return nodeFound;
 }
 
-const Node* Model::nodeFromIndex(uint32_t index) const {
-  const Node* nodeFound = nullptr;
+Node* Model::nodeFromIndex(uint32_t index) const {
+  Node* nodeFound = nullptr;
   for (const auto& node : nodes) {
     nodeFound = findNode(node.get(), index);
     if (nodeFound) {

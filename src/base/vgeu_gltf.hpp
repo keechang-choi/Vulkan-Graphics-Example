@@ -201,6 +201,28 @@ struct Node {
 };
 
 // TODO: animation
+struct AnimationChannel {
+  enum class PathType { kTranslation, kRotation, kScale };
+  PathType path;
+  // changes node matrix
+  Node* node;
+  uint32_t samplerIndex;
+};
+
+struct AnimationSampler {
+  enum class InterpolationType { kLinear, kStep, kCubicSpline };
+  InterpolationType interpolation;
+  std::vector<float> inputs;
+  std::vector<glm::vec4> outputsVec4;
+};
+
+struct Animation {
+  std::string name;
+  std::vector<AnimationSampler> samplers;
+  std::vector<AnimationChannel> channels;
+  float start = std::numeric_limits<float>::max();
+  float end = std::numeric_limits<float>::min();
+};
 
 enum class VertexComponent {
   kPosition,
@@ -303,8 +325,9 @@ class Model {
   void loadAnimations(const tinygltf::Model& gltfModel);
 
   const Texture* getTexture(uint32_t index) const;
-  const Node* findNode(const Node* parent, uint32_t index) const;
-  const Node* nodeFromIndex(uint32_t index) const;
+  // non-const Node ptr return for animation channel
+  Node* findNode(Node* parent, uint32_t index) const;
+  Node* nodeFromIndex(uint32_t index) const;
   void prepareNodeDescriptor(
       const Node* node,
       const vk::raii::DescriptorSetLayout& descriptorSetLayout);
@@ -336,7 +359,7 @@ class Model {
   std::vector<Material> materials;
 
   // TODO: animation
-  // std::vector<Animation> animations;
+  std::vector<Animation> animations;
 
   Dimensions dimensions;
 
