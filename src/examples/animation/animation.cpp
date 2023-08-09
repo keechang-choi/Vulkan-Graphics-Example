@@ -111,7 +111,7 @@ void VgeExample::loadAssets() {
   std::shared_ptr<vgeu::glTF::Model> bone = std::make_shared<vgeu::glTF::Model>(
       device, globalAllocator->getAllocator(), queue, commandPool,
       MAX_CONCURRENT_FRAMES);
-  bone->loadFromFile(getAssetsPath() + "/models/bone3.gltf",
+  bone->loadFromFile(getAssetsPath() + "/models/bone5.gltf",
                      vgeu::FileLoadingFlags{});
   std::vector<std::string> namesToAddSkeleton{
       "fox1",
