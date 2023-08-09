@@ -752,17 +752,18 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
           }
         }
 
-        // TODO: component type
+        // TODO: support other component types
         if (gltfPrimitive.attributes.find("WEIGHTS_0") !=
             gltfPrimitive.attributes.end()) {
-          const tinygltf::Accessor& uvAccessor =
+          const tinygltf::Accessor& weightAccessor =
               gltfModel.accessors[gltfPrimitive.attributes.find("WEIGHTS_0")
                                       ->second];
-          const tinygltf::BufferView& uvView =
-              gltfModel.bufferViews[uvAccessor.bufferView];
+          assert(weightAccessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+          const tinygltf::BufferView& weightView =
+              gltfModel.bufferViews[weightAccessor.bufferView];
           bufferWeights = reinterpret_cast<const float*>(
-              &(gltfModel.buffers[uvView.buffer]
-                    .data[uvAccessor.byteOffset + uvView.byteOffset]));
+              &(gltfModel.buffers[weightView.buffer]
+                    .data[weightAccessor.byteOffset + weightView.byteOffset]));
         }
 
         hasSkin = (bufferJoints && bufferWeights);
@@ -842,21 +843,19 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
             break;
           }
           case TINYGLTF_PARAMETER_TYPE_UNSIGNED_SHORT: {
-            uint16_t* buf = new uint16_t[accessor.count];
+            // TODO: use one style for consistency
+            // both below memcpy checked but, vector insert raise errors
+            // uint16_t* buf = new uint16_t[accessor.count];
+            std::vector<uint16_t> buf(accessor.count);
             std::memcpy(
-                buf, &buffer.data[accessor.byteOffset + bufferView.byteOffset],
+                buf.data(),
+                &buffer.data[accessor.byteOffset + bufferView.byteOffset],
                 accessor.count * sizeof(uint16_t));
-            // TODO: use next style for consistency
-            // std::vector<uint16_t> buf;
-            // buf.insert(
-            //     buf.end(),
-            //     &buffer.data[accessor.byteOffset + bufferView.byteOffset],
-            //     &buffer.data[accessor.byteOffset + bufferView.byteOffset] +
-            //         accessor.count);
+
             for (size_t index = 0; index < accessor.count; index++) {
               indices.push_back(buf[index] + vertexStart);
             }
-            delete[] buf;
+            // delete[] buf;
             break;
           }
           case TINYGLTF_PARAMETER_TYPE_UNSIGNED_BYTE: {

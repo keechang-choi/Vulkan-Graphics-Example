@@ -34,7 +34,8 @@ layout (location = 1) out vec2 outUV;
 
 void main() 
 {
-	outColor.rgb = inColor*(1.0-modelUbo.modelColor.a) + modelUbo.modelColor.rgb*(modelUbo.modelColor.a);
+	// outColor.rgb = inColor*(1.0-modelUbo.modelColor.a) + modelUbo.modelColor.rgb*(modelUbo.modelColor.a);
+	outColor.rgb = mix(inColor, modelUbo.modelColor.rgb, modelUbo.modelColor.a);
 	outColor.a = modelUbo.modelColor.a;
 	outUV = inUV;
 	mat4 skinMatrix = 		
@@ -44,7 +45,8 @@ void main()
 		inJointWeights.w * meshUbo.jointMatrices[int(inJointIndices.w)];
 	
 	float skinned = float(meshUbo.jointCount.x > 0.0f);
-	skinMatrix = skinMatrix * skinned  + mat4(1.0f)*(1.0f-skinned);
+	skinMatrix = skinMatrix * skinned +  mat4(1.0f) * (1.0f-skinned);
+	
 
 	gl_Position = globalUbo.projection * globalUbo.view * modelUbo.modelMatrix * meshUbo.nodeMatrix * skinMatrix * vec4(inPos.xyz, 1.0);	
 }

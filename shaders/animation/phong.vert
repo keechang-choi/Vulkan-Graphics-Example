@@ -29,14 +29,14 @@ layout (set = 3, binding = 0) uniform MeshUbo
 } meshUbo;
 
 layout (location = 0) out vec3 outNormal;
-layout (location = 1) out vec3 outColor;
+layout (location = 1) out vec4 outColor;
 layout (location = 2) out vec2 outUV;
 layout (location = 3) out vec3 outViewVec;
 layout (location = 4) out vec3 outLightVec;
 
 void main() 
 {
-	outColor = inColor;
+	outColor = modelUbo.modelColor;
 	outUV = inUV;
 	mat4 skinMatrix = 		
 		inJointWeights.x * meshUbo.jointMatrices[int(inJointIndices.x)] +

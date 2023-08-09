@@ -59,13 +59,14 @@ void VgeExample::loadAssets() {
   fox = std::make_shared<vgeu::glTF::Model>(
       device, globalAllocator->getAllocator(), queue, commandPool,
       MAX_CONCURRENT_FRAMES);
-  fox->loadFromFile(getAssetsPath() + "/models/fox/Fox.gltf", glTFLoadingFlags);
+  fox->loadFromFile(getAssetsPath() + "/models/fox-normal/fox-normal.gltf",
+                    glTFLoadingFlags);
 
   {
     ModelInstance modelInstance{};
     modelInstance.model = fox;
     modelInstance.name = "fox1";
-    modelInstance.animationIndex = 1;
+    modelInstance.animationIndex = 2;
     addModelInstance(modelInstance);
   }
 
@@ -73,7 +74,7 @@ void VgeExample::loadAssets() {
     ModelInstance modelInstance{};
     modelInstance.model = fox;
     modelInstance.name = "fox1-1";
-    modelInstance.animationIndex = 1;
+    modelInstance.animationIndex = 2;
     addModelInstance(modelInstance);
   }
 
@@ -82,7 +83,7 @@ void VgeExample::loadAssets() {
   fox2 = std::make_shared<vgeu::glTF::Model>(
       device, globalAllocator->getAllocator(), queue, commandPool,
       MAX_CONCURRENT_FRAMES);
-  fox2->loadFromFile(getAssetsPath() + "/models/fox/Fox.gltf",
+  fox2->loadFromFile(getAssetsPath() + "/models/fox-normal/fox-normal.gltf",
                      glTFLoadingFlags);
   {
     ModelInstance modelInstance{};
@@ -136,38 +137,58 @@ void VgeExample::loadAssets() {
 }
 
 void VgeExample::setupDynamicUbo() {
+  const float foxScale = 0.03f;
+  glm::vec3 up{0.f, -1.f, 0.f};
   dynamicUbo.resize(modelInstances.size());
-  dynamicUbo[0].modelMatrix =
-      glm::translate(glm::mat4{1.f}, glm::vec3{-6.f, 0.f, 0.f});
-  // dynamicUbo[0].modelMatrix =
-  //     glm::rotate(dynamicUbo[0].modelMatrix, glm::radians(140.f),
-  //                 glm::vec3{0.f, -1.f, 0.f});
-  dynamicUbo[0].modelMatrix =
-      glm::scale(dynamicUbo[0].modelMatrix, glm::vec3(.03f));
+  {
+    size_t instanceIndex = findInstances("fox1")[0];
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::translate(glm::mat4{1.f}, glm::vec3{-6.f, 0.f, 0.f});
+    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
+        dynamicUbo[instanceIndex].modelMatrix, glm::radians(180.f), up);
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+                   glm::vec3{foxScale, -foxScale, foxScale});
+    dynamicUbo[instanceIndex].modelColor = glm::vec4{1.0f, 0.f, 0.f, 0.3f};
+  }
+  {
+    size_t instanceIndex = findInstances("fox1-1")[0];
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::translate(glm::mat4{1.f}, glm::vec3{6.f, 0.f, 0.f});
+    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
+        dynamicUbo[instanceIndex].modelMatrix, glm::radians(0.f), up);
+    // FlipY manually
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+                   glm::vec3{foxScale, -foxScale, foxScale});
+    dynamicUbo[instanceIndex].modelColor = glm::vec4{0.0f, 0.f, 1.f, 0.3f};
+  }
 
-  dynamicUbo[1].modelMatrix =
-      glm::translate(glm::mat4{1.f}, glm::vec3{6.f, 0.f, 0.f});
-  // dynamicUbo[1].modelMatrix =
-  //     glm::rotate(dynamicUbo[1].modelMatrix, glm::radians(140.f + 180.f),
-  //                 glm::vec3{0.f, -1.f, 0.f});
-  dynamicUbo[1].modelMatrix =
-      glm::scale(dynamicUbo[1].modelMatrix, glm::vec3(.03f));
-
-  dynamicUbo[2].modelMatrix =
-      glm::translate(glm::mat4{1.f}, glm::vec3{-3.f, 0.f, 0.f});
-  // dynamicUbo[2].modelMatrix =
-  //     glm::rotate(dynamicUbo[1].modelMatrix, glm::radians(140.f + 180.f),
-  //                 glm::vec3{0.f, -1.f, 0.f});
-  dynamicUbo[2].modelMatrix =
-      glm::scale(dynamicUbo[2].modelMatrix, glm::vec3(.03f));
-
-  dynamicUbo[3].modelMatrix =
-      glm::translate(glm::mat4{1.f}, glm::vec3{3.f, 0.f, 0.f});
-  // dynamicUbo[3].modelMatrix =
-  //     glm::rotate(dynamicUbo[1].modelMatrix, glm::radians(140.f + 180.f),
-  //                 glm::vec3{0.f, -1.f, 0.f});
-  dynamicUbo[3].modelMatrix =
-      glm::scale(dynamicUbo[3].modelMatrix, glm::vec3(.03f));
+  {
+    size_t instanceIndex = findInstances("fox2")[0];
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::translate(glm::mat4{1.f}, glm::vec3{-2.f, 0.f, 0.f});
+    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
+        dynamicUbo[instanceIndex].modelMatrix, glm::radians(90.f), up);
+    // FlipY manually
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+                   glm::vec3{foxScale, -foxScale, foxScale});
+    dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f, 1.f, 0.f, 0.3f};
+  }
+  {
+    size_t instanceIndex = findInstances("fox-blender")[0];
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::translate(glm::mat4{1.f}, glm::vec3{2.f, 0.f, 0.f});
+    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
+        dynamicUbo[instanceIndex].modelMatrix, glm::radians(180.f), up);
+    // FlipY manually
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+                   glm::vec3{foxScale, -foxScale, foxScale});
+    // default
+    dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
+  }
 
   // 4~27 -> bones for instance 0
   {
@@ -184,9 +205,9 @@ void VgeExample::setupDynamicUbo() {
         const auto& jointMatrix = jointMatricesEachSkin[i];
 
         dynamicUbo[boneInstanceIdx].modelColor = glm::vec4{1.f, 1.f, 1.f, 1.f};
-        dynamicUbo[boneInstanceIdx].modelMatrix = dynamicUbo[0].modelMatrix *
-                                                  jointMatrix * boneAxisChange *
-                                                  glm::mat4{10.f};
+        dynamicUbo[boneInstanceIdx].modelMatrix =
+            dynamicUbo[0].modelMatrix * flipY * jointMatrix * boneAxisChange *
+            glm::mat4{10.f};
         boneInstanceIdx++;
       }
     }
