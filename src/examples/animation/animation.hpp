@@ -5,7 +5,10 @@
 
 // std
 #include <memory>
+#include <string>
 #include <unordered_map>
+#include <unordered_set>
+#include <vector>
 namespace vge {
 
 struct GlobalUbo {
@@ -19,7 +22,7 @@ struct GlobalUbo {
 // each instance need its own uniformBuffers
 struct ModelInstance {
   std::shared_ptr<vgeu::glTF::Model> model;
-  uint32_t id = 0u;
+  std::string name;
   bool isBone = false;
   int animationIndex = -1;
   float animationTime = 0.f;
@@ -51,6 +54,8 @@ class VgeExample : public VgeBase {
   void setupDynamicUbo();
   size_t padUniformBufferSize(size_t originalSize);
   void updateUniforms();
+  void addModelInstance(const ModelInstance& newInstance);
+  const std::vector<size_t>& findInstances(const std::string& name);
 
   // NOTE: movable element;
   std::vector<std::unique_ptr<vgeu::VgeuBuffer>> globalUniformBuffers;
@@ -59,6 +64,7 @@ class VgeExample : public VgeBase {
   std::vector<vk::raii::DescriptorSet> globalUboDescriptorSets;
 
   std::vector<ModelInstance> modelInstances;
+  std::unordered_map<std::string, std::vector<size_t>> instanceMap;
 
   std::vector<DynamicUboElt> dynamicUbo;
   size_t alignedSizeDynamicUboElt = 0;

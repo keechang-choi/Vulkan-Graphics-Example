@@ -1367,7 +1367,7 @@ vk::PipelineVertexInputStateCreateInfo Vertex::getPipelineVertexInputState(
 }
 
 void Model::getSkeletonMatrices(
-    std::vector<std::vector<glm::mat4>>& jointMatrices) {
+    std::vector<std::vector<glm::mat4>>& jointMatrices) const {
   jointMatrices.clear();
   jointMatrices.reserve(skins.size());
   for (const auto& skin : skins) {

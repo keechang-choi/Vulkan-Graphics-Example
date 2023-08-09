@@ -293,7 +293,8 @@ class Model {
             vk::PipelineLayout pipelineLayout = VK_NULL_HANDLE,
             uint32_t bindImageSet = 1, int bindSkinSet = -1);
 
-  void getSkeletonMatrices(std::vector<std::vector<glm::mat4>>& jointMatrices);
+  void getSkeletonMatrices(
+      std::vector<std::vector<glm::mat4>>& jointMatrices) const;
   void updateAnimation(const uint32_t frameIndex, const int Animationindex,
                        const float time, const bool repeat = false);
   Dimensions getDimensions() const { return dimensions; };

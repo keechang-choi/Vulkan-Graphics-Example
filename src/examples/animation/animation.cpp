@@ -50,9 +50,10 @@ void VgeExample::prepare() {
   prepared = true;
 }
 void VgeExample::loadAssets() {
+  // NOTE: no flip or preTransform for animation and skinning
   vgeu::FileLoadingFlags glTFLoadingFlags =
       vgeu::FileLoadingFlagBits::kPreMultiplyVertexColors;
-  // NOTE: no flip or preTransform for animation and skinning
+  // | vgeu::FileLoadingFlagBits::kPreTransformVertices;
   //| vgeu::FileLoadingFlagBits::kFlipY;
   std::shared_ptr<vgeu::glTF::Model> fox;
   fox = std::make_shared<vgeu::glTF::Model>(
@@ -61,16 +62,19 @@ void VgeExample::loadAssets() {
   fox->loadFromFile(getAssetsPath() + "/models/fox/Fox.gltf", glTFLoadingFlags);
 
   {
-    ModelInstance& modelInstance = modelInstances.emplace_back();
+    ModelInstance modelInstance{};
     modelInstance.model = fox;
-    modelInstance.id = modelInstances.size() - 1;
+    modelInstance.name = "fox1";
     modelInstance.animationIndex = 0;
+    addModelInstance(modelInstance);
   }
 
   {
-    ModelInstance& modelInstance = modelInstances.emplace_back();
+    ModelInstance modelInstance{};
     modelInstance.model = fox;
-    modelInstance.id = modelInstances.size() - 1;
+    modelInstance.name = "fox1-1";
+    modelInstance.animationIndex = 0;
+    addModelInstance(modelInstance);
   }
 
   // NOTE: different animation to fox1
@@ -81,10 +85,26 @@ void VgeExample::loadAssets() {
   fox2->loadFromFile(getAssetsPath() + "/models/fox/Fox.gltf",
                      glTFLoadingFlags);
   {
-    ModelInstance& modelInstance = modelInstances.emplace_back();
+    ModelInstance modelInstance{};
     modelInstance.model = fox2;
-    modelInstance.id = modelInstances.size() - 1;
-    modelInstance.animationIndex = 1;
+    modelInstance.name = "fox2";
+    modelInstance.animationIndex = -1;
+    addModelInstance(modelInstance);
+  }
+
+  // NOTE: different Model exported from blender
+  std::shared_ptr<vgeu::glTF::Model> fox3;
+  fox3 = std::make_shared<vgeu::glTF::Model>(
+      device, globalAllocator->getAllocator(), queue, commandPool,
+      MAX_CONCURRENT_FRAMES);
+  fox3->loadFromFile(getAssetsPath() + "/models/fox-normal/fox-normal.gltf",
+                     glTFLoadingFlags);
+  {
+    ModelInstance modelInstance{};
+    modelInstance.model = fox3;
+    modelInstance.name = "fox-blender";
+    modelInstance.animationIndex = -1;
+    addModelInstance(modelInstance);
   }
 
   std::shared_ptr<vgeu::glTF::Model> bone = std::make_shared<vgeu::glTF::Model>(
@@ -92,15 +112,25 @@ void VgeExample::loadAssets() {
       MAX_CONCURRENT_FRAMES);
   bone->loadFromFile(getAssetsPath() + "/models/bone3.gltf",
                      vgeu::FileLoadingFlags{});
-
-  std::vector<std::vector<glm::mat4>> jointMatrices;
-  fox->getSkeletonMatrices(jointMatrices);
-  for (const auto& jointMatricesEachSkin : jointMatrices) {
-    for (const auto& jointMatrix : jointMatricesEachSkin) {
-      ModelInstance& modelInstance = modelInstances.emplace_back();
-      modelInstance.model = bone;
-      modelInstance.id = modelInstances.size() - 1;
-      modelInstance.isBone = true;
+  std::vector<std::string> namesToAddSkeleton{
+      "fox1",
+      "fox1-1",
+      "fox2",
+      "fox-blender",
+  };
+  for (const auto& targetInstanceName : namesToAddSkeleton) {
+    const auto& targetModel =
+        modelInstances[findInstances(targetInstanceName)[0]].model;
+    std::vector<std::vector<glm::mat4>> jointMatrices;
+    targetModel->getSkeletonMatrices(jointMatrices);
+    for (const auto& jointMatricesEachSkin : jointMatrices) {
+      for (const auto& jointMatrix : jointMatricesEachSkin) {
+        ModelInstance modelInstance{};
+        modelInstance.model = bone;
+        modelInstance.name = "bones-" + targetInstanceName;
+        modelInstance.isBone = true;
+        addModelInstance(modelInstance);
+      }
     }
   }
 }
@@ -124,16 +154,24 @@ void VgeExample::setupDynamicUbo() {
       glm::scale(dynamicUbo[1].modelMatrix, glm::vec3(.03f));
 
   dynamicUbo[2].modelMatrix =
-      glm::translate(glm::mat4{1.f}, glm::vec3{0.f, 0.f, 3.f});
+      glm::translate(glm::mat4{1.f}, glm::vec3{-3.f, 0.f, 3.f});
   // dynamicUbo[2].modelMatrix =
   //     glm::rotate(dynamicUbo[1].modelMatrix, glm::radians(140.f + 180.f),
   //                 glm::vec3{0.f, -1.f, 0.f});
   dynamicUbo[2].modelMatrix =
       glm::scale(dynamicUbo[2].modelMatrix, glm::vec3(.03f));
 
-  // 3~26 -> bones for instance 0
+  dynamicUbo[3].modelMatrix =
+      glm::translate(glm::mat4{1.f}, glm::vec3{3.f, 0.f, 3.f});
+  // dynamicUbo[3].modelMatrix =
+  //     glm::rotate(dynamicUbo[1].modelMatrix, glm::radians(140.f + 180.f),
+  //                 glm::vec3{0.f, -1.f, 0.f});
+  dynamicUbo[3].modelMatrix =
+      glm::scale(dynamicUbo[3].modelMatrix, glm::vec3(.03f));
+
+  // 4~27 -> bones for instance 0
   {
-    size_t boneInstanceIdx = 3;
+    size_t boneInstanceIdx = 4;
     std::vector<std::vector<glm::mat4>> jointMatrices;
     modelInstances[0].model->getSkeletonMatrices(jointMatrices);
     glm::mat4 boneAxisChange{1.f};
@@ -172,7 +210,7 @@ void VgeExample::setupDynamicUbo() {
       std::cout << "---------test------------" << std::endl;
     }
     {
-      size_t boneInstanceIdx = 3;
+      size_t boneInstanceIdx = 4;
 
       glm::mat4 joint0{1.f};
       {
@@ -544,7 +582,9 @@ void VgeExample::buildCommandBuffers() {
     drawCmdBuffers[currentFrameIndex].bindPipeline(
         vk::PipelineBindPoint::eGraphics, *pipelines.phong);
 
-    for (auto& modelInstance : modelInstances) {
+    for (size_t instanceIdx = 0; instanceIdx < modelInstances.size();
+         instanceIdx++) {
+      const auto& modelInstance = modelInstances[instanceIdx];
       if (modelInstance.isBone) {
         continue;
       }
@@ -552,7 +592,7 @@ void VgeExample::buildCommandBuffers() {
       drawCmdBuffers[currentFrameIndex].bindDescriptorSets(
           vk::PipelineBindPoint::eGraphics, *pipelineLayout, 1 /*set 1*/,
           {*dynamicUboDescriptorSets[currentFrameIndex]},
-          alignedSizeDynamicUboElt * modelInstance.id);
+          alignedSizeDynamicUboElt * instanceIdx);
       // bind vertex buffer
       // bind index buffer
       modelInstance.model->bindBuffers(drawCmdBuffers[currentFrameIndex]);
@@ -575,12 +615,13 @@ void VgeExample::buildCommandBuffers() {
     // bind pipeline
     drawCmdBuffers[currentFrameIndex].bindPipeline(
         vk::PipelineBindPoint::eGraphics, *pipelines.wireframe);
-    for (auto& modelInstance : modelInstances) {
-      // bind dynamic
+    for (size_t instanceIdx = 0; instanceIdx < modelInstances.size();
+         instanceIdx++) {
+      const auto& modelInstance = modelInstances[instanceIdx];  // bind dynamic
       drawCmdBuffers[currentFrameIndex].bindDescriptorSets(
           vk::PipelineBindPoint::eGraphics, *pipelineLayout, 1 /*set 1*/,
           {*dynamicUboDescriptorSets[currentFrameIndex]},
-          alignedSizeDynamicUboElt * modelInstance.id);
+          alignedSizeDynamicUboElt * instanceIdx);
       // bind vertex buffer
       // bind index buffer
       modelInstance.model->bindBuffers(drawCmdBuffers[currentFrameIndex]);
@@ -656,10 +697,17 @@ void VgeExample::updateUniforms() {
   }
 
   // update bone
-  {
-    size_t boneInstanceIdx = 3;
+  std::vector<std::string> namesToAddSkeleton{
+      "fox1",
+      "fox1-1",
+      "fox2",
+      "fox-blender",
+  };
+  for (const auto& instanceName : namesToAddSkeleton) {
+    size_t modelInstanceIdx = findInstances(instanceName)[0];
+    size_t boneInstanceIdx = findInstances("bones-" + instanceName)[0];
     std::vector<std::vector<glm::mat4>> jointMatrices;
-    modelInstances[0].model->getSkeletonMatrices(jointMatrices);
+    modelInstances[modelInstanceIdx].model->getSkeletonMatrices(jointMatrices);
     glm::mat4 boneAxisChange{1.f};
     boneAxisChange[1] = glm::vec4{0.f, 0.f, 1.f, 0.f};
     boneAxisChange[2] = glm::vec4{0.f, 1.f, 0.f, 0.f};
@@ -671,20 +719,32 @@ void VgeExample::updateUniforms() {
 
         dynamicUbo[boneInstanceIdx].modelColor = glm::vec4{0.f, 1.f, 0.f, 1.f};
         dynamicUbo[boneInstanceIdx].modelMatrix =
-            dynamicUbo[0].modelMatrix * jointMatrix *
+            dynamicUbo[modelInstanceIdx].modelMatrix * jointMatrix *
             glm::scale(glm::mat4{1.f}, glm::vec3{10.f, 10.f, 10.f});
 
         boneInstanceIdx++;
       }
     }
-    for (size_t j = 0; j < dynamicUbo.size(); j++) {
-      std::memcpy(
-          static_cast<char*>(
-              dynamicUniformBuffers[currentFrameIndex]->getMappedData()) +
-              j * alignedSizeDynamicUboElt,
-          &dynamicUbo[j], alignedSizeDynamicUboElt);
-    }
   }
+  // update all dynamicUbo elements
+  for (size_t j = 0; j < dynamicUbo.size(); j++) {
+    std::memcpy(static_cast<char*>(
+                    dynamicUniformBuffers[currentFrameIndex]->getMappedData()) +
+                    j * alignedSizeDynamicUboElt,
+                &dynamicUbo[j], alignedSizeDynamicUboElt);
+  }
+}
+
+void VgeExample::addModelInstance(const ModelInstance& newInstance) {
+  size_t instanceIdx = modelInstances.size();
+  modelInstances.push_back(newInstance);
+  instanceMap[newInstance.name].push_back(instanceIdx);
+}
+
+const std::vector<size_t>& VgeExample::findInstances(const std::string& name) {
+  assert(instanceMap.find(name) != instanceMap.end() &&
+         "failed to find instance by name.");
+  return instanceMap.at(name);
 }
 
 }  // namespace vge
