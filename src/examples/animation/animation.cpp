@@ -89,7 +89,7 @@ void VgeExample::loadAssets() {
     ModelInstance modelInstance{};
     modelInstance.model = fox2;
     modelInstance.name = "fox2";
-    modelInstance.animationIndex = 2;
+    modelInstance.animationIndex = 0;
     addModelInstance(modelInstance);
   }
 
@@ -139,7 +139,7 @@ void VgeExample::loadAssets() {
 void VgeExample::setupDynamicUbo() {
   dynamicUbo.resize(modelInstances.size());
   dynamicUbo[0].modelMatrix =
-      glm::translate(glm::mat4{1.f}, glm::vec3{-3.f, 0.f, 0.f});
+      glm::translate(glm::mat4{1.f}, glm::vec3{-6.f, 0.f, 0.f});
   // dynamicUbo[0].modelMatrix =
   //     glm::rotate(dynamicUbo[0].modelMatrix, glm::radians(140.f),
   //                 glm::vec3{0.f, -1.f, 0.f});
@@ -147,7 +147,7 @@ void VgeExample::setupDynamicUbo() {
       glm::scale(dynamicUbo[0].modelMatrix, glm::vec3(.03f));
 
   dynamicUbo[1].modelMatrix =
-      glm::translate(glm::mat4{1.f}, glm::vec3{3.f, 0.f, 0.f});
+      glm::translate(glm::mat4{1.f}, glm::vec3{6.f, 0.f, 0.f});
   // dynamicUbo[1].modelMatrix =
   //     glm::rotate(dynamicUbo[1].modelMatrix, glm::radians(140.f + 180.f),
   //                 glm::vec3{0.f, -1.f, 0.f});
@@ -155,7 +155,7 @@ void VgeExample::setupDynamicUbo() {
       glm::scale(dynamicUbo[1].modelMatrix, glm::vec3(.03f));
 
   dynamicUbo[2].modelMatrix =
-      glm::translate(glm::mat4{1.f}, glm::vec3{-3.f, 0.f, 3.f});
+      glm::translate(glm::mat4{1.f}, glm::vec3{-3.f, 0.f, 0.f});
   // dynamicUbo[2].modelMatrix =
   //     glm::rotate(dynamicUbo[1].modelMatrix, glm::radians(140.f + 180.f),
   //                 glm::vec3{0.f, -1.f, 0.f});
@@ -163,7 +163,7 @@ void VgeExample::setupDynamicUbo() {
       glm::scale(dynamicUbo[2].modelMatrix, glm::vec3(.03f));
 
   dynamicUbo[3].modelMatrix =
-      glm::translate(glm::mat4{1.f}, glm::vec3{3.f, 0.f, 3.f});
+      glm::translate(glm::mat4{1.f}, glm::vec3{3.f, 0.f, 0.f});
   // dynamicUbo[3].modelMatrix =
   //     glm::rotate(dynamicUbo[1].modelMatrix, glm::radians(140.f + 180.f),
   //                 glm::vec3{0.f, -1.f, 0.f});
