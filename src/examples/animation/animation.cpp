@@ -59,13 +59,14 @@ void VgeExample::loadAssets() {
   fox = std::make_shared<vgeu::glTF::Model>(
       device, globalAllocator->getAllocator(), queue, commandPool,
       MAX_CONCURRENT_FRAMES);
-  fox->loadFromFile(getAssetsPath() + "/models/fox/Fox.gltf", glTFLoadingFlags);
+  fox->loadFromFile(getAssetsPath() + "/models/fox-normal/fox-normal.gltf",
+                    glTFLoadingFlags);
 
   {
     ModelInstance modelInstance{};
     modelInstance.model = fox;
     modelInstance.name = "fox1";
-    modelInstance.animationIndex = 0;
+    modelInstance.animationIndex = 1;
     addModelInstance(modelInstance);
   }
 
@@ -73,7 +74,7 @@ void VgeExample::loadAssets() {
     ModelInstance modelInstance{};
     modelInstance.model = fox;
     modelInstance.name = "fox1-1";
-    modelInstance.animationIndex = 0;
+    modelInstance.animationIndex = 1;
     addModelInstance(modelInstance);
   }
 
@@ -82,13 +83,13 @@ void VgeExample::loadAssets() {
   fox2 = std::make_shared<vgeu::glTF::Model>(
       device, globalAllocator->getAllocator(), queue, commandPool,
       MAX_CONCURRENT_FRAMES);
-  fox2->loadFromFile(getAssetsPath() + "/models/fox/Fox.gltf",
+  fox2->loadFromFile(getAssetsPath() + "/models/fox-normal/fox-normal.gltf",
                      glTFLoadingFlags);
   {
     ModelInstance modelInstance{};
     modelInstance.model = fox2;
     modelInstance.name = "fox2";
-    modelInstance.animationIndex = -1;
+    modelInstance.animationIndex = 2;
     addModelInstance(modelInstance);
   }
 
@@ -98,12 +99,12 @@ void VgeExample::loadAssets() {
       device, globalAllocator->getAllocator(), queue, commandPool,
       MAX_CONCURRENT_FRAMES);
   fox3->loadFromFile(getAssetsPath() + "/models/fox-normal/fox-normal.gltf",
-                     glTFLoadingFlags);
+                     vgeu::FileLoadingFlagBits::kPreMultiplyVertexColors);
   {
     ModelInstance modelInstance{};
     modelInstance.model = fox3;
     modelInstance.name = "fox-blender";
-    modelInstance.animationIndex = -1;
+    modelInstance.animationIndex = 0;
     addModelInstance(modelInstance);
   }
 
@@ -332,6 +333,8 @@ void VgeExample::createDescriptorSetLayout() {
   // set 2
   // TODO: need to improve structure. descriptorSetLayout per model
   setLayouts.push_back(*modelInstances[0].model->descriptorSetLayoutImage);
+
+  // set3
   setLayouts.push_back(*modelInstances[0].model->descriptorSetLayoutUbo);
 
   vk::PipelineLayoutCreateInfo pipelineLayoutCI({}, setLayouts);

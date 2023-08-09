@@ -1087,7 +1087,7 @@ void Model::drawNode(const uint32_t frameIndex, const Node* node,
   }
   for (const auto& child : node->children) {
     drawNode(frameIndex, child.get(), cmdBuffer, renderFlags, pipelineLayout,
-             bindImageSet);
+             bindImageSet, bindSkinSet);
   }
 }
 
