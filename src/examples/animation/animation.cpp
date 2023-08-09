@@ -59,8 +59,7 @@ void VgeExample::loadAssets() {
   fox = std::make_shared<vgeu::glTF::Model>(
       device, globalAllocator->getAllocator(), queue, commandPool,
       MAX_CONCURRENT_FRAMES);
-  fox->loadFromFile(getAssetsPath() + "/models/fox-normal/fox-normal.gltf",
-                    glTFLoadingFlags);
+  fox->loadFromFile(getAssetsPath() + "/models/fox/Fox.gltf", glTFLoadingFlags);
 
   {
     ModelInstance modelInstance{};
@@ -83,7 +82,7 @@ void VgeExample::loadAssets() {
   fox2 = std::make_shared<vgeu::glTF::Model>(
       device, globalAllocator->getAllocator(), queue, commandPool,
       MAX_CONCURRENT_FRAMES);
-  fox2->loadFromFile(getAssetsPath() + "/models/fox-normal/fox-normal.gltf",
+  fox2->loadFromFile(getAssetsPath() + "/models/fox/Fox.gltf",
                      glTFLoadingFlags);
   {
     ModelInstance modelInstance{};
@@ -104,7 +103,7 @@ void VgeExample::loadAssets() {
     ModelInstance modelInstance{};
     modelInstance.model = fox3;
     modelInstance.name = "fox-blender";
-    modelInstance.animationIndex = 0;
+    modelInstance.animationIndex = 1;
     addModelInstance(modelInstance);
   }
 

@@ -650,7 +650,10 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
         const float* bufferColors = nullptr;
         const float* bufferTangents = nullptr;
         uint32_t numColorComponents;
-        const uint16_t* bufferJoints = nullptr;
+        // NOTE: lazy cast
+        const unsigned char* bufferJoints = nullptr;
+        uint32_t jointComponentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE;
+
         const float* bufferWeights = nullptr;
 
         // Position attribute is required
@@ -723,6 +726,8 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
 
         // Skinning
         // Joints
+        // TODO: joint type not fixed
+        // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#skinned-mesh-attributes
         if (gltfPrimitive.attributes.find("JOINTS_0") !=
             gltfPrimitive.attributes.end()) {
           const tinygltf::Accessor& jointAccessor =
@@ -730,11 +735,24 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
                   .accessors[gltfPrimitive.attributes.find("JOINTS_0")->second];
           const tinygltf::BufferView& jointView =
               gltfModel.bufferViews[jointAccessor.bufferView];
-          bufferJoints = reinterpret_cast<const uint16_t*>(
+
+          bufferJoints =
               &(gltfModel.buffers[jointView.buffer]
-                    .data[jointAccessor.byteOffset + jointView.byteOffset]));
+                    .data[jointAccessor.byteOffset + jointView.byteOffset]);
+          switch (jointAccessor.componentType) {
+            case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE: {
+            }
+            case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT: {
+              jointComponentType = jointAccessor.componentType;
+              break;
+            }
+            default: {
+              assert(false && "failed to load joint buffer, component Type");
+            }
+          }
         }
 
+        // TODO: component type
         if (gltfPrimitive.attributes.find("WEIGHTS_0") !=
             gltfPrimitive.attributes.end()) {
           const tinygltf::Accessor& uvAccessor =
@@ -773,9 +791,18 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
           vert.tangent = bufferTangents
                              ? glm::vec4(glm::make_vec4(&bufferTangents[v * 4]))
                              : glm::vec4(0.0f);
-          vert.joint0 = hasSkin
-                            ? glm::vec4(glm::make_vec4(&bufferJoints[v * 4]))
-                            : glm::vec4(0.0f);
+          if (hasSkin) {
+            if (jointComponentType == TINYGLTF_PARAMETER_TYPE_UNSIGNED_SHORT) {
+              vert.joint0 = glm::vec4(glm::make_vec4(
+                  &reinterpret_cast<const uint16_t*>(bufferJoints)[v * 4]));
+            } else {
+              // default byte -> uint8_t
+              vert.joint0 = glm::vec4(glm::make_vec4(&bufferJoints[v * 4]));
+            }
+          } else {
+            vert.joint0 = glm::vec4(0.0f);
+          }
+
           vert.weight0 =
               hasSkin ? glm::make_vec4(&bufferWeights[v * 4]) : glm::vec4(0.0f);
           vertices.push_back(vert);
@@ -815,14 +842,21 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
             break;
           }
           case TINYGLTF_PARAMETER_TYPE_UNSIGNED_SHORT: {
-            std::vector<uint16_t> buf(accessor.count);
+            uint16_t* buf = new uint16_t[accessor.count];
             std::memcpy(
-                buf.data(),
-                &buffer.data[accessor.byteOffset + bufferView.byteOffset],
+                buf, &buffer.data[accessor.byteOffset + bufferView.byteOffset],
                 accessor.count * sizeof(uint16_t));
+            // TODO: use next style for consistency
+            // std::vector<uint16_t> buf;
+            // buf.insert(
+            //     buf.end(),
+            //     &buffer.data[accessor.byteOffset + bufferView.byteOffset],
+            //     &buffer.data[accessor.byteOffset + bufferView.byteOffset] +
+            //         accessor.count);
             for (size_t index = 0; index < accessor.count; index++) {
               indices.push_back(buf[index] + vertexStart);
             }
+            delete[] buf;
             break;
           }
           case TINYGLTF_PARAMETER_TYPE_UNSIGNED_BYTE: {
