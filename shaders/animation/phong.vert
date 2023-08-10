@@ -44,6 +44,8 @@ void main()
 		inJointWeights.z * meshUbo.jointMatrices[int(inJointIndices.z)] +
 		inJointWeights.w * meshUbo.jointMatrices[int(inJointIndices.w)];
 
+// 	skinMatrix = mat4(1.0f);
+
 	mat4 worldTransform = modelUbo.modelMatrix * meshUbo.nodeMatrix  * skinMatrix ;
 	gl_Position = globalUbo.projection * globalUbo.view * worldTransform * vec4(inPos.xyz, 1.0);
 	

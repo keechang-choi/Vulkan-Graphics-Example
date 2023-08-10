@@ -151,6 +151,7 @@ struct Primitive {
       : firstIndex(firstIndex), indexCount(indexCount), material(material){};
 };
 
+#define MAX_JOINT_MATRICES 64
 struct Mesh {
   // TODO: unique_ptr or class itself
   std::vector<std::unique_ptr<Primitive>> primitives;
@@ -162,7 +163,7 @@ struct Mesh {
   std::vector<vk::raii::DescriptorSet> descriptorSets;
   struct UniformBlock {
     glm::mat4 matrix{1.f};
-    glm::mat4 jointMatrices[64]{};
+    glm::mat4 jointMatrices[MAX_JOINT_MATRICES]{};
     glm::vec4 jointcount{0.f};
   } uniformBlock;
 
@@ -198,7 +199,7 @@ struct Node {
   glm::quat rotation{};
   glm::mat4 localMatrix() const;
   glm::mat4 getMatrix() const;
-  void update(const uint32_t frameIndex);
+  void update(const uint32_t frameIndex, bool isBindPose = false);
 };
 
 // TODO: animation

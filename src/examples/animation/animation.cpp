@@ -20,7 +20,7 @@ VgeExample::~VgeExample() {}
 
 void VgeExample::initVulkan() {
   // camera setup
-  camera.setViewTarget(glm::vec3{0.f, -4.f, -7.f}, glm::vec3{0.f, 0.f, 0.f});
+  camera.setViewTarget(glm::vec3{0.f, -6.f, -10.f}, glm::vec3{0.f, 0.f, 0.f});
   camera.setPerspectiveProjection(
       glm::radians(60.f),
       static_cast<float>(width) / (static_cast<float>(height) / 2.f), 0.1f,
@@ -89,16 +89,31 @@ void VgeExample::loadAssets() {
     ModelInstance modelInstance{};
     modelInstance.model = fox2;
     modelInstance.name = "fox2";
-    modelInstance.animationIndex = 0;
+    modelInstance.animationIndex = -1;
     addModelInstance(modelInstance);
   }
 
-  // NOTE: different Model exported from blender
+  // NOTE: different animation to fox1
   std::shared_ptr<vgeu::glTF::Model> fox3;
   fox3 = std::make_shared<vgeu::glTF::Model>(
       device, globalAllocator->getAllocator(), queue, commandPool,
       MAX_CONCURRENT_FRAMES);
   fox3->loadFromFile(getAssetsPath() + "/models/fox-normal/fox-normal.gltf",
+                     glTFLoadingFlags);
+  {
+    ModelInstance modelInstance{};
+    modelInstance.model = fox3;
+    modelInstance.name = "fox3";
+    modelInstance.animationIndex = 0;
+    addModelInstance(modelInstance);
+  }
+
+  // NOTE: different Model exported from blender
+  std::shared_ptr<vgeu::glTF::Model> fox4;
+  fox4 = std::make_shared<vgeu::glTF::Model>(
+      device, globalAllocator->getAllocator(), queue, commandPool,
+      MAX_CONCURRENT_FRAMES);
+  fox4->loadFromFile(getAssetsPath() + "/models/fox-normal/fox-normal.gltf",
                      vgeu::FileLoadingFlagBits::kPreMultiplyVertexColors);
   {
     ModelInstance modelInstance{};
@@ -114,10 +129,7 @@ void VgeExample::loadAssets() {
   bone->loadFromFile(getAssetsPath() + "/models/bone5.gltf",
                      vgeu::FileLoadingFlags{});
   std::vector<std::string> namesToAddSkeleton{
-      "fox1",
-      "fox1-1",
-      "fox2",
-      "fox-blender",
+      "fox1", "fox1-1", "fox2", "fox3", "fox-blender",
   };
   for (const auto& targetInstanceName : namesToAddSkeleton) {
     const auto& targetModel =
@@ -177,6 +189,18 @@ void VgeExample::setupDynamicUbo() {
     dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f, 1.f, 0.f, 0.3f};
   }
   {
+    size_t instanceIndex = findInstances("fox3")[0];
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::translate(glm::mat4{1.f}, glm::vec3{-8.f, 0.f, 0.f});
+    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
+        dynamicUbo[instanceIndex].modelMatrix, glm::radians(180.f), up);
+    // FlipY manually
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+                   glm::vec3{foxScale, -foxScale, foxScale});
+    dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f, 1.f, 1.f, 0.3f};
+  }
+  {
     size_t instanceIndex = findInstances("fox-blender")[0];
     dynamicUbo[instanceIndex].modelMatrix =
         glm::translate(glm::mat4{1.f}, glm::vec3{2.f, 0.f, 0.f});
@@ -188,109 +212,6 @@ void VgeExample::setupDynamicUbo() {
                    glm::vec3{foxScale, -foxScale, foxScale});
     // default
     dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
-  }
-
-  // 4~27 -> bones for instance 0
-  {
-    size_t boneInstanceIdx = 4;
-    std::vector<std::vector<glm::mat4>> jointMatrices;
-    modelInstances[0].model->getSkeletonMatrices(jointMatrices);
-    glm::mat4 boneAxisChange{1.f};
-    boneAxisChange[1] = glm::vec4{0.f, 0.f, 1.f, 0.f};
-    boneAxisChange[2] = glm::vec4{0.f, 1.f, 0.f, 0.f};
-    glm::mat4 flipY{1.f};
-    flipY[1][1] = -1.f;
-    for (const auto& jointMatricesEachSkin : jointMatrices) {
-      for (size_t i = 0; i < jointMatricesEachSkin.size(); i++) {
-        const auto& jointMatrix = jointMatricesEachSkin[i];
-
-        dynamicUbo[boneInstanceIdx].modelColor = glm::vec4{1.f, 1.f, 1.f, 1.f};
-        dynamicUbo[boneInstanceIdx].modelMatrix =
-            dynamicUbo[0].modelMatrix * flipY * jointMatrix * boneAxisChange *
-            glm::mat4{10.f};
-        boneInstanceIdx++;
-      }
-    }
-
-    {
-      // test
-      std::cout << "---------test------------" << std::endl;
-      glm::quat q0(0.7071054698831242f,
-                   glm::vec3{-0.7071080924875391f, 0.0f, 0.0f});
-      glm::mat4 t1 = glm::translate(
-          glm::mat4{1.f},
-          glm::vec3{0.f, 26.748403549194336f, 42.93817138671875f});
-      glm::quat q1(0.695481840425441f,
-                   glm::vec3{0.12769094176175547f, -0.6954820192393762f,
-                             -0.12769022650601444f});
-      glm::mat4 m1 = t1 * glm::toMat4(q1);
-      glm::vec4 head{0.f, 26.748403549194336f, 42.93817138671875f, 1.f};
-      glm::vec4 tail{0.f, 23.227f, 52.205f, 1.f};
-      std::cout << glm::to_string(m1 * head) << std::endl;
-      std::cout << glm::to_string(m1 * tail) << std::endl;
-      std::cout << "---------test------------" << std::endl;
-    }
-    {
-      size_t boneInstanceIdx = 4;
-
-      glm::mat4 joint0{1.f};
-      {
-        // NOTE: constructor gets wxyz
-        // but internal order is xyzw(for make_quat)
-        glm::quat q(0.7071054698831242f,
-                    glm::vec3{-0.7071080924875391f, 0.0f, 0.0f});
-        // NOTE:: same as glm::Mat4
-        joint0 = glm::toMat4(q);
-        // std::cout << glm::to_string(joint0) << std::endl;
-      }
-      dynamicUbo[boneInstanceIdx].modelColor = glm::vec4{1.f, 0.f, 0.f, 1.f};
-      dynamicUbo[boneInstanceIdx++].modelMatrix =
-          dynamicUbo[0].modelMatrix * flipY * joint0 * boneAxisChange;
-      glm::mat4 joint1{1.f};
-      joint1 = glm::translate(
-          joint1, glm::vec3{0.f, 26.748403549194336f, 42.93817138671875f});
-
-      glm::quat q(0.695481840425441f,
-                  glm::vec3{0.12769094176175547f, -0.6954820192393762f,
-                            -0.12769022650601444f});
-      joint1 = joint1 * glm::toMat4(q);
-
-      std::cout << glm::to_string(joint1) << std::endl;
-      std::cout << glm::to_string(boneAxisChange) << std::endl;
-      std::cout << glm::to_string(joint1 * boneAxisChange) << std::endl;
-      std::cout << glm::to_string(joint0 * boneAxisChange) << std::endl;
-      dynamicUbo[boneInstanceIdx].modelColor = glm::vec4{0.f, 1.f, 0.f, 1.f};
-      dynamicUbo[boneInstanceIdx++].modelMatrix =
-          dynamicUbo[0].modelMatrix * flipY * joint0 * joint1;
-      dynamicUbo[boneInstanceIdx].modelColor = glm::vec4{0.f, 0.f, 1.f, 1.f};
-      dynamicUbo[boneInstanceIdx++].modelMatrix =
-          dynamicUbo[0].modelMatrix * flipY * joint0 * joint1 * boneAxisChange;
-      dynamicUbo[boneInstanceIdx].modelColor = glm::vec4{1.f, 1.f, 0.f, 1.f};
-      dynamicUbo[boneInstanceIdx++].modelMatrix =
-          dynamicUbo[0].modelMatrix * flipY * joint0 * glm::toMat4(q) *
-          boneAxisChange;
-      dynamicUbo[boneInstanceIdx].modelColor = glm::vec4{0.f, 1.f, 1.f, 1.f};
-      dynamicUbo[boneInstanceIdx++].modelMatrix =
-          dynamicUbo[0].modelMatrix * flipY * glm::toMat4(q) * boneAxisChange;
-
-      dynamicUbo[boneInstanceIdx].modelColor = glm::vec4{1.f, 0.f, 1.f, 1.f};
-      dynamicUbo[boneInstanceIdx++].modelMatrix =
-          dynamicUbo[0].modelMatrix * glm::toMat4(q);
-
-      dynamicUbo[boneInstanceIdx].modelColor = glm::vec4{0.1f, 0.2f, 0.4f, 1.f};
-      dynamicUbo[boneInstanceIdx++].modelMatrix =
-          dynamicUbo[0].modelMatrix * flipY * glm::toMat4(q);
-
-      dynamicUbo[boneInstanceIdx].modelColor = glm::vec4{0.1f, 0.4f, 0.2f, 1.f};
-      dynamicUbo[boneInstanceIdx++].modelMatrix =
-          dynamicUbo[0].modelMatrix * flipY * joint1;
-
-      dynamicUbo[boneInstanceIdx].modelColor = glm::vec4{0.8f, 0.3f, 0.2f, 1.f};
-      dynamicUbo[boneInstanceIdx++].modelMatrix =
-          dynamicUbo[0].modelMatrix * flipY *
-          glm::translate(glm::mat4{1.f}, glm::vec3{0.f, 26.748403549194336f,
-                                                   42.93817138671875f});
-    }
   }
 }
 
@@ -703,6 +624,33 @@ void VgeExample::updateUniforms() {
   std::memcpy(globalUniformBuffers[currentFrameIndex]->getMappedData(),
               &globalUbo, sizeof(GlobalUbo));
 
+  // model move
+
+  glm::vec3 up{0.f, -1.f, 0.f};
+  // deg per sec;
+  float rotationVelocity = 30.f;
+  {
+    size_t instanceIndex = findInstances("fox1")[0];
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::rotate(glm::mat4{1.f}, glm::radians(rotationVelocity) * frameTimer,
+                    up) *
+        dynamicUbo[instanceIndex].modelMatrix;
+  }
+  {
+    size_t instanceIndex = findInstances("fox1-1")[0];
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::rotate(glm::mat4{1.f}, glm::radians(rotationVelocity) * frameTimer,
+                    up) *
+        dynamicUbo[instanceIndex].modelMatrix;
+  }
+  {
+    size_t instanceIndex = findInstances("fox3")[0];
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::rotate(glm::mat4{1.f},
+                    glm::radians(rotationVelocity * 2.f) * frameTimer, up) *
+        dynamicUbo[instanceIndex].modelMatrix;
+  }
+
   // update animation joint matrices for each shared model
   {
     std::unordered_set<const vgeu::glTF::Model*> updatedSharedModelSet;
@@ -721,10 +669,7 @@ void VgeExample::updateUniforms() {
 
   // update bone
   std::vector<std::string> namesToAddSkeleton{
-      "fox1",
-      "fox1-1",
-      "fox2",
-      "fox-blender",
+      "fox1", "fox1-1", "fox2", "fox3", "fox-blender",
   };
   for (const auto& instanceName : namesToAddSkeleton) {
     size_t modelInstanceIdx = findInstances(instanceName)[0];
@@ -736,14 +681,17 @@ void VgeExample::updateUniforms() {
     boneAxisChange[2] = glm::vec4{0.f, 1.f, 0.f, 0.f};
     glm::mat4 flipY{1.f};
     flipY[1][1] = -1.f;
+    glm::vec4 boneColor{1.f};
+    boneColor -= dynamicUbo[modelInstanceIdx].modelColor;
+    boneColor.w = 1.f;
     for (const auto& jointMatricesEachSkin : jointMatrices) {
       for (size_t i = 0; i < jointMatricesEachSkin.size(); i++) {
         const auto& jointMatrix = jointMatricesEachSkin[i];
 
-        dynamicUbo[boneInstanceIdx].modelColor = glm::vec4{0.f, 1.f, 0.f, 1.f};
+        dynamicUbo[boneInstanceIdx].modelColor = boneColor;
         dynamicUbo[boneInstanceIdx].modelMatrix =
             dynamicUbo[modelInstanceIdx].modelMatrix * jointMatrix *
-            glm::scale(glm::mat4{1.f}, glm::vec3{10.f, 10.f, 10.f});
+            glm::scale(glm::mat4{1.f}, glm::vec3{10.f});
 
         boneInstanceIdx++;
       }

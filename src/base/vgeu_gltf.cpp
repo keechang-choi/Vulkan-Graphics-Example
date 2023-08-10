@@ -298,11 +298,11 @@ void Model::loadFromFile(std::string filename,
     if (node->skinIndex > -1) {
       node->skin = &skins[node->skinIndex];
     }
-    // Initial pose
-    if (node->mesh) {
-      for (size_t i = 0; i < framesInFlight; i++) {
-        node->update(i);
-      }
+  }
+  // Initial pose ?
+  for (size_t i = 0; i < framesInFlight; i++) {
+    for (const auto& node : nodes) {
+      node->update(i, true);
     }
   }
 
@@ -1271,6 +1271,10 @@ Mesh::Mesh(VmaAllocator allocator, glm::mat4 matrix,
            const uint32_t framesInFlight) {
   vk::BufferUsageFlags b = {};
   uniformBlock.matrix = matrix;
+  // init joint matrices as id.
+  for (size_t i = 0; i < MAX_JOINT_MATRICES; i++) {
+    uniformBlock.jointMatrices[i] = glm::mat4{1.f};
+  }
 
   uniformBuffers.reserve(framesInFlight);
   for (size_t i = 0; i < framesInFlight; i++) {
@@ -1298,7 +1302,7 @@ glm::mat4 Node::getMatrix() const {
   return m;
 }
 
-void Node::update(const uint32_t frameIndex) {
+void Node::update(const uint32_t frameIndex, bool isBindPose) {
   if (mesh) {
     assert(frameIndex < mesh->uniformBuffers.size());
     glm::mat4 m = getMatrix();
@@ -1307,11 +1311,14 @@ void Node::update(const uint32_t frameIndex) {
       // Update join matrices
       glm::mat4 inverseTransform = glm::inverse(m);
       for (size_t i = 0; i < skin->joints.size(); i++) {
-        const Node* jointNode = skin->joints[i];
-        glm::mat4 jointMat =
-            jointNode->getMatrix() * skin->inverseBindMatrices[i];
+        glm::mat4 jointMat{1.f};
+        if (!isBindPose) {
+          const Node* jointNode = skin->joints[i];
+          jointMat = jointNode->getMatrix() * skin->inverseBindMatrices[i];
+        }
         jointMat = inverseTransform * jointMat;
         mesh->uniformBlock.jointMatrices[i] = jointMat;
+        // std::cout << glm::to_string(jointMat) << std::endl;
       }
       mesh->uniformBlock.jointcount.x = static_cast<float>(skin->joints.size());
       std::memcpy(mesh->uniformBuffers[frameIndex]->getMappedData(),
@@ -1325,7 +1332,7 @@ void Node::update(const uint32_t frameIndex) {
   }
 
   for (auto& child : children) {
-    child->update(frameIndex);
+    child->update(frameIndex, isBindPose);
   }
 }
 
