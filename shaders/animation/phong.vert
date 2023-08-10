@@ -44,10 +44,11 @@ void main()
 		inJointWeights.z * meshUbo.jointMatrices[int(inJointIndices.z)] +
 		inJointWeights.w * meshUbo.jointMatrices[int(inJointIndices.w)];
 
-	gl_Position = globalUbo.projection * globalUbo.view * modelUbo.modelMatrix * meshUbo.nodeMatrix  * skinMatrix * vec4(inPos.xyz, 1.0);
+	mat4 worldTransform = modelUbo.modelMatrix * meshUbo.nodeMatrix  * skinMatrix ;
+	gl_Position = globalUbo.projection * globalUbo.view * worldTransform * vec4(inPos.xyz, 1.0);
 	
 	vec4 pos = modelUbo.modelMatrix * vec4(inPos, 1.0);
-	mat3 normalMatrix = inverse(transpose(mat3(modelUbo.modelMatrix)));
+	mat3 normalMatrix = inverse(transpose(mat3(worldTransform)));
 	outNormal = normalize(normalMatrix * inNormal);
 	vec3 lPos = globalUbo.lightPos.xyz;
 	outLightVec = normalize(lPos - pos.xyz);
