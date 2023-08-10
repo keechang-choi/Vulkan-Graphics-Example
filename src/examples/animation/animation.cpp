@@ -117,7 +117,7 @@ void VgeExample::loadAssets() {
                      vgeu::FileLoadingFlagBits::kPreMultiplyVertexColors);
   {
     ModelInstance modelInstance{};
-    modelInstance.model = fox3;
+    modelInstance.model = fox4;
     modelInstance.name = "fox-blender";
     modelInstance.animationIndex = 1;
     addModelInstance(modelInstance);
