@@ -181,7 +181,7 @@ void VgeExample::setupDynamicUbo() {
     dynamicUbo[instanceIndex].modelMatrix =
         glm::translate(glm::mat4{1.f}, glm::vec3{-2.f, 0.f, 0.f});
     dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
-        dynamicUbo[instanceIndex].modelMatrix, glm::radians(90.f), up);
+        dynamicUbo[instanceIndex].modelMatrix, glm::radians(180.f), up);
     // FlipY manually
     dynamicUbo[instanceIndex].modelMatrix =
         glm::scale(dynamicUbo[instanceIndex].modelMatrix,
