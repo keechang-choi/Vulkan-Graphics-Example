@@ -39,3 +39,8 @@ git submodule update
 ## [pipelines](src/examples/pipelines)
 ![image](https://github.com/keechang-choi/Vulkan-Graphics-Example/assets/49244613/cd856a55-5888-4852-bcea-a8c16b5c772e)
 
+## [animation](src/examples/animation)
+- animation, skinning, dynamic uniform buffers  
+![image](https://github.com/keechang-choi/Vulkan-Graphics-Example/assets/49244613/3dbcdfbf-a977-4924-969f-3087a8875882)
+
+
