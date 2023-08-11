@@ -120,7 +120,7 @@ void Texture::fromglTFImage(tinygltf::Image& gltfImage, std::string path,
     imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
 
   } else {
-    // TODO: loading texture using KTX format
+    // NOTE: loading texture using KTX format not yet added.
     assert(false && "failed: not yet implemented KTX format texture loading");
   }
   createSampler(device);
@@ -610,7 +610,7 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
   if (gltfNode.matrix.size() == 16) {
     newNode->matrix = glm::make_mat4x4(gltfNode.matrix.data());
     if (globalscale != 1.0f) {
-      // TODO: check why commented
+      // NOTE: scaling would be done outside of model.
       // newNode->matrix = glm::scale(newNode->matrix, glm::vec3(globalscale));
     }
   };

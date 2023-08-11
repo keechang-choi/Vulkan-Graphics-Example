@@ -116,7 +116,7 @@ struct Material {
   const vgeu::glTF::Texture* normalTexture = nullptr;
   const vgeu::glTF::Texture* occlusionTexture = nullptr;
   const vgeu::glTF::Texture* emissiveTexture = nullptr;
-  // TODO: check it used.
+  // NOTE: not yet used.
   const vgeu::glTF::Texture* specularGlossinessTexture = nullptr;
   const vgeu::glTF::Texture* diffuseTexture = nullptr;
 
@@ -153,7 +153,7 @@ struct Primitive {
 
 #define MAX_JOINT_MATRICES 64
 struct Mesh {
-  // TODO: unique_ptr or class itself
+  // NOTE: vector of Primitive class itself
   std::vector<Primitive> primitives;
   std::string name;
 
@@ -170,7 +170,6 @@ struct Mesh {
   Mesh(VmaAllocator allocator, glm::mat4 matrix, const uint32_t framesInFlight);
 };
 
-// TODO: skin
 struct Skin {
   std::string name;
   const Node* skeletonRoot = nullptr;
@@ -182,16 +181,16 @@ struct Skin {
 // node hierarchy is tree -> children can be unique_ptr
 // techically forest
 struct Node {
-  // TODO: raw ptr?
+  // NTOE: raw ptr. do not have ownership of parent node.
   const Node* parent = nullptr;
   uint32_t index;
-  // TODO: unqiue_ptr since tree structure.
+  // NOTE: unqiue_ptr since nodes are in tree structure.
   std::vector<std::unique_ptr<Node>> children;
   glm::mat4 matrix;
   std::string name;
-  // TODO: unique_ptr
+  // NOTE: unique_ptr for lazy init.
   std::unique_ptr<Mesh> mesh;
-  // TODO: skin, check ptr necessary.
+  // NOTE: raw ptr. skin ownerships are on the Model with skins.
   const Skin* skin = nullptr;
   int32_t skinIndex = -1;
   glm::vec3 translation{};
@@ -202,11 +201,10 @@ struct Node {
   void update(const uint32_t frameIndex, bool isBindPose = false);
 };
 
-// TODO: animation
 struct AnimationChannel {
   enum class PathType { kTranslation, kRotation, kScale };
   PathType path;
-  // changes node matrix
+  // changes node matrix, so not const
   Node* node;
   uint32_t samplerIndex;
 };
@@ -257,7 +255,7 @@ struct Vertex {
   getInputAttributeDescriptions(uint32_t binding,
                                 const std::vector<VertexComponent>& components);
 
-  // TODO: check pointer and static members necessary
+  // NOTE: returns thread_local vertex input state.
   static vk::PipelineVertexInputStateCreateInfo getPipelineVertexInputState(
       const std::vector<VertexComponent>& components);
 };
@@ -300,10 +298,9 @@ class Model {
   void updateAnimation(const uint32_t frameIndex, const int Animationindex,
                        const float time, const bool repeat = false);
   Dimensions getDimensions() const { return dimensions; };
-  // TODO: update animation
 
-  // TODO: moved from globals to model class member.
-  // check any problems
+  // NOTE: moved from globals to model class member.
+  // TODO: all models should share those values, better to move it out of model
   vk::raii::DescriptorSetLayout descriptorSetLayoutImage = nullptr;
   vk::raii::DescriptorSetLayout descriptorSetLayoutUbo = nullptr;
   // TODO: check instead usageFlags, for raytracing related
@@ -324,10 +321,8 @@ class Model {
   void loadNode(Node* parent, const tinygltf::Node& node, uint32_t nodeIndex,
                 const tinygltf::Model& model, std::vector<uint32_t>& indices,
                 std::vector<Vertex>& vertices, float globalscale);
-  // TODO: skins
   void loadSkins(const tinygltf::Model& gltfModel);
 
-  // TODO: animation
   void loadAnimations(const tinygltf::Model& gltfModel);
 
   const Texture* getTexture(uint32_t index) const;
@@ -352,26 +347,25 @@ class Model {
   std::unique_ptr<VgeuBuffer> vertexBuffer;
   std::unique_ptr<VgeuBuffer> indexBuffer;
 
-  // TODO: takes ownership since thoese are root nodes of each tree.
+  // NOTE: takes ownership since thoese are root nodes of each tree.
   // unique_ptr
   std::vector<std::unique_ptr<Node>> nodes;
   // all nodes without ownership
   std::vector<Node*> linearNodes;
 
-  // TODO: skin, unique_ptr?
   std::vector<Skin> skins;
 
+  // NOTE: unique_ptr or class itself, it doesn't matter
+  // since those class are safe to be moved. (by default move constructor)
   std::vector<std::unique_ptr<Texture>> textures;
-  // TODO: unique_ptr?
   std::vector<Material> materials;
 
-  // TODO: animation
   std::vector<Animation> animations;
 
   Dimensions dimensions;
 
   std::unique_ptr<Texture> emptyTexture;
-  // TOOD: check it to be private right.
+  // NOTE: not test yet.
   bool metallicRoughnessWorkflow = true;
   bool buffersBound = false;
   std::string path;

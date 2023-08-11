@@ -25,7 +25,7 @@ void VgeExample::initVulkan() {
       glm::radians(60.f),
       static_cast<float>(width) / (static_cast<float>(height) / 2.f), 0.1f,
       256.f);
-  // TODO: check coordinate space
+  // NOTE: coordinate space in world
   globalUbo.lightPos = glm::vec4(20.f, -10.f, -10.f, 0.f);
   VgeBase::initVulkan();
 }
@@ -526,6 +526,7 @@ void VgeExample::buildCommandBuffers() {
     drawCmdBuffers[currentFrameIndex].bindPipeline(
         vk::PipelineBindPoint::eGraphics, *pipelines.phong);
 
+    // draw all instances including model based and bones.
     for (size_t instanceIdx = 0; instanceIdx < modelInstances.size();
          instanceIdx++) {
       const auto& modelInstance = modelInstances[instanceIdx];
@@ -598,11 +599,6 @@ void VgeExample::viewChanged() {
   camera.setAspectRatio(static_cast<float>(width) /
                         (static_cast<float>(height) / 2.f));
   // NOTE: moved updating ubo into render() to use frameindex.
-}
-
-void VgeExample::drawSkeleton() {
-  // uniforms?
-  // TODO: decide use how many uniform buffers.
 }
 
 size_t VgeExample::padUniformBufferSize(size_t originalSize) {

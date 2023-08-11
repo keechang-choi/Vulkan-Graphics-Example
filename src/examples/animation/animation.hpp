@@ -48,7 +48,6 @@ class VgeExample : public VgeBase {
   void createDescriptorSets();
   void createPipelines();
   void draw();
-  void drawSkeleton();
   void buildCommandBuffers();
   void viewChanged();
   void setupDynamicUbo();
