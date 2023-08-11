@@ -99,7 +99,7 @@ struct Texture {
                           const vk::raii::CommandPool& commandPool);
   // NOTE: use mipLevels
   void createSampler(const vk::raii::Device& device);
-  // TODO: use end of fromglTFImage()
+  // NOTE: used at the end of fromglTFImage()
   void updateDescriptorInfo();
 };
 
@@ -154,7 +154,7 @@ struct Primitive {
 #define MAX_JOINT_MATRICES 64
 struct Mesh {
   // TODO: unique_ptr or class itself
-  std::vector<std::unique_ptr<Primitive>> primitives;
+  std::vector<Primitive> primitives;
   std::string name;
 
   // NOTE: for skinning, update ubos each frame

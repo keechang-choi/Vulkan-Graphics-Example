@@ -286,14 +286,11 @@ void Model::loadFromFile(std::string filename,
              scale);
   }
   if (gltfModel.animations.size() > 0) {
-    // TODO:
     loadAnimations(gltfModel);
   }
-  // TODO:
   loadSkins(gltfModel);
 
   for (auto node : linearNodes) {
-    // TODO:
     // Assign skins
     if (node->skinIndex > -1) {
       node->skin = &skins[node->skinIndex];
@@ -322,8 +319,8 @@ void Model::loadFromFile(std::string filename,
       }
       const glm::mat4 localMatrix = node->getMatrix();
       for (const auto& primitive : node->mesh->primitives) {
-        for (uint32_t i = 0; i < primitive->vertexCount; i++) {
-          Vertex& vertex = vertices[primitive->firstVertex + i];
+        for (uint32_t i = 0; i < primitive.vertexCount; i++) {
+          Vertex& vertex = vertices[primitive.firstVertex + i];
           // Pre-transform vertex positions by node-hierarchy
           if (preTransform) {
             vertex.pos = glm::vec3(localMatrix * glm::vec4(vertex.pos, 1.0f));
@@ -338,7 +335,7 @@ void Model::loadFromFile(std::string filename,
           }
           // Pre-Multiply vertex colors with material base color
           if (preMultiplyColor) {
-            vertex.color = primitive->material.baseColorFactor * vertex.color;
+            vertex.color = primitive.material.baseColorFactor * vertex.color;
           }
         }
       }
@@ -726,7 +723,7 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
 
         // Skinning
         // Joints
-        // TODO: joint type not fixed
+        // NOTE: joint attribute component type
         // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#skinned-mesh-attributes
         if (gltfPrimitive.attributes.find("JOINTS_0") !=
             gltfPrimitive.attributes.end()) {
@@ -752,12 +749,12 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
           }
         }
 
-        // TODO: support other component types
         if (gltfPrimitive.attributes.find("WEIGHTS_0") !=
             gltfPrimitive.attributes.end()) {
           const tinygltf::Accessor& weightAccessor =
               gltfModel.accessors[gltfPrimitive.attributes.find("WEIGHTS_0")
                                       ->second];
+          // NOTE: only float type weight supported now.
           assert(weightAccessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
           const tinygltf::BufferView& weightView =
               gltfModel.bufferViews[weightAccessor.bufferView];
@@ -843,8 +840,7 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
             break;
           }
           case TINYGLTF_PARAMETER_TYPE_UNSIGNED_SHORT: {
-            // TODO: use one style for consistency
-            // both below memcpy checked but, vector insert raise errors
+            // NOTE: use memcpy since POD type.
             // uint16_t* buf = new uint16_t[accessor.count];
             std::vector<uint16_t> buf(accessor.count);
             std::memcpy(
@@ -876,16 +872,14 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
         }
       }
 
-      newNode->mesh->primitives.push_back(std::make_unique<Primitive>(
+      Primitive& newPrimitive = newNode->mesh->primitives.emplace_back(
           indexStart, indexCount,
           gltfPrimitive.material > -1 ? materials[gltfPrimitive.material]
-                                      : materials.back()));
+                                      : materials.back());
 
-      std::unique_ptr<Primitive>& newPrimitive =
-          newNode->mesh->primitives.back();
-      newPrimitive->firstVertex = vertexStart;
-      newPrimitive->vertexCount = vertexCount;
-      newPrimitive->setDimensions(posMin, posMax);
+      newPrimitive.firstVertex = vertexStart;
+      newPrimitive.vertexCount = vertexCount;
+      newPrimitive.setDimensions(posMin, posMax);
     }
   }
   linearNodes.push_back(newNode.get());
@@ -1086,7 +1080,7 @@ void Model::drawNode(const uint32_t frameIndex, const Node* node,
   if (node->mesh) {
     for (const auto& primitive : node->mesh->primitives) {
       bool skip = false;
-      const Material& material = primitive->material;
+      const Material& material = primitive.material;
       if (renderFlags & RenderFlagBits::kRenderOpaqueNodes) {
         skip = (material.alphaMode != Material::AlphaMode::kALPHAMODE_OPAQUE);
       }
@@ -1109,11 +1103,11 @@ void Model::drawNode(const uint32_t frameIndex, const Node* node,
                                        pipelineLayout, bindImageSet,
                                        *material.descriptorSet, nullptr);
         }
-        if (primitive->indexCount > 0) {
-          cmdBuffer.drawIndexed(primitive->indexCount, 1, primitive->firstIndex,
+        if (primitive.indexCount > 0) {
+          cmdBuffer.drawIndexed(primitive.indexCount, 1, primitive.firstIndex,
                                 0, 0);
         } else {
-          cmdBuffer.draw(primitive->vertexCount, 1, primitive->firstVertex, 0);
+          cmdBuffer.draw(primitive.vertexCount, 1, primitive.firstVertex, 0);
         }
       }
     }
@@ -1141,7 +1135,7 @@ void Model::prepareNodeDescriptor(
     vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
                                             *descriptorSetLayout);
     for (size_t i = 0; i < framesInFlight; i++) {
-      // TODO: improve not initialized descriptorSets
+      // NTOE: descriptorSets initialized here
       node->mesh->descriptorSets.push_back(
           std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
       vk::DescriptorBufferInfo descriptorInfo =
@@ -1163,9 +1157,9 @@ void Model::getNodeDimensions(const Node* node, glm::vec3& min,
   if (node->mesh) {
     for (const auto& primitive : node->mesh->primitives) {
       glm::vec4 locMin =
-          glm::vec4(primitive->dimensions.min, 1.0f) * node->getMatrix();
+          glm::vec4(primitive.dimensions.min, 1.0f) * node->getMatrix();
       glm::vec4 locMax =
-          glm::vec4(primitive->dimensions.max, 1.0f) * node->getMatrix();
+          glm::vec4(primitive.dimensions.max, 1.0f) * node->getMatrix();
       if (locMin.x < min.x) {
         min.x = locMin.x;
       }
@@ -1237,7 +1231,7 @@ void Material::createDescriptorSet(
   descriptorSet =
       std::move(vk::raii::DescriptorSets(device, allocInfo).front());
 
-  // TODO: check unused.
+  // NOTE: descriptorInfos not used now.
   std::vector<vk::DescriptorImageInfo> descriptorInfos{};
   std::vector<vk::WriteDescriptorSet> writeDescriptorSets{};
   // writeDescriptorSets.reserve(2);
