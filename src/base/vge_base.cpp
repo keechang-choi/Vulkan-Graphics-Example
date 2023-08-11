@@ -234,7 +234,6 @@ void VgeBase::windowResize() {
       device, renderPass, swapChainData->imageViews,
       &depthStencil->getImageView(), swapChainData->swapChainExtent);
 
-  // TODO: UI overlay resize
   if (width > 0 && height > 0) {
     if (settings.overlay) {
       uiOverlay->resize(width, height);

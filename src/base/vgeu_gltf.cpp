@@ -6,6 +6,8 @@
 #include "vgeu_utils.hpp"
 
 // std
+#include <algorithm>
+#include <cmath>
 #include <stdexcept>
 
 namespace {
@@ -118,7 +120,7 @@ void Texture::fromglTFImage(tinygltf::Image& gltfImage, std::string path,
     imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
 
   } else {
-    // TODO: loading texture using KTX format
+    // NOTE: loading texture using KTX format not yet added.
     assert(false && "failed: not yet implemented KTX format texture loading");
   }
   createSampler(device);
@@ -238,11 +240,13 @@ void Texture::updateDescriptorInfo() {
 }
 Model::Model(const vk::raii::Device& device, VmaAllocator allocator,
              const vk::raii::Queue& transferQueue,
-             const vk::raii::CommandPool& commandPool)
+             const vk::raii::CommandPool& commandPool,
+             const uint32_t framesInFlight)
     : device(device),
       allocator(allocator),
       transferQueue(transferQueue),
-      commandPool(commandPool) {}
+      commandPool(commandPool),
+      framesInFlight{framesInFlight} {}
 
 Model::~Model() {}
 
@@ -282,21 +286,20 @@ void Model::loadFromFile(std::string filename,
              scale);
   }
   if (gltfModel.animations.size() > 0) {
-    // TODO:
-    // loadAnimations(gltfModel);
+    loadAnimations(gltfModel);
   }
-  // TODO:
-  // loadSkins(gltfModel);
+  loadSkins(gltfModel);
 
   for (auto node : linearNodes) {
-    // TODO:
     // Assign skins
-    // if (node->skinIndex > -1) {
-    //   node->skin = skins[node->skinIndex];
-    // }
-    // Initial pose
-    if (node->mesh) {
-      node->update();
+    if (node->skinIndex > -1) {
+      node->skin = &skins[node->skinIndex];
+    }
+  }
+  // Initial pose ?
+  for (size_t i = 0; i < framesInFlight; i++) {
+    for (const auto& node : nodes) {
+      node->update(i, true);
     }
   }
 
@@ -316,13 +319,14 @@ void Model::loadFromFile(std::string filename,
       }
       const glm::mat4 localMatrix = node->getMatrix();
       for (const auto& primitive : node->mesh->primitives) {
-        for (uint32_t i = 0; i < primitive->vertexCount; i++) {
-          Vertex& vertex = vertices[primitive->firstVertex + i];
+        for (uint32_t i = 0; i < primitive.vertexCount; i++) {
+          Vertex& vertex = vertices[primitive.firstVertex + i];
           // Pre-transform vertex positions by node-hierarchy
           if (preTransform) {
             vertex.pos = glm::vec3(localMatrix * glm::vec4(vertex.pos, 1.0f));
-            vertex.normal =
-                glm::normalize(glm::mat3(localMatrix) * vertex.normal);
+            vertex.normal = glm::normalize(
+                glm::mat3(glm::inverse(glm::transpose(localMatrix))) *
+                vertex.normal);
           }
           // Flip Y-Axis of vertex positions
           if (flipY) {
@@ -331,7 +335,7 @@ void Model::loadFromFile(std::string filename,
           }
           // Pre-Multiply vertex colors with material base color
           if (preMultiplyColor) {
-            vertex.color = primitive->material.baseColorFactor * vertex.color;
+            vertex.color = primitive.material.baseColorFactor * vertex.color;
           }
         }
       }
@@ -368,25 +372,27 @@ void Model::loadFromFile(std::string filename,
         VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
             VMA_ALLOCATION_CREATE_MAPPED_BIT);
 
-    // index buffer
-    assert(indices.size() > 0);
-    vgeu::VgeuBuffer indexStagingBuffer(
-        allocator, sizeof(uint32_t), static_cast<uint32_t>(indices.size()),
-        vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_AUTO,
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-            VMA_ALLOCATION_CREATE_MAPPED_BIT);
+    // index buffer may be empty
+    std::unique_ptr<vgeu::VgeuBuffer> indexStagingBuffer;
+    if (indices.size() > 0) {
+      indexStagingBuffer = std::make_unique<vgeu::VgeuBuffer>(
+          allocator, sizeof(uint32_t), static_cast<uint32_t>(indices.size()),
+          vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_AUTO,
+          VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+              VMA_ALLOCATION_CREATE_MAPPED_BIT);
 
-    std::memcpy(indexStagingBuffer.getMappedData(), indices.data(),
-                indexStagingBuffer.getBufferSize());
+      std::memcpy(indexStagingBuffer->getMappedData(), indices.data(),
+                  indexStagingBuffer->getBufferSize());
 
-    indexBuffer = std::make_unique<vgeu::VgeuBuffer>(
-        allocator, sizeof(uint32_t), static_cast<uint32_t>(indices.size()),
-        (vk::BufferUsageFlagBits::eIndexBuffer |
-         vk::BufferUsageFlagBits::eTransferDst) |
-            additionalBufferUsageFlags,
-        VMA_MEMORY_USAGE_AUTO,
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-            VMA_ALLOCATION_CREATE_MAPPED_BIT);
+      indexBuffer = std::make_unique<vgeu::VgeuBuffer>(
+          allocator, sizeof(uint32_t), static_cast<uint32_t>(indices.size()),
+          (vk::BufferUsageFlagBits::eIndexBuffer |
+           vk::BufferUsageFlagBits::eTransferDst) |
+              additionalBufferUsageFlags,
+          VMA_MEMORY_USAGE_AUTO,
+          VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+              VMA_ALLOCATION_CREATE_MAPPED_BIT);
+    }
 
     // single Time command copy both buffers
     vgeu::oneTimeSubmit(
@@ -395,9 +401,11 @@ void Model::loadFromFile(std::string filename,
           cmdBuffer.copyBuffer(
               vertexStagingBuffer.getBuffer(), vertexBuffer->getBuffer(),
               vk::BufferCopy(0, 0, vertexStagingBuffer.getBufferSize()));
-          cmdBuffer.copyBuffer(
-              indexStagingBuffer.getBuffer(), indexBuffer->getBuffer(),
-              vk::BufferCopy(0, 0, indexStagingBuffer.getBufferSize()));
+          if (indexStagingBuffer.get()) {
+            cmdBuffer.copyBuffer(
+                indexStagingBuffer->getBuffer(), indexBuffer->getBuffer(),
+                vk::BufferCopy(0, 0, indexStagingBuffer->getBufferSize()));
+          }
         });
   }
   setSceneDimensions();
@@ -417,7 +425,8 @@ void Model::loadFromFile(std::string filename,
   }
 
   std::vector<vk::DescriptorPoolSize> poolSizes;
-  poolSizes.emplace_back(vk::DescriptorType::eUniformBuffer, uboCount);
+  poolSizes.emplace_back(vk::DescriptorType::eUniformBuffer,
+                         uboCount * framesInFlight);
 
   if (imageCount > 0) {
     if (descriptorBindingFlags & DescriptorBindingFlagBits::kImageBaseColor) {
@@ -434,7 +443,7 @@ void Model::loadFromFile(std::string filename,
   // one DescriptorSet of material may contain two textures (as binding).
   vk::DescriptorPoolCreateInfo descriptorPoolCI(
       vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-      uboCount + imageCount, poolSizes);
+      uboCount * framesInFlight + imageCount, poolSizes);
   descriptorPool = vk::raii::DescriptorPool(device, descriptorPoolCI);
 
   // Descriptors for per-node uniform buffers
@@ -498,58 +507,61 @@ void Model::loadImages(tinygltf::Model& gltfModel) {
       std::make_unique<Texture>(device, allocator, transferQueue, commandPool);
 }
 
-void Model::loadMaterials(tinygltf::Model& gltfModel) {
-  for (tinygltf::Material& mat : gltfModel.materials) {
+void Model::loadMaterials(const tinygltf::Model& gltfModel) {
+  for (const tinygltf::Material& mat : gltfModel.materials) {
     Material& material = materials.emplace_back();
     if (mat.values.find("baseColorTexture") != mat.values.end()) {
       material.baseColorTexture = getTexture(
-          gltfModel.textures[mat.values["baseColorTexture"].TextureIndex()]
+          gltfModel.textures[mat.values.at("baseColorTexture").TextureIndex()]
               .source);
     }
     // Metallic roughness workflow
     if (mat.values.find("metallicRoughnessTexture") != mat.values.end()) {
-      material.metallicRoughnessTexture = getTexture(
-          gltfModel
-              .textures[mat.values["metallicRoughnessTexture"].TextureIndex()]
-              .source);
+      material.metallicRoughnessTexture =
+          getTexture(gltfModel
+                         .textures[mat.values.at("metallicRoughnessTexture")
+                                       .TextureIndex()]
+                         .source);
     }
     if (mat.values.find("roughnessFactor") != mat.values.end()) {
       material.roughnessFactor =
-          static_cast<float>(mat.values["roughnessFactor"].Factor());
+          static_cast<float>(mat.values.at("roughnessFactor").Factor());
     }
     if (mat.values.find("metallicFactor") != mat.values.end()) {
       material.metallicFactor =
-          static_cast<float>(mat.values["metallicFactor"].Factor());
+          static_cast<float>(mat.values.at("metallicFactor").Factor());
     }
     if (mat.values.find("baseColorFactor") != mat.values.end()) {
       material.baseColorFactor =
-          glm::make_vec4(mat.values["baseColorFactor"].ColorFactor().data());
+          glm::make_vec4(mat.values.at("baseColorFactor").ColorFactor().data());
     }
     if (mat.additionalValues.find("normalTexture") !=
         mat.additionalValues.end()) {
       material.normalTexture = getTexture(
           gltfModel
-              .textures[mat.additionalValues["normalTexture"].TextureIndex()]
+              .textures[mat.additionalValues.at("normalTexture").TextureIndex()]
               .source);
     } else {
       material.normalTexture = emptyTexture.get();
     }
     if (mat.additionalValues.find("emissiveTexture") !=
         mat.additionalValues.end()) {
-      material.emissiveTexture = getTexture(
-          gltfModel
-              .textures[mat.additionalValues["emissiveTexture"].TextureIndex()]
-              .source);
+      material.emissiveTexture =
+          getTexture(gltfModel
+                         .textures[mat.additionalValues.at("emissiveTexture")
+                                       .TextureIndex()]
+                         .source);
     }
     if (mat.additionalValues.find("occlusionTexture") !=
         mat.additionalValues.end()) {
-      material.occlusionTexture = getTexture(
-          gltfModel
-              .textures[mat.additionalValues["occlusionTexture"].TextureIndex()]
-              .source);
+      material.occlusionTexture =
+          getTexture(gltfModel
+                         .textures[mat.additionalValues.at("occlusionTexture")
+                                       .TextureIndex()]
+                         .source);
     }
     if (mat.additionalValues.find("alphaMode") != mat.additionalValues.end()) {
-      tinygltf::Parameter param = mat.additionalValues["alphaMode"];
+      tinygltf::Parameter param = mat.additionalValues.at("alphaMode");
       if (param.string_value == "BLEND") {
         material.alphaMode = Material::AlphaMode::kALPHAMODE_BLEND;
       }
@@ -560,12 +572,12 @@ void Model::loadMaterials(tinygltf::Model& gltfModel) {
     if (mat.additionalValues.find("alphaCutoff") !=
         mat.additionalValues.end()) {
       material.alphaCutoff =
-          static_cast<float>(mat.additionalValues["alphaCutoff"].Factor());
+          static_cast<float>(mat.additionalValues.at("alphaCutoff").Factor());
     }
   }
   // Push a default material at the end of the list for meshes with no material
   // assigned
-  materials.emplace_back();
+  materials.emplace_back().baseColorTexture = emptyTexture.get();
 }
 void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
                      uint32_t nodeIndex, const tinygltf::Model& gltfModel,
@@ -598,7 +610,7 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
   if (gltfNode.matrix.size() == 16) {
     newNode->matrix = glm::make_mat4x4(gltfNode.matrix.data());
     if (globalscale != 1.0f) {
-      // TODO: check why commented
+      // NOTE: scaling would be done outside of model.
       // newNode->matrix = glm::scale(newNode->matrix, glm::vec3(globalscale));
     }
   };
@@ -614,13 +626,12 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
   // Node contains mesh data
   if (gltfNode.mesh > -1) {
     const tinygltf::Mesh gltfMesh = gltfModel.meshes[gltfNode.mesh];
-    newNode->mesh = std::make_unique<Mesh>(allocator, newNode->matrix);
+    newNode->mesh =
+        std::make_unique<Mesh>(allocator, newNode->matrix, framesInFlight);
     newNode->mesh->name = gltfMesh.name;
     for (size_t j = 0; j < gltfMesh.primitives.size(); j++) {
       const tinygltf::Primitive& gltfPrimitive = gltfMesh.primitives[j];
-      if (gltfPrimitive.indices < 0) {
-        continue;
-      }
+
       uint32_t indexStart = static_cast<uint32_t>(indices.size());
       uint32_t vertexStart = static_cast<uint32_t>(vertices.size());
       uint32_t indexCount = 0;
@@ -636,7 +647,10 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
         const float* bufferColors = nullptr;
         const float* bufferTangents = nullptr;
         uint32_t numColorComponents;
-        const uint16_t* bufferJoints = nullptr;
+        // NOTE: lazy cast
+        const unsigned char* bufferJoints = nullptr;
+        uint32_t jointComponentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE;
+
         const float* bufferWeights = nullptr;
 
         // Position attribute is required
@@ -709,6 +723,8 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
 
         // Skinning
         // Joints
+        // NOTE: joint attribute component type
+        // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#skinned-mesh-attributes
         if (gltfPrimitive.attributes.find("JOINTS_0") !=
             gltfPrimitive.attributes.end()) {
           const tinygltf::Accessor& jointAccessor =
@@ -716,21 +732,35 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
                   .accessors[gltfPrimitive.attributes.find("JOINTS_0")->second];
           const tinygltf::BufferView& jointView =
               gltfModel.bufferViews[jointAccessor.bufferView];
-          bufferJoints = reinterpret_cast<const uint16_t*>(
+
+          bufferJoints =
               &(gltfModel.buffers[jointView.buffer]
-                    .data[jointAccessor.byteOffset + jointView.byteOffset]));
+                    .data[jointAccessor.byteOffset + jointView.byteOffset]);
+          switch (jointAccessor.componentType) {
+            case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE: {
+            }
+            case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT: {
+              jointComponentType = jointAccessor.componentType;
+              break;
+            }
+            default: {
+              assert(false && "failed to load joint buffer, component Type");
+            }
+          }
         }
 
         if (gltfPrimitive.attributes.find("WEIGHTS_0") !=
             gltfPrimitive.attributes.end()) {
-          const tinygltf::Accessor& uvAccessor =
+          const tinygltf::Accessor& weightAccessor =
               gltfModel.accessors[gltfPrimitive.attributes.find("WEIGHTS_0")
                                       ->second];
-          const tinygltf::BufferView& uvView =
-              gltfModel.bufferViews[uvAccessor.bufferView];
+          // NOTE: only float type weight supported now.
+          assert(weightAccessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+          const tinygltf::BufferView& weightView =
+              gltfModel.bufferViews[weightAccessor.bufferView];
           bufferWeights = reinterpret_cast<const float*>(
-              &(gltfModel.buffers[uvView.buffer]
-                    .data[uvAccessor.byteOffset + uvView.byteOffset]));
+              &(gltfModel.buffers[weightView.buffer]
+                    .data[weightAccessor.byteOffset + weightView.byteOffset]));
         }
 
         hasSkin = (bufferJoints && bufferWeights);
@@ -759,16 +789,36 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
           vert.tangent = bufferTangents
                              ? glm::vec4(glm::make_vec4(&bufferTangents[v * 4]))
                              : glm::vec4(0.0f);
-          vert.joint0 = hasSkin
-                            ? glm::vec4(glm::make_vec4(&bufferJoints[v * 4]))
-                            : glm::vec4(0.0f);
+          if (hasSkin) {
+            if (jointComponentType == TINYGLTF_PARAMETER_TYPE_UNSIGNED_SHORT) {
+              vert.joint0 = glm::vec4(glm::make_vec4(
+                  &reinterpret_cast<const uint16_t*>(bufferJoints)[v * 4]));
+            } else {
+              // default byte -> uint8_t
+              vert.joint0 = glm::vec4(glm::make_vec4(&bufferJoints[v * 4]));
+            }
+          } else {
+            vert.joint0 = glm::vec4(0.0f);
+          }
+
           vert.weight0 =
               hasSkin ? glm::make_vec4(&bufferWeights[v * 4]) : glm::vec4(0.0f);
           vertices.push_back(vert);
         }
+        // for empty normal attribute
+        if (!bufferNormals) {
+          for (size_t i = 0; i < vertices.size() / 3; i++) {
+            glm::vec3 pos0(vertices[i * 3].pos);
+            glm::vec3 pos1(vertices[i * 3 + 1].pos);
+            glm::vec3 pos2(vertices[i * 3 + 2].pos);
+            vertices[i * 3].normal = glm::cross(pos1 - pos0, pos2 - pos1);
+            vertices[i * 3 + 1].normal = glm::cross(pos1 - pos0, pos2 - pos1);
+            vertices[i * 3 + 2].normal = glm::cross(pos1 - pos0, pos2 - pos1);
+          }
+        }
       }
       // Indices
-      {
+      if (gltfPrimitive.indices >= 0) {
         const tinygltf::Accessor& accessor =
             gltfModel.accessors[gltfPrimitive.indices];
         const tinygltf::BufferView& bufferView =
@@ -779,36 +829,40 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
 
         switch (accessor.componentType) {
           case TINYGLTF_PARAMETER_TYPE_UNSIGNED_INT: {
-            uint32_t* buf = new uint32_t[accessor.count];
-            memcpy(buf,
-                   &buffer.data[accessor.byteOffset + bufferView.byteOffset],
-                   accessor.count * sizeof(uint32_t));
+            std::vector<uint32_t> buf(accessor.count);
+            std::memcpy(
+                buf.data(),
+                &buffer.data[accessor.byteOffset + bufferView.byteOffset],
+                accessor.count * sizeof(uint32_t));
             for (size_t index = 0; index < accessor.count; index++) {
               indices.push_back(buf[index] + vertexStart);
             }
-            delete[] buf;
             break;
           }
           case TINYGLTF_PARAMETER_TYPE_UNSIGNED_SHORT: {
-            uint16_t* buf = new uint16_t[accessor.count];
-            memcpy(buf,
-                   &buffer.data[accessor.byteOffset + bufferView.byteOffset],
-                   accessor.count * sizeof(uint16_t));
+            // NOTE: use memcpy since POD type.
+            // uint16_t* buf = new uint16_t[accessor.count];
+            std::vector<uint16_t> buf(accessor.count);
+            std::memcpy(
+                buf.data(),
+                &buffer.data[accessor.byteOffset + bufferView.byteOffset],
+                accessor.count * sizeof(uint16_t));
+
             for (size_t index = 0; index < accessor.count; index++) {
               indices.push_back(buf[index] + vertexStart);
             }
-            delete[] buf;
+            // delete[] buf;
             break;
           }
           case TINYGLTF_PARAMETER_TYPE_UNSIGNED_BYTE: {
-            uint8_t* buf = new uint8_t[accessor.count];
-            memcpy(buf,
-                   &buffer.data[accessor.byteOffset + bufferView.byteOffset],
-                   accessor.count * sizeof(uint8_t));
+            std::vector<uint8_t> buf(accessor.count);
+            std::memcpy(
+                buf.data(),
+                &buffer.data[accessor.byteOffset + bufferView.byteOffset],
+                accessor.count * sizeof(uint8_t));
             for (size_t index = 0; index < accessor.count; index++) {
               indices.push_back(buf[index] + vertexStart);
             }
-            delete[] buf;
             break;
           }
           default:
@@ -818,16 +872,14 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
         }
       }
 
-      newNode->mesh->primitives.push_back(std::make_unique<Primitive>(
+      Primitive& newPrimitive = newNode->mesh->primitives.emplace_back(
           indexStart, indexCount,
           gltfPrimitive.material > -1 ? materials[gltfPrimitive.material]
-                                      : materials.back()));
+                                      : materials.back());
 
-      std::unique_ptr<Primitive>& newPrimitive =
-          newNode->mesh->primitives.back();
-      newPrimitive->firstVertex = vertexStart;
-      newPrimitive->vertexCount = vertexCount;
-      newPrimitive->setDimensions(posMin, posMax);
+      newPrimitive.firstVertex = vertexStart;
+      newPrimitive.vertexCount = vertexCount;
+      newPrimitive.setDimensions(posMin, posMax);
     }
   }
   linearNodes.push_back(newNode.get());
@@ -845,24 +897,190 @@ const Texture* Model::getTexture(uint32_t index) const {
   return nullptr;
 }
 
-void Model::draw(const vk::raii::CommandBuffer& cmdBuffer,
+void Model::loadSkins(const tinygltf::Model& gltfModel) {
+  for (const tinygltf::Skin& source : gltfModel.skins) {
+    Skin& newSkin = skins.emplace_back();
+
+    newSkin.name = source.name;
+
+    // Find skeleton root node
+    if (source.skeleton > -1) {
+      newSkin.skeletonRoot = nodeFromIndex(source.skeleton);
+    }
+
+    // Find joint nodes
+    for (int jointIndex : source.joints) {
+      const Node* node = nodeFromIndex(jointIndex);
+      if (node) {
+        newSkin.joints.push_back(nodeFromIndex(jointIndex));
+      }
+    }
+
+    // Get inverse bind matrices from buffer
+    if (source.inverseBindMatrices > -1) {
+      const tinygltf::Accessor& accessor =
+          gltfModel.accessors[source.inverseBindMatrices];
+      const tinygltf::BufferView& bufferView =
+          gltfModel.bufferViews[accessor.bufferView];
+      const tinygltf::Buffer& buffer = gltfModel.buffers[bufferView.buffer];
+      newSkin.inverseBindMatrices.resize(accessor.count);
+      std::memcpy(newSkin.inverseBindMatrices.data(),
+                  &buffer.data[accessor.byteOffset + bufferView.byteOffset],
+                  accessor.count * sizeof(glm::mat4));
+    }
+  }
+}
+
+void Model::loadAnimations(const tinygltf::Model& gltfModel) {
+  for (const tinygltf::Animation& gltfAnim : gltfModel.animations) {
+    Animation animation{};
+    animation.name = gltfAnim.name;
+    if (gltfAnim.name.empty()) {
+      animation.name = std::to_string(animations.size());
+    }
+
+    // Samplers
+    for (const auto& gltfSamp : gltfAnim.samplers) {
+      AnimationSampler sampler{};
+
+      if (gltfSamp.interpolation == "LINEAR") {
+        sampler.interpolation = AnimationSampler::InterpolationType::kLinear;
+      }
+      if (gltfSamp.interpolation == "STEP") {
+        sampler.interpolation = AnimationSampler::InterpolationType::kStep;
+      }
+      if (gltfSamp.interpolation == "CUBICSPLINE") {
+        sampler.interpolation =
+            AnimationSampler::InterpolationType::kCubicSpline;
+      }
+
+      // Read sampler input time values
+      {
+        const tinygltf::Accessor& accessor =
+            gltfModel.accessors[gltfSamp.input];
+        const tinygltf::BufferView& bufferView =
+            gltfModel.bufferViews[accessor.bufferView];
+        const tinygltf::Buffer& buffer = gltfModel.buffers[bufferView.buffer];
+
+        assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+
+        {
+          std::vector<float> buf(accessor.count);
+          std::memcpy(buf.data(),
+                      &buffer.data[accessor.byteOffset + bufferView.byteOffset],
+                      accessor.count * sizeof(float));
+          for (size_t index = 0; index < accessor.count; index++) {
+            sampler.inputs.push_back(buf[index]);
+          }
+        }
+        for (auto input : sampler.inputs) {
+          if (input < animation.start) {
+            animation.start = input;
+          };
+          if (input > animation.end) {
+            animation.end = input;
+          }
+        }
+      }
+
+      // Read sampler output T/R/S values
+      {
+        const tinygltf::Accessor& accessor =
+            gltfModel.accessors[gltfSamp.output];
+        const tinygltf::BufferView& bufferView =
+            gltfModel.bufferViews[accessor.bufferView];
+        const tinygltf::Buffer& buffer = gltfModel.buffers[bufferView.buffer];
+
+        assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+
+        switch (accessor.type) {
+          case TINYGLTF_TYPE_VEC3: {
+            std::vector<glm::vec3> buf(accessor.count);
+            std::memcpy(
+                buf.data(),
+                &buffer.data[accessor.byteOffset + bufferView.byteOffset],
+                accessor.count * sizeof(glm::vec3));
+            for (size_t index = 0; index < accessor.count; index++) {
+              sampler.outputsVec4.push_back(glm::vec4(buf[index], 0.0f));
+            }
+            break;
+          }
+          case TINYGLTF_TYPE_VEC4: {
+            std::vector<glm::vec4> buf(accessor.count);
+            std::memcpy(
+                buf.data(),
+                &buffer.data[accessor.byteOffset + bufferView.byteOffset],
+                accessor.count * sizeof(glm::vec4));
+            for (size_t index = 0; index < accessor.count; index++) {
+              sampler.outputsVec4.push_back(buf[index]);
+            }
+            break;
+          }
+          default: {
+            std::cout << "unknown type" << std::endl;
+            assert(false && "failed to load animation sampler");
+            break;
+          }
+        }
+      }
+
+      animation.samplers.push_back(sampler);
+    }
+
+    // Channels
+    for (auto& source : gltfAnim.channels) {
+      AnimationChannel channel{};
+
+      if (source.target_path == "rotation") {
+        channel.path = AnimationChannel::PathType::kRotation;
+      }
+      if (source.target_path == "translation") {
+        channel.path = AnimationChannel::PathType::kTranslation;
+      }
+      if (source.target_path == "scale") {
+        channel.path = AnimationChannel::PathType::kScale;
+      }
+      if (source.target_path == "weights") {
+        std::cout << "weights not yet supported, skipping channel" << std::endl;
+        assert(false && "failed to load animation channel");
+        continue;
+      }
+      channel.samplerIndex = source.sampler;
+      channel.node = nodeFromIndex(source.target_node);
+      if (!channel.node) {
+        assert(false && "failed to find node in animation channel loading");
+        continue;
+      }
+
+      animation.channels.push_back(channel);
+    }
+
+    animations.push_back(animation);
+  }
+}
+
+void Model::draw(const uint32_t frameIndex,
+                 const vk::raii::CommandBuffer& cmdBuffer,
                  RenderFlags renderFlags, vk::PipelineLayout pipelineLayout,
-                 uint32_t bindImageSet) {
+                 uint32_t bindImageSet, int bindSkinSet) {
+  assert(frameIndex < framesInFlight);
   if (!buffersBound) {
     bindBuffers(cmdBuffer);
   }
   for (const auto& node : nodes) {
-    drawNode(node.get(), cmdBuffer, renderFlags, pipelineLayout, bindImageSet);
+    drawNode(frameIndex, node.get(), cmdBuffer, renderFlags, pipelineLayout,
+             bindImageSet, bindSkinSet);
   }
 }
 
-void Model::drawNode(const Node* node, const vk::raii::CommandBuffer& cmdBuffer,
+void Model::drawNode(const uint32_t frameIndex, const Node* node,
+                     const vk::raii::CommandBuffer& cmdBuffer,
                      RenderFlags renderFlags, vk::PipelineLayout pipelineLayout,
-                     uint32_t bindImageSet) {
+                     uint32_t bindImageSet, int bindSkinSet) {
   if (node->mesh) {
     for (const auto& primitive : node->mesh->primitives) {
       bool skip = false;
-      const Material& material = primitive->material;
+      const Material& material = primitive.material;
       if (renderFlags & RenderFlagBits::kRenderOpaqueNodes) {
         skip = (material.alphaMode != Material::AlphaMode::kALPHAMODE_OPAQUE);
       }
@@ -873,26 +1091,40 @@ void Model::drawNode(const Node* node, const vk::raii::CommandBuffer& cmdBuffer,
         skip = (material.alphaMode != Material::AlphaMode::kALPHAMODE_BLEND);
       }
       if (!skip) {
+        // bind mesh ubo when model has any skins
+        if (bindSkinSet != -1) {
+          cmdBuffer.bindDescriptorSets(
+              vk::PipelineBindPoint::eGraphics, pipelineLayout,
+              static_cast<uint32_t>(bindSkinSet),
+              *node->mesh->descriptorSets[frameIndex], nullptr);
+        }
         if (renderFlags & RenderFlagBits::kBindImages) {
           cmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
                                        pipelineLayout, bindImageSet,
                                        *material.descriptorSet, nullptr);
         }
-        cmdBuffer.drawIndexed(primitive->indexCount, 1, primitive->firstIndex,
-                              0, 0);
+        if (primitive.indexCount > 0) {
+          cmdBuffer.drawIndexed(primitive.indexCount, 1, primitive.firstIndex,
+                                0, 0);
+        } else {
+          cmdBuffer.draw(primitive.vertexCount, 1, primitive.firstVertex, 0);
+        }
       }
     }
   }
   for (const auto& child : node->children) {
-    drawNode(child.get(), cmdBuffer, renderFlags, pipelineLayout, bindImageSet);
+    drawNode(frameIndex, child.get(), cmdBuffer, renderFlags, pipelineLayout,
+             bindImageSet, bindSkinSet);
   }
 }
 
 void Model::bindBuffers(const vk::raii::CommandBuffer& cmdBuffer) {
   vk::DeviceSize offset(0);
   cmdBuffer.bindVertexBuffers(0, vertexBuffer->getBuffer(), offset);
-  cmdBuffer.bindIndexBuffer(indexBuffer->getBuffer(), 0,
-                            vk::IndexType::eUint32);
+  if (indexBuffer.get()) {
+    cmdBuffer.bindIndexBuffer(indexBuffer->getBuffer(), 0,
+                              vk::IndexType::eUint32);
+  }
   buffersBound = true;
 }
 
@@ -902,13 +1134,18 @@ void Model::prepareNodeDescriptor(
   if (node->mesh) {
     vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
                                             *descriptorSetLayout);
-    node->mesh->descriptorSet =
-        std::move(vk::raii::DescriptorSets(device, allocInfo).front());
-
-    vk::WriteDescriptorSet writeDescriptorSet(
-        *node->mesh->descriptorSet, 0, 0, vk::DescriptorType::eUniformBuffer,
-        nullptr, node->mesh->descriptorInfo);
-    device.updateDescriptorSets(writeDescriptorSet, nullptr);
+    for (size_t i = 0; i < framesInFlight; i++) {
+      // NTOE: descriptorSets initialized here
+      node->mesh->descriptorSets.push_back(
+          std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
+      vk::DescriptorBufferInfo descriptorInfo =
+          node->mesh->uniformBuffers[i]->descriptorInfo();
+      // NOTE: no temporaries for descriptorBufferInfo
+      vk::WriteDescriptorSet writeDescriptorSet(
+          *node->mesh->descriptorSets[i], 0, 0,
+          vk::DescriptorType::eUniformBuffer, nullptr, descriptorInfo);
+      device.updateDescriptorSets(writeDescriptorSet, nullptr);
+    }
   }
   for (const auto& child : node->children) {
     prepareNodeDescriptor(child.get(), descriptorSetLayout);
@@ -920,9 +1157,9 @@ void Model::getNodeDimensions(const Node* node, glm::vec3& min,
   if (node->mesh) {
     for (const auto& primitive : node->mesh->primitives) {
       glm::vec4 locMin =
-          glm::vec4(primitive->dimensions.min, 1.0f) * node->getMatrix();
+          glm::vec4(primitive.dimensions.min, 1.0f) * node->getMatrix();
       glm::vec4 locMax =
-          glm::vec4(primitive->dimensions.max, 1.0f) * node->getMatrix();
+          glm::vec4(primitive.dimensions.max, 1.0f) * node->getMatrix();
       if (locMin.x < min.x) {
         min.x = locMin.x;
       }
@@ -959,8 +1196,8 @@ void Model::setSceneDimensions() {
   dimensions.radius = glm::distance(dimensions.min, dimensions.max) / 2.0f;
 }
 
-const Node* Model::findNode(const Node* parent, uint32_t index) const {
-  const Node* nodeFound = nullptr;
+Node* Model::findNode(Node* parent, uint32_t index) const {
+  Node* nodeFound = nullptr;
   if (parent->index == index) {
     return parent;
   }
@@ -973,8 +1210,8 @@ const Node* Model::findNode(const Node* parent, uint32_t index) const {
   return nodeFound;
 }
 
-const Node* Model::nodeFromIndex(uint32_t index) const {
-  const Node* nodeFound = nullptr;
+Node* Model::nodeFromIndex(uint32_t index) const {
+  Node* nodeFound = nullptr;
   for (const auto& node : nodes) {
     nodeFound = findNode(node.get(), index);
     if (nodeFound) {
@@ -994,7 +1231,7 @@ void Material::createDescriptorSet(
   descriptorSet =
       std::move(vk::raii::DescriptorSets(device, allocInfo).front());
 
-  // TODO: check unused.
+  // NOTE: descriptorInfos not used now.
   std::vector<vk::DescriptorImageInfo> descriptorInfos{};
   std::vector<vk::WriteDescriptorSet> writeDescriptorSets{};
   // writeDescriptorSets.reserve(2);
@@ -1024,16 +1261,24 @@ void Primitive::setDimensions(glm::vec3 min, glm::vec3 max) {
   dimensions.radius = glm::distance(min, max) / 2.0f;
 }
 
-Mesh::Mesh(VmaAllocator allocator, glm::mat4 matrix) {
+Mesh::Mesh(VmaAllocator allocator, glm::mat4 matrix,
+           const uint32_t framesInFlight) {
   vk::BufferUsageFlags b = {};
   uniformBlock.matrix = matrix;
-  uniformBuffer = std::make_unique<vgeu::VgeuBuffer>(
-      allocator, sizeof(uniformBlock), 1,
-      vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_AUTO,
-      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-          VMA_ALLOCATION_CREATE_MAPPED_BIT |
-          VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
-  descriptorInfo = uniformBuffer->descriptorInfo();
+  // init joint matrices as id.
+  for (size_t i = 0; i < MAX_JOINT_MATRICES; i++) {
+    uniformBlock.jointMatrices[i] = glm::mat4{1.f};
+  }
+
+  uniformBuffers.reserve(framesInFlight);
+  for (size_t i = 0; i < framesInFlight; i++) {
+    uniformBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
+        allocator, sizeof(uniformBlock), 1,
+        vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT |
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT));
+  }
 }
 
 glm::mat4 Node::localMatrix() const {
@@ -1051,18 +1296,37 @@ glm::mat4 Node::getMatrix() const {
   return m;
 }
 
-void Node::update() {
+void Node::update(const uint32_t frameIndex, bool isBindPose) {
   if (mesh) {
+    assert(frameIndex < mesh->uniformBuffers.size());
     glm::mat4 m = getMatrix();
-    // TODO: skin
-    if (/*skin*/ false) {
+    if (skin) {
+      mesh->uniformBlock.matrix = m;
+      // Update join matrices
+      glm::mat4 inverseTransform = glm::inverse(m);
+      for (size_t i = 0; i < skin->joints.size(); i++) {
+        glm::mat4 jointMat{1.f};
+        if (!isBindPose) {
+          const Node* jointNode = skin->joints[i];
+          jointMat = jointNode->getMatrix() * skin->inverseBindMatrices[i];
+        }
+        jointMat = inverseTransform * jointMat;
+        mesh->uniformBlock.jointMatrices[i] = jointMat;
+        // std::cout << glm::to_string(jointMat) << std::endl;
+      }
+      mesh->uniformBlock.jointcount.x = static_cast<float>(skin->joints.size());
+      std::memcpy(mesh->uniformBuffers[frameIndex]->getMappedData(),
+                  &mesh->uniformBlock, sizeof(mesh->uniformBlock));
     } else {
-      memcpy(mesh->uniformBuffer->getMappedData(), &m, sizeof(glm::mat4));
+      Mesh::UniformBlock emptySkinUniformBlock;
+      emptySkinUniformBlock.matrix = m;
+      std::memcpy(mesh->uniformBuffers[frameIndex]->getMappedData(),
+                  &emptySkinUniformBlock, sizeof(emptySkinUniformBlock));
     }
   }
 
   for (auto& child : children) {
-    child->update();
+    child->update(frameIndex, isBindPose);
   }
 }
 
@@ -1134,6 +1398,101 @@ vk::PipelineVertexInputStateCreateInfo Vertex::getPipelineVertexInputState(
   return vk::PipelineVertexInputStateCreateInfo(
       vk::PipelineVertexInputStateCreateFlags{}, vertexInputeBindingDescription,
       vertexInputAttributeDescriptions);
+}
+
+void Model::getSkeletonMatrices(
+    std::vector<std::vector<glm::mat4>>& jointMatrices) const {
+  jointMatrices.clear();
+  jointMatrices.reserve(skins.size());
+  for (const auto& skin : skins) {
+    auto& jointMatricesEachSkin = jointMatrices.emplace_back();
+    jointMatricesEachSkin.reserve(skin.joints.size());
+    for (const auto node : skin.joints) {
+      jointMatricesEachSkin.push_back(node->getMatrix());
+    }
+  }
+}
+
+void Model::updateAnimation(const uint32_t frameIndex, const int Animationindex,
+                            const float time, const bool repeat) {
+  if (Animationindex < 0) {
+    return;
+  }
+  if (Animationindex > animations.size() - 1) {
+    std::cout << "No animation with index " << Animationindex << std::endl;
+    assert(false && "failed to update animation with the index");
+    return;
+  }
+  Animation& animation = animations[Animationindex];
+  bool updated = false;
+  for (auto& channel : animation.channels) {
+    AnimationSampler& sampler = animation.samplers[channel.samplerIndex];
+    if (sampler.inputs.size() > sampler.outputsVec4.size()) {
+      assert(false &&
+             "failed to update animation. more sampler inputs than outputs");
+      continue;
+    }
+    float samplerTime = time;
+    if (samplerTime > sampler.inputs.back()) {
+      if (repeat) {
+        samplerTime = std::fmod(samplerTime, sampler.inputs.back());
+      } else {
+        continue;
+      }
+    }
+
+    auto iter = std::upper_bound(sampler.inputs.begin(), sampler.inputs.end(),
+                                 samplerTime);
+    size_t samplerInputIndex = iter - sampler.inputs.begin();
+    if (samplerInputIndex == 0 || samplerInputIndex >= sampler.inputs.size()) {
+      continue;
+    }
+    size_t i = samplerInputIndex - 1;
+    assert(sampler.inputs[i + 1] > sampler.inputs[i]);
+    assert(samplerTime >= sampler.inputs[i] &&
+           samplerTime <= sampler.inputs[i + 1]);
+    float u = (samplerTime - sampler.inputs[i]) /
+              (sampler.inputs[i + 1] - sampler.inputs[i]);
+    switch (channel.path) {
+      case AnimationChannel::PathType::kTranslation: {
+        glm::vec4 trans =
+            glm::mix(sampler.outputsVec4[i], sampler.outputsVec4[i + 1], u);
+        channel.node->translation = glm::vec3(trans);
+        break;
+      }
+      case AnimationChannel::PathType::kScale: {
+        glm::vec4 trans =
+            glm::mix(sampler.outputsVec4[i], sampler.outputsVec4[i + 1], u);
+        channel.node->scale = glm::vec3(trans);
+        break;
+      }
+      case AnimationChannel::PathType::kRotation: {
+        glm::quat q1;
+        q1.x = sampler.outputsVec4[i].x;
+        q1.y = sampler.outputsVec4[i].y;
+        q1.z = sampler.outputsVec4[i].z;
+        q1.w = sampler.outputsVec4[i].w;
+        glm::quat q2;
+        q2.x = sampler.outputsVec4[i + 1].x;
+        q2.y = sampler.outputsVec4[i + 1].y;
+        q2.z = sampler.outputsVec4[i + 1].z;
+        q2.w = sampler.outputsVec4[i + 1].w;
+        channel.node->rotation = glm::normalize(glm::slerp(q1, q2, u));
+        break;
+      }
+      default: {
+        assert(false &&
+               "failed to update animation with the channel path type");
+        continue;
+      }
+    }
+    updated = true;
+  }
+  if (updated) {
+    for (auto& node : nodes) {
+      node->update(frameIndex);
+    }
+  }
 }
 
 }  // namespace glTF

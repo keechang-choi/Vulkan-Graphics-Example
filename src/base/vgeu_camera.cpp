@@ -84,7 +84,7 @@ void VgeuCamera::setViewTarget(glm::vec3 position, glm::vec3 target,
 
 // rotation: rad
 void VgeuCamera::setViewYXZ(glm::vec3 position, glm::vec3 rotation) {
-  // NOTE: column based
+  // NOTE: column based vector
   glm::mat4 rotationMatrix{1.0f};
   // Y
   rotationMatrix =

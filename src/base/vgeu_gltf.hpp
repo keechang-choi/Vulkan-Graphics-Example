@@ -17,6 +17,7 @@ https://github.com/SaschaWillems/Vulkan/blob/master/base/VulkanglTFModel.h
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
 //
@@ -98,7 +99,7 @@ struct Texture {
                           const vk::raii::CommandPool& commandPool);
   // NOTE: use mipLevels
   void createSampler(const vk::raii::Device& device);
-  // TODO: use end of fromglTFImage()
+  // NOTE: used at the end of fromglTFImage()
   void updateDescriptorInfo();
 };
 
@@ -115,7 +116,7 @@ struct Material {
   const vgeu::glTF::Texture* normalTexture = nullptr;
   const vgeu::glTF::Texture* occlusionTexture = nullptr;
   const vgeu::glTF::Texture* emissiveTexture = nullptr;
-  // TODO: check it used.
+  // NOTE: not yet used.
   const vgeu::glTF::Texture* specularGlossinessTexture = nullptr;
   const vgeu::glTF::Texture* diffuseTexture = nullptr;
 
@@ -141,61 +142,87 @@ struct Primitive {
   uint32_t indexCount;
   uint32_t firstVertex;
   uint32_t vertexCount;
-  Material& material;
+  const Material& material;
 
   Dimensions dimensions;
 
   void setDimensions(glm::vec3 min, glm::vec3 max);
-  Primitive(uint32_t firstIndex, uint32_t indexCount, Material& material)
+  Primitive(uint32_t firstIndex, uint32_t indexCount, const Material& material)
       : firstIndex(firstIndex), indexCount(indexCount), material(material){};
 };
 
+#define MAX_JOINT_MATRICES 64
 struct Mesh {
-  // TODO: unique_ptr or class itself
-  std::vector<std::unique_ptr<Primitive>> primitives;
+  // NOTE: vector of Primitive class itself
+  std::vector<Primitive> primitives;
   std::string name;
 
-  std::unique_ptr<VgeuBuffer> uniformBuffer;
-  vk::DescriptorBufferInfo descriptorInfo;
-  vk::raii::DescriptorSet descriptorSet = nullptr;
+  // NOTE: for skinning, update ubos each frame
+  // we need separate uniformBuffers and descriptorSets
+  std::vector<std::unique_ptr<VgeuBuffer>> uniformBuffers;
+  std::vector<vk::raii::DescriptorSet> descriptorSets;
   struct UniformBlock {
-    glm::mat4 matrix;
-    glm::mat4 jointMatrix[64]{};
-    float jointcount{0};
+    glm::mat4 matrix{1.f};
+    glm::mat4 jointMatrices[MAX_JOINT_MATRICES]{};
+    glm::vec4 jointcount{0.f};
   } uniformBlock;
 
-  Mesh(VmaAllocator allocator, glm::mat4 matrix);
+  Mesh(VmaAllocator allocator, glm::mat4 matrix, const uint32_t framesInFlight);
 };
 
-// TODO: skin
+struct Skin {
+  std::string name;
+  const Node* skeletonRoot = nullptr;
+  std::vector<glm::mat4> inverseBindMatrices;
+  std::vector<const Node*> joints;
+};
 
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#nodes-and-hierarchy
-// TODO: check nodes are used as DAG
-
 // node hierarchy is tree -> children can be unique_ptr
 // techically forest
 struct Node {
-  // TODO: raw ptr?
+  // NTOE: raw ptr. do not have ownership of parent node.
   const Node* parent = nullptr;
   uint32_t index;
-  // TODO: unqiue_ptr since tree structure.
+  // NOTE: unqiue_ptr since nodes are in tree structure.
   std::vector<std::unique_ptr<Node>> children;
   glm::mat4 matrix;
   std::string name;
-  // TODO: unique_ptr
+  // NOTE: unique_ptr for lazy init.
   std::unique_ptr<Mesh> mesh;
-  // TODO: skin
-  // Skin* skin;
+  // NOTE: raw ptr. skin ownerships are on the Model with skins.
+  const Skin* skin = nullptr;
   int32_t skinIndex = -1;
   glm::vec3 translation{};
   glm::vec3 scale{1.0f};
   glm::quat rotation{};
   glm::mat4 localMatrix() const;
   glm::mat4 getMatrix() const;
-  void update();
+  void update(const uint32_t frameIndex, bool isBindPose = false);
 };
 
-// TODO: animation
+struct AnimationChannel {
+  enum class PathType { kTranslation, kRotation, kScale };
+  PathType path;
+  // changes node matrix, so not const
+  Node* node;
+  uint32_t samplerIndex;
+};
+
+struct AnimationSampler {
+  enum class InterpolationType { kLinear, kStep, kCubicSpline };
+  InterpolationType interpolation;
+  std::vector<float> inputs;
+  std::vector<glm::vec4> outputsVec4;
+};
+
+struct Animation {
+  std::string name;
+  std::vector<AnimationSampler> samplers;
+  std::vector<AnimationChannel> channels;
+  float start = std::numeric_limits<float>::max();
+  float end = std::numeric_limits<float>::min();
+};
 
 enum class VertexComponent {
   kPosition,
@@ -228,7 +255,7 @@ struct Vertex {
   getInputAttributeDescriptions(uint32_t binding,
                                 const std::vector<VertexComponent>& components);
 
-  // TODO: check pointer and static members necessary
+  // NOTE: returns thread_local vertex input state.
   static vk::PipelineVertexInputStateCreateInfo getPipelineVertexInputState(
       const std::vector<VertexComponent>& components);
 };
@@ -238,7 +265,7 @@ class Model {
   // setup common resources
   Model(const vk::raii::Device& device, VmaAllocator allocator,
         const vk::raii::Queue& transferQueue,
-        const vk::raii::CommandPool& commandPool);
+        const vk::raii::CommandPool& commandPool, uint32_t framesInFlight);
   ~Model();
 
   Model(const Model&) = delete;
@@ -254,21 +281,26 @@ class Model {
   void bindBuffers(const vk::raii::CommandBuffer& cmdBuffer);
 
   // NOTE: nullable pipelinelayout
-  void drawNode(const Node* node, const vk::raii::CommandBuffer& cmdBuffer,
+  void drawNode(const uint32_t frameIndex, const Node* node,
+                const vk::raii::CommandBuffer& cmdBuffer,
                 RenderFlags renderFlags = {},
                 vk::PipelineLayout pipelineLayout = VK_NULL_HANDLE,
-                uint32_t bindImageSet = 1);
+                uint32_t bindImageSet = 1, int bindSkinSet = -1);
 
-  void draw(const vk::raii::CommandBuffer& cmdBuffer,
+  void draw(const uint32_t frameIndex, const vk::raii::CommandBuffer& cmdBuffer,
             RenderFlags renderFlags = {},
             vk::PipelineLayout pipelineLayout = VK_NULL_HANDLE,
-            uint32_t bindImageSet = 1);
+            uint32_t bindImageSet = 1, int bindSkinSet = -1);
 
+  // TOOD: bind pose skeleton not yet supported.
+  void getSkeletonMatrices(
+      std::vector<std::vector<glm::mat4>>& jointMatrices) const;
+  void updateAnimation(const uint32_t frameIndex, const int Animationindex,
+                       const float time, const bool repeat = false);
   Dimensions getDimensions() const { return dimensions; };
-  // TODO: update animation
 
-  // TODO: moved from globals to model class member.
-  // check any problems
+  // NOTE: moved from globals to model class member.
+  // TODO: all models should share those values, better to move it out of model
   vk::raii::DescriptorSetLayout descriptorSetLayoutImage = nullptr;
   vk::raii::DescriptorSetLayout descriptorSetLayoutUbo = nullptr;
   // TODO: check instead usageFlags, for raytracing related
@@ -280,24 +312,23 @@ class Model {
   DescriptorBindingFlags descriptorBindingFlags =
       DescriptorBindingFlagBits::kImageBaseColor;
 
-  vk::raii::DescriptorPool descriptorPool = nullptr;
-  std::unique_ptr<VgeuBuffer> vertexBuffer;
-  std::unique_ptr<VgeuBuffer> indexBuffer;
-
  private:
+  // load images from files
   void loadImages(tinygltf::Model& gltfModel);
 
-  void loadMaterials(tinygltf::Model& gltfModel);
+  void loadMaterials(const tinygltf::Model& gltfModel);
 
   void loadNode(Node* parent, const tinygltf::Node& node, uint32_t nodeIndex,
                 const tinygltf::Model& model, std::vector<uint32_t>& indices,
                 std::vector<Vertex>& vertices, float globalscale);
-  // TODO: skins
+  void loadSkins(const tinygltf::Model& gltfModel);
 
-  // TODO: animation
+  void loadAnimations(const tinygltf::Model& gltfModel);
+
   const Texture* getTexture(uint32_t index) const;
-  const Node* findNode(const Node* parent, uint32_t index) const;
-  const Node* nodeFromIndex(uint32_t index) const;
+  // non-const Node ptr return for animation channel
+  Node* findNode(Node* parent, uint32_t index) const;
+  Node* nodeFromIndex(uint32_t index) const;
   void prepareNodeDescriptor(
       const Node* node,
       const vk::raii::DescriptorSetLayout& descriptorSetLayout);
@@ -310,26 +341,31 @@ class Model {
   VmaAllocator allocator;
   const vk::raii::Queue& transferQueue;
   const vk::raii::CommandPool& commandPool;
+  const uint32_t framesInFlight;
 
-  // TODO: takes ownership since root nodes or each tree.
+  vk::raii::DescriptorPool descriptorPool = nullptr;
+  std::unique_ptr<VgeuBuffer> vertexBuffer;
+  std::unique_ptr<VgeuBuffer> indexBuffer;
+
+  // NOTE: takes ownership since thoese are root nodes of each tree.
   // unique_ptr
   std::vector<std::unique_ptr<Node>> nodes;
   // all nodes without ownership
   std::vector<Node*> linearNodes;
 
-  // TODO: skin
-  // std::vector<Skin*> skins;
+  std::vector<Skin> skins;
 
+  // NOTE: unique_ptr or class itself, it doesn't matter
+  // since those class are safe to be moved. (by default move constructor)
   std::vector<std::unique_ptr<Texture>> textures;
-  // TODO: unique_ptr?
   std::vector<Material> materials;
 
-  // TODO: animation
-  // std::vector<Animation> animations;
+  std::vector<Animation> animations;
+
   Dimensions dimensions;
 
   std::unique_ptr<Texture> emptyTexture;
-  // TOOD: check it to be private right.
+  // NOTE: not test yet.
   bool metallicRoughnessWorkflow = true;
   bool buffersBound = false;
   std::string path;

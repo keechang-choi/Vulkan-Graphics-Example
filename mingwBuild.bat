@@ -10,6 +10,10 @@ if "%arg1%" equ "Release" (
     set "arg1=-DCMAKE_BUILD_TYPE^=Debug"
 )
 
-cmake -S ../ -B . -G "MinGW Makefiles" %arg1%
-mingw32-make.exe && mingw32-make.exe Shaders
+REM cmake -S ../ -B . -G "MinGW Makefiles" %arg1%
+REM mingw32-make.exe && mingw32-make.exe Shaders
+cmake -S ../ -B . -G "Ninja" %arg1%
+SETLOCAL
+set NINJA_STATUS=[%%f/%%t(%%es)]: 
+ninja.exe all && mingw32-make.exe Shaders
 cd ..
