@@ -294,6 +294,7 @@ class Model {
             vk::PipelineLayout pipelineLayout = VK_NULL_HANDLE,
             uint32_t bindImageSet = 1, int bindSkinSet = -1);
 
+  // TOOD: bind pose skeleton not yet supported.
   void getSkeletonMatrices(
       std::vector<std::vector<glm::mat4>>& jointMatrices) const;
   void updateAnimation(const uint32_t frameIndex, const int Animationindex,

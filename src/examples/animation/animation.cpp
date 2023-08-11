@@ -186,7 +186,8 @@ void VgeExample::setupDynamicUbo() {
     dynamicUbo[instanceIndex].modelMatrix =
         glm::scale(dynamicUbo[instanceIndex].modelMatrix,
                    glm::vec3{foxScale, -foxScale, foxScale});
-    dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f, 1.f, 0.f, 0.3f};
+    // default
+    dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
   }
   {
     size_t instanceIndex = findInstances("fox3")[0];
@@ -210,8 +211,7 @@ void VgeExample::setupDynamicUbo() {
     dynamicUbo[instanceIndex].modelMatrix =
         glm::scale(dynamicUbo[instanceIndex].modelMatrix,
                    glm::vec3{foxScale, -foxScale, foxScale});
-    // default
-    dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
+    dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f, 1.f, 0.f, 0.3f};
   }
 }
 

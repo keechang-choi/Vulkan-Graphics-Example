@@ -10,7 +10,7 @@ layout (location = 0) out vec4 outFragColor;
 void main() 
 {
 	
-	vec3 color = vec3(texture(samplerColorMap, inUV)) * (1-inColor.a) + inColor.rgb*inColor.a;
-
+	// vec3 color = vec3(texture(samplerColorMap, inUV)) * (1-inColor.a) + inColor.rgb*inColor.a;
+	vec3 color = mix(vec3(texture(samplerColorMap, inUV)), inColor.rgb, inColor.a);
 	outFragColor.rgb = color;
 }
