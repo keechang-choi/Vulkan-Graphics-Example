@@ -20,6 +20,7 @@ void VgeuWindow::initWindow() {
       glfwCreateWindow(width, height, windowName.c_str(), nullptr, nullptr);
   glfwSetWindowUserPointer(window, this);
   glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
+  glfwSetKeyCallback(window, keyCallback);
 }
 
 void VgeuWindow::framebufferResizeCallback(GLFWwindow* window, int width,
@@ -29,6 +30,14 @@ void VgeuWindow::framebufferResizeCallback(GLFWwindow* window, int width,
   vgeuWindow->framebufferResized = true;
   vgeuWindow->width = width;
   vgeuWindow->height = height;
+}
+void VgeuWindow::keyCallback(GLFWwindow* window, int key, int scancode,
+                             int action, int mods) {
+  if (key == GLFW_KEY_P && action == GLFW_PRESS) {
+    auto vgeuWindow =
+        reinterpret_cast<VgeuWindow*>(glfwGetWindowUserPointer(window));
+    vgeuWindow->paused = !vgeuWindow->paused;
+  }
 }
 
 void VgeuWindow::createWindowSurface(VkInstance instance,

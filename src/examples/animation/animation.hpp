@@ -79,5 +79,8 @@ class VgeExample : public VgeBase {
     vk::raii::Pipeline phong = nullptr;
     vk::raii::Pipeline wireframe = nullptr;
   } pipelines;
+
+  float animationTime = 0.f;
+  float animationLastTime = 0.f;
 };
 }  // namespace vge

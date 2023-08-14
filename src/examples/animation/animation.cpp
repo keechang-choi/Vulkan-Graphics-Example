@@ -8,6 +8,7 @@
 #include <glm/gtx/string_cast.hpp>
 
 // std
+#include <algorithm>
 #include <array>
 #include <cstring>
 #include <limits>
@@ -451,8 +452,11 @@ void VgeExample::render() {
   if (!prepared) {
     return;
   }
-
+  if (!paused) {
+    animationTime += frameTimer;
+  }
   draw();
+  animationLastTime = animationTime;
 }
 
 void VgeExample::draw() {
@@ -613,6 +617,7 @@ size_t VgeExample::padUniformBufferSize(size_t originalSize) {
 
 // update UniformBuffers for currentFrameIndex
 void VgeExample::updateUniforms() {
+  float animationTimer = animationTime - animationLastTime;
   // CHECK: ubo update frequency.
   globalUbo.view = camera.getView();
   globalUbo.projection = camera.getProjection();
@@ -628,22 +633,22 @@ void VgeExample::updateUniforms() {
   {
     size_t instanceIndex = findInstances("fox1")[0];
     dynamicUbo[instanceIndex].modelMatrix =
-        glm::rotate(glm::mat4{1.f}, glm::radians(rotationVelocity) * frameTimer,
-                    up) *
+        glm::rotate(glm::mat4{1.f},
+                    glm::radians(rotationVelocity) * animationTimer, up) *
         dynamicUbo[instanceIndex].modelMatrix;
   }
   {
     size_t instanceIndex = findInstances("fox1-1")[0];
     dynamicUbo[instanceIndex].modelMatrix =
-        glm::rotate(glm::mat4{1.f}, glm::radians(rotationVelocity) * frameTimer,
-                    up) *
+        glm::rotate(glm::mat4{1.f},
+                    glm::radians(rotationVelocity) * animationTimer, up) *
         dynamicUbo[instanceIndex].modelMatrix;
   }
   {
     size_t instanceIndex = findInstances("fox3")[0];
     dynamicUbo[instanceIndex].modelMatrix =
         glm::rotate(glm::mat4{1.f},
-                    glm::radians(rotationVelocity * 2.f) * frameTimer, up) *
+                    glm::radians(rotationVelocity * 2.f) * animationTimer, up) *
         dynamicUbo[instanceIndex].modelMatrix;
   }
 
@@ -656,7 +661,7 @@ void VgeExample::updateUniforms() {
         continue;
       }
       updatedSharedModelSet.insert(modelInstance.model.get());
-      modelInstance.animationTime += frameTimer;
+      modelInstance.animationTime += animationTimer;
       modelInstance.model->updateAnimation(currentFrameIndex,
                                            modelInstance.animationIndex,
                                            modelInstance.animationTime, true);

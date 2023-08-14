@@ -171,13 +171,17 @@ void VgeBase::renderLoop() {
     auto tDiff =
         std::chrono::duration<double, std::milli>(tEnd - tStart).count();
     frameTimer = tDiff / 1000.0f;
-    // camera update
-    if (cameraController.moveInPlaneXZ(vgeuWindow->getGLFWwindow(), frameTimer,
-                                       viewerTransform)) {
-      viewUpdated = true;
-    }
-    camera.setViewYXZ(viewerTransform.translation, viewerTransform.rotation);
+    paused = vgeuWindow->isPaused();
 
+    if (!paused) {
+      // camera update
+      if (cameraController.moveInPlaneXZ(vgeuWindow->getGLFWwindow(),
+                                         frameTimer, viewerTransform)) {
+        viewUpdated = true;
+      }
+
+      camera.setViewYXZ(viewerTransform.translation, viewerTransform.rotation);
+    }
     // Convert to clamped timer value
     if (!paused) {
       timer += timerSpeed * frameTimer;

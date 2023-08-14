@@ -33,7 +33,6 @@ class KeyBoardMovementController {
     int lookUp = GLFW_KEY_UP;
     int lookDown = GLFW_KEY_DOWN;
   };
-
   bool moveInPlaneXZ(GLFWwindow* window, float dt,
                      TransformComponent& transform);
   KeyMappings keys{};

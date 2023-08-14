@@ -43,4 +43,5 @@ bool KeyBoardMovementController::moveInPlaneXZ(GLFWwindow* window, float dt,
   }
   return true;
 }
+
 }  // namespace vgeu

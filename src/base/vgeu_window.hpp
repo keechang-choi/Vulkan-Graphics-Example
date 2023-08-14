@@ -23,6 +23,7 @@ class VgeuWindow {
   vk::Extent2D getExtent() {
     return {static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
   }
+  bool isPaused() { return paused; }
 
   void createWindowSurface(VkInstance instance, VkSurfaceKHR* surface);
   GLFWwindow* getGLFWwindow() const { return window; };
@@ -30,10 +31,14 @@ class VgeuWindow {
  private:
   static void framebufferResizeCallback(GLFWwindow* window, int width,
                                         int height);
+  static void keyCallback(GLFWwindow* window, int key, int scancode, int action,
+                          int mods);
+
   void initWindow();
   std::string windowName;
   GLFWwindow* window;
   int width, height;
   bool framebufferResized = false;
+  bool paused = false;
 };
 }  // namespace vgeu
