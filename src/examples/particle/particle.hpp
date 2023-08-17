@@ -16,6 +16,7 @@ struct GlobalUbo {
   glm::mat4 view{1.f};
   glm::vec4 lightPos{0.f};
   glm::mat4 inverseView{1.f};
+  glm::vec2 screenDim;
 };
 
 // NOTE: for current animation implementation,
@@ -31,6 +32,13 @@ struct ModelInstance {
 struct DynamicUboElt {
   glm::mat4 modelMatrix{1.f};
   glm::vec4 modelColor{0.f};
+};
+
+struct Particle {
+  glm::vec4 pos;
+  glm::vec4 vel;
+  glm::vec4 pk[4];
+  glm::vec4 vk[4];
 };
 
 class VgeExample : public VgeBase {
@@ -56,11 +64,16 @@ class VgeExample : public VgeBase {
   void addModelInstance(const ModelInstance& newInstance);
   const std::vector<size_t>& findInstances(const std::string& name);
 
-  // NOTE: movable element;
-  std::vector<std::unique_ptr<vgeu::VgeuBuffer>> globalUniformBuffers;
-  GlobalUbo globalUbo;
-  // vk::raii::DescriptorSets?
-  std::vector<vk::raii::DescriptorSet> globalUboDescriptorSets;
+  struct {
+    // NOTE: movable element;
+    std::vector<std::unique_ptr<vgeu::VgeuBuffer>> globalUniformBuffers;
+    GlobalUbo globalUbo;
+    std::vector<vk::raii::DescriptorSet> globalUboDescriptorSets;
+    vk::raii::DescriptorSetLayout globalUboDescriptorSetLayout = nullptr;
+    vk::raii::PipelineLayout pipelineLayout = nullptr;
+    vk::raii::Pipeline pipeline = nullptr;
+    vk::raii::Semaphore semaphore = nullptr;
+  } graphics;
 
   std::vector<ModelInstance> modelInstances;
   std::unordered_map<std::string, std::vector<size_t>> instanceMap;
@@ -69,15 +82,7 @@ class VgeExample : public VgeBase {
   size_t alignedSizeDynamicUboElt = 0;
   std::vector<std::unique_ptr<vgeu::VgeuBuffer>> dynamicUniformBuffers;
   std::vector<vk::raii::DescriptorSet> dynamicUboDescriptorSets;
-
-  vk::raii::DescriptorSetLayout globalUboDescriptorSetLayout = nullptr;
   vk::raii::DescriptorSetLayout dynamicUboDescriptorSetLayout = nullptr;
-
-  vk::raii::PipelineLayout pipelineLayout = nullptr;
-
-  struct {
-    vk::raii::Pipeline phong = nullptr;
-  } pipelines;
 
   float animationTime = 0.f;
   float animationLastTime = 0.f;
