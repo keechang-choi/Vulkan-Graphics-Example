@@ -65,7 +65,13 @@ class VgeExample : public VgeBase {
   const std::vector<size_t>& findInstances(const std::string& name);
 
   struct {
+    vk::PipelineVertexInputStateCreateInfo vertexInputSCI;
+    std::vector<vk::VertexInputBindingDescription> bindingDescription;
+    std::vector<vk::VertexInputAttributeDescription> attributeDescription;
+  } vertices;
+  struct {
     // NOTE: movable element;
+    uint32_t queueFamilyIndex;
     std::vector<std::unique_ptr<vgeu::VgeuBuffer>> globalUniformBuffers;
     GlobalUbo globalUbo;
     std::vector<vk::raii::DescriptorSet> globalUboDescriptorSets;
@@ -74,6 +80,27 @@ class VgeExample : public VgeBase {
     vk::raii::Pipeline pipeline = nullptr;
     vk::raii::Semaphore semaphore = nullptr;
   } graphics;
+
+  struct {
+    uint32_t queueFamiltyIndex;
+    std::vector<std::unique_ptr<vgeu::VgeuBuffer>> storageBuffers;
+    std::vector<std::unique_ptr<vgeu::VgeuBuffer>> uniformBuffers;
+    vk::raii::Queue queue = nullptr;
+    vk::raii::CommandPool cmdPool = nullptr;
+    vk::raii::CommandBuffers cmdBuffers = nullptr;
+    vk::raii::Semaphore semaphore;
+
+    vk::raii::DescriptorSetLayout uboDescriptorSetLayout = nullptr;
+    std::vector<vk::raii::DescriptorSet> uboDescriptorSets;
+    vk::raii::PipelineLayout pipelineLayout = nullptr;
+    vk::raii::Pipeline pipelineCalculate = nullptr;
+    vk::raii::Pipeline pipelineIntegrate = nullptr;
+    struct computeUbo {
+      float dt;
+      uint32_t particleCount;
+    } ubo;
+
+  } compute;
 
   std::vector<ModelInstance> modelInstances;
   std::unordered_map<std::string, std::vector<size_t>> instanceMap;
