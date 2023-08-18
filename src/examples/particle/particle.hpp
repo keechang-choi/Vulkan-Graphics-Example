@@ -99,8 +99,8 @@ class VgeExample : public VgeBase {
     vk::raii::CommandBuffers cmdBuffers = nullptr;
     vk::raii::Semaphore semaphore = nullptr;
 
-    vk::raii::DescriptorSetLayout uboDescriptorSetLayout = nullptr;
-    std::vector<vk::raii::DescriptorSet> uboDescriptorSets;
+    vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
+    std::vector<vk::raii::DescriptorSet> descriptorSets;
     vk::raii::PipelineLayout pipelineLayout = nullptr;
     vk::raii::Pipeline pipelineCalculate = nullptr;
     vk::raii::Pipeline pipelineIntegrate = nullptr;
@@ -123,5 +123,6 @@ class VgeExample : public VgeBase {
 
   float animationTime = 0.f;
   float animationLastTime = 0.f;
+  uint32_t numParticles = 1024u;
 };
 }  // namespace vge

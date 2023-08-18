@@ -13,6 +13,7 @@
 #include <cstring>
 #include <limits>
 #include <memory>
+#include <random>
 #include <unordered_set>
 
 namespace vge {
@@ -87,7 +88,91 @@ void VgeExample::loadAssets() {
   }
 }
 
-void VgeExample::createStorageBuffers() {}
+void VgeExample::createStorageBuffers() {
+  std::vector<glm::vec3> attractor = {
+      glm::vec3(5.0f, 0.0f, 0.0f), glm::vec3(-5.0f, 0.0f, 0.0f),
+      glm::vec3(0.0f, 5.0f, 0.0f), glm::vec3(0.0f, -5.0f, 0.0f),
+      glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f, 0.0f, -5.0f),
+  };
+
+  std::vector<Particle> particles;
+  std::default_random_engine rndEngine;
+  rndEngine.seed(1111);
+  std::normal_distribution<float> normalDist(0.0f, 1.0f);
+
+  for (size_t i = 0; i < attractor.size(); i++) {
+    uint32_t numParticlesPerAttractor = numParticles / attractor.size();
+    if (i == attractor.size() - 1) {
+      numParticlesPerAttractor =
+          numParticles - numParticlesPerAttractor * (attractor.size() - 1);
+    }
+    for (size_t j = 0; j < numParticlesPerAttractor; j++) {
+      Particle& particle = particles.emplace_back();
+      glm::vec3 position;
+      glm::vec3 velocity;
+      float mass;
+      float colorOffset =
+          static_cast<float>(i) / static_cast<float>(attractor.size());
+      if (j == 0) {
+        position = attractor[i] * 1.5f;
+        velocity = glm::vec3{0.f};
+        mass = 1000.0f;
+      } else {
+        position = attractor[i] + glm::vec3{
+                                      normalDist(rndEngine),
+                                      normalDist(rndEngine),
+                                      normalDist(rndEngine),
+                                  } * 0.75f;
+
+        velocity =
+            glm::vec3{
+                normalDist(rndEngine),
+                normalDist(rndEngine),
+                normalDist(rndEngine),
+            } *
+            0.025f;
+        mass = (normalDist(rndEngine) * 0.5f + 0.5f) * 75.f;
+      }
+      particle.pos = glm::vec4(position, mass);
+      particle.vel = glm::vec4(velocity, colorOffset);
+    }
+  }
+
+  compute.ubo.particleCount = particles.size();
+  // ssbo staging
+  {
+    vgeu::VgeuBuffer stagingBuffer(
+        globalAllocator->getAllocator(), sizeof(Particle), particles.size(),
+        vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT);
+    std::memcpy(stagingBuffer.getMappedData(), particles.data(),
+                stagingBuffer.getBufferSize());
+    compute.storageBuffers.resize(MAX_CONCURRENT_FRAMES);
+    for (size_t i = 0; i < compute.storageBuffers.size(); i++) {
+      compute.storageBuffers[i] = std::make_unique<vgeu::VgeuBuffer>(
+          globalAllocator->getAllocator(), sizeof(Particle), particles.size(),
+          vk::BufferUsageFlagBits::eVertexBuffer |
+              vk::BufferUsageFlagBits::eTransferSrc |
+              vk::BufferUsageFlagBits::eStorageBuffer,
+          VMA_MEMORY_USAGE_AUTO,
+          VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+              VMA_ALLOCATION_CREATE_MAPPED_BIT);
+    }
+    vgeu::oneTimeSubmit(
+        device, commandPool, queue,
+        [&](const vk::raii::CommandBuffer& cmdBuffer) {
+          for (size_t i = 0; i < compute.storageBuffers.size(); i++) {
+            cmdBuffer.copyBuffer(
+                stagingBuffer.getBuffer(),
+                compute.storageBuffers[i]->getBuffer(),
+                vk::BufferCopy(0, 0, stagingBuffer.getBufferSize()));
+          }
+          // TODO: pipeline barrier to the compute queue?
+        });
+  }
+  // TODO: vertex binding and attribute descriptions
+}
 
 void VgeExample::setupDynamicUbo() {
   const float foxScale = 0.03f;
