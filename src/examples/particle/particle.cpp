@@ -41,14 +41,22 @@ void VgeExample::getEnabledExtensions() {
 void VgeExample::prepare() {
   VgeBase::prepare();
   loadAssets();
+  createDescriptorPool();
+  prepareGraphics();
+  prepareCompute();
+  prepared = true;
+}
+void VgeExample::prepareGraphics() {
+  createStorageBuffers();
   setupDynamicUbo();
   createUniformBuffers();
   createDescriptorSetLayout();
-  createDescriptorPool();
   createDescriptorSets();
   createPipelines();
-  prepared = true;
 }
+
+void VgeExample::prepareCompute() {}
+
 void VgeExample::loadAssets() {
   // NOTE: no flip or preTransform for animation and skinning
   vgeu::FileLoadingFlags glTFLoadingFlags =
@@ -78,6 +86,8 @@ void VgeExample::loadAssets() {
     addModelInstance(modelInstance);
   }
 }
+
+void VgeExample::createStorageBuffers() {}
 
 void VgeExample::setupDynamicUbo() {
   const float foxScale = 0.03f;

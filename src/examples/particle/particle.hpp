@@ -50,13 +50,22 @@ class VgeExample : public VgeBase {
   void render();
   void prepare();
   void loadAssets();
+  void createDescriptorPool();
+  // graphics resources
+  void prepareGraphics();
+  void createStorageBuffers();
   void createUniformBuffers();
   void createDescriptorSetLayout();
-  void createDescriptorPool();
   void createDescriptorSets();
   void createPipelines();
+
+  // compute resources
+  void prepareCompute();
+
   void draw();
   void buildCommandBuffers();
+  void buildComputeCommandBuffers();
+
   void viewChanged();
   void setupDynamicUbo();
   size_t padUniformBufferSize(size_t originalSize);
@@ -88,7 +97,7 @@ class VgeExample : public VgeBase {
     vk::raii::Queue queue = nullptr;
     vk::raii::CommandPool cmdPool = nullptr;
     vk::raii::CommandBuffers cmdBuffers = nullptr;
-    vk::raii::Semaphore semaphore;
+    vk::raii::Semaphore semaphore = nullptr;
 
     vk::raii::DescriptorSetLayout uboDescriptorSetLayout = nullptr;
     std::vector<vk::raii::DescriptorSet> uboDescriptorSets;
@@ -105,6 +114,7 @@ class VgeExample : public VgeBase {
   std::vector<ModelInstance> modelInstances;
   std::unordered_map<std::string, std::vector<size_t>> instanceMap;
 
+  // TODO: move those into compute resource
   std::vector<DynamicUboElt> dynamicUbo;
   size_t alignedSizeDynamicUboElt = 0;
   std::vector<std::unique_ptr<vgeu::VgeuBuffer>> dynamicUniformBuffers;
