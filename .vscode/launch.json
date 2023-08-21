@@ -39,11 +39,11 @@
             "description": "Select program to debug",
             "type": "pickString",
             "options": [
-                "triangle",
+                "particle",
+                "animation",
                 "pipelines",
-                "animation"
+                "triangle",
             ],
-            "default": "triangle"
         },
         {
             "id": "pickDebugger",

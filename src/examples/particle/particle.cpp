@@ -43,6 +43,8 @@ void VgeExample::prepare() {
   VgeBase::prepare();
   loadAssets();
   createDescriptorPool();
+  graphics.queueFamilyIndex = queueFamilyIndices.graphics;
+  compute.queueFamilyIndex = queueFamilyIndices.compute;
   prepareGraphics();
   prepareCompute();
   prepared = true;
@@ -153,7 +155,7 @@ void VgeExample::createStorageBuffers() {
       compute.storageBuffers[i] = std::make_unique<vgeu::VgeuBuffer>(
           globalAllocator->getAllocator(), sizeof(Particle), particles.size(),
           vk::BufferUsageFlagBits::eVertexBuffer |
-              vk::BufferUsageFlagBits::eTransferSrc |
+              vk::BufferUsageFlagBits::eTransferDst |
               vk::BufferUsageFlagBits::eStorageBuffer,
           VMA_MEMORY_USAGE_AUTO,
           VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
@@ -167,8 +169,20 @@ void VgeExample::createStorageBuffers() {
                 stagingBuffer.getBuffer(),
                 compute.storageBuffers[i]->getBuffer(),
                 vk::BufferCopy(0, 0, stagingBuffer.getBufferSize()));
+            // TODO: pipeline barrier to the compute queue?
+            // TODO: check spec and exs for ownership transfer
+            if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
+              vk::BufferMemoryBarrier bufferBarrier(
+                  vk::AccessFlagBits::eTransferWrite, vk::AccessFlags{},
+                  graphics.queueFamilyIndex, compute.queueFamilyIndex,
+                  compute.storageBuffers[i]->getBuffer(), 0ull,
+                  compute.storageBuffers[i]->getBufferSize());
+              cmdBuffer.pipelineBarrier(
+                  vk::PipelineStageFlagBits::eTransfer,
+                  vk::PipelineStageFlagBits::eComputeShader,
+                  vk::DependencyFlags{}, nullptr, bufferBarrier, nullptr);
+            }
           }
-          // TODO: pipeline barrier to the compute queue?
         });
   }
   // TODO: vertex binding and attribute descriptions

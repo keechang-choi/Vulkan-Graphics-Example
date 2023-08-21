@@ -91,7 +91,7 @@ class VgeExample : public VgeBase {
   } graphics;
 
   struct {
-    uint32_t queueFamiltyIndex;
+    uint32_t queueFamilyIndex;
     std::vector<std::unique_ptr<vgeu::VgeuBuffer>> storageBuffers;
     std::vector<std::unique_ptr<vgeu::VgeuBuffer>> uniformBuffers;
     vk::raii::Queue queue = nullptr;
