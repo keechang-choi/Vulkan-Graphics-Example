@@ -248,10 +248,8 @@ void VgeExample::setupDynamicUbo() {
 }
 
 void VgeExample::createUniformBuffers() {
-  alignedSizeDynamicUboElt = padUniformBufferSize(sizeof(DynamicUboElt));
-  // NOTE: prevent move during vector element creation.
+  // graphics UBO
   graphics.globalUniformBuffers.reserve(MAX_CONCURRENT_FRAMES);
-  dynamicUniformBuffers.reserve(MAX_CONCURRENT_FRAMES);
   for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
     graphics.globalUniformBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
         globalAllocator->getAllocator(), sizeof(GlobalUbo), 1,
@@ -261,7 +259,25 @@ void VgeExample::createUniformBuffers() {
             VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT));
     std::memcpy(graphics.globalUniformBuffers[i]->getMappedData(),
                 &graphics.globalUbo, sizeof(GlobalUbo));
+  }
 
+  // compute UBO
+  compute.uniformBuffers.reserve(MAX_CONCURRENT_FRAMES);
+  for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    compute.uniformBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
+        globalAllocator->getAllocator(), sizeof(GlobalUbo), 1,
+        vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT |
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT));
+    std::memcpy(compute.uniformBuffers[i]->getMappedData(), &compute.ubo,
+                sizeof(compute.ubo));
+  }
+
+  // dynamic UBO
+  alignedSizeDynamicUboElt = padUniformBufferSize(sizeof(DynamicUboElt));
+  dynamicUniformBuffers.reserve(MAX_CONCURRENT_FRAMES);
+  for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
     dynamicUniformBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
         globalAllocator->getAllocator(), alignedSizeDynamicUboElt,
         dynamicUbo.size(), vk::BufferUsageFlagBits::eUniformBuffer,
@@ -483,7 +499,9 @@ void VgeExample::draw() {
   prepareFrame();
 
   // update uniform buffers;
-  updateUniforms();
+  updateDynamicUbo();
+  updateComputeUbo();
+  updateGraphicsUbo();
 
   // draw cmds recording or command buffers should be built already.
   buildCommandBuffers();
@@ -591,15 +609,23 @@ size_t VgeExample::padUniformBufferSize(size_t originalSize) {
 }
 
 // update UniformBuffers for currentFrameIndex
-void VgeExample::updateUniforms() {
-  float animationTimer = animationTime - animationLastTime;
+void VgeExample::updateGraphicsUbo() {
   // CHECK: ubo update frequency.
   graphics.globalUbo.view = camera.getView();
   graphics.globalUbo.projection = camera.getProjection();
   graphics.globalUbo.inverseView = camera.getInverseView();
   std::memcpy(graphics.globalUniformBuffers[currentFrameIndex]->getMappedData(),
               &graphics.globalUbo, sizeof(GlobalUbo));
+}
 
+void VgeExample::updateComputeUbo() {
+  compute.ubo.dt = paused ? 0.0f : frameTimer * 0.05f;
+  std::memcpy(compute.uniformBuffers[currentFrameIndex]->getMappedData(),
+              &compute.ubo, sizeof(compute.ubo));
+}
+
+void VgeExample::updateDynamicUbo() {
+  float animationTimer = animationTime - animationLastTime;
   // model move
 
   glm::vec3 up{0.f, -1.f, 0.f};

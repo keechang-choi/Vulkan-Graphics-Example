@@ -51,10 +51,12 @@ class VgeExample : public VgeBase {
   void prepare();
   void loadAssets();
   void createDescriptorPool();
-  // graphics resources
-  void prepareGraphics();
+
   void createStorageBuffers();
   void createUniformBuffers();
+
+  // graphics resources
+  void prepareGraphics();
   void createDescriptorSetLayout();
   void createDescriptorSets();
   void createPipelines();
@@ -69,7 +71,10 @@ class VgeExample : public VgeBase {
   void viewChanged();
   void setupDynamicUbo();
   size_t padUniformBufferSize(size_t originalSize);
-  void updateUniforms();
+  void updateGraphicsUbo();
+  void updateComputeUbo();
+  void updateDynamicUbo();
+
   void addModelInstance(const ModelInstance& newInstance);
   const std::vector<size_t>& findInstances(const std::string& name);
 
