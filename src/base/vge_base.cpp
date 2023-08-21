@@ -151,7 +151,6 @@ void VgeBase::renderLoop() {
   vgeu::TransformComponent viewerTransform{};
   viewerTransform.translation = camera.getPosition();
   viewerTransform.rotation = camera.getRotationYXZ();
-  vgeu::KeyBoardMovementController cameraController{};
 
   while (!vgeuWindow->shouldClose()) {
     glfwPollEvents();

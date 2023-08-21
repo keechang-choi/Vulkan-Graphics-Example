@@ -75,9 +75,9 @@ class VgeExample : public VgeBase {
 
   struct {
     vk::PipelineVertexInputStateCreateInfo vertexInputSCI;
-    std::vector<vk::VertexInputBindingDescription> bindingDescription;
-    std::vector<vk::VertexInputAttributeDescription> attributeDescription;
-  } vertices;
+    std::vector<vk::VertexInputBindingDescription> bindingDescriptions;
+    std::vector<vk::VertexInputAttributeDescription> attributeDescriptions;
+  } vertexInfos;
   struct {
     // NOTE: movable element;
     uint32_t queueFamilyIndex;

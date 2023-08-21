@@ -21,6 +21,7 @@ VgeExample::VgeExample() : VgeBase() { title = "Particle Example"; }
 VgeExample::~VgeExample() {}
 
 void VgeExample::initVulkan() {
+  cameraController.moveSpeed = 5.f;
   // camera setup
   camera.setViewTarget(glm::vec3{0.f, -6.f, -10.f}, glm::vec3{0.f, 0.f, 0.f});
   camera.setPerspectiveProjection(
@@ -186,6 +187,34 @@ void VgeExample::createStorageBuffers() {
         });
   }
   // TODO: vertex binding and attribute descriptions
+  vertexInfos.bindingDescriptions.resize(1);
+  vertexInfos.bindingDescriptions[0] = vk::VertexInputBindingDescription(
+      0 /*binding*/, sizeof(Particle), vk::VertexInputRate::eVertex);
+
+  vertexInfos.attributeDescriptions.resize(10);
+  vertexInfos.attributeDescriptions[0] = vk::VertexInputAttributeDescription(
+      0 /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
+      offsetof(Particle, pos));
+  vertexInfos.attributeDescriptions[1] = vk::VertexInputAttributeDescription(
+      1 /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
+      offsetof(Particle, vel));
+
+  // for Runge-Kutta explicit method. RK4. but not used as vertex
+  // for (size_t i = 2; i < 2 + 4; i++) {
+  //   vertexInfos.attributeDescriptions[i] =
+  //   vk::VertexInputAttributeDescription(
+  //       i /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
+  //       offsetof(Particle, pk[i - 2]));
+  // }
+  // for (size_t i = 6; i < 6 + 4; i++) {
+  //   vertexInfos.attributeDescriptions[i] =
+  //   vk::VertexInputAttributeDescription(
+  //       i /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
+  //       offsetof(Particle, vk[i - 6]));
+  // }
+  vertexInfos.vertexInputSCI = vk::PipelineVertexInputStateCreateInfo(
+      vk::PipelineVertexInputStateCreateFlags{},
+      vertexInfos.bindingDescriptions, vertexInfos.attributeDescriptions);
 }
 
 void VgeExample::setupDynamicUbo() {

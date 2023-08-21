@@ -68,6 +68,8 @@ class VgeBase {
   float timerSpeed = 0.25f;
   bool paused = false;
   vgeu::VgeuCamera camera;
+  vgeu::KeyBoardMovementController cameraController{};
+
   struct Settings {
 #ifdef NDEBUG
     bool validation = false;
