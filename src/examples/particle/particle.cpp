@@ -59,7 +59,71 @@ void VgeExample::prepareGraphics() {
   createPipelines();
 }
 
-void VgeExample::prepareCompute() {}
+void VgeExample::prepareCompute() {
+  // create queue
+  compute.queue = vk::raii::Queue(device, compute.queueFamilyIndex, 0);
+
+  // create descriptorSetLayout
+  {
+    std::vector<vk::DescriptorSetLayout> setLayouts;
+
+    // set 0
+    {
+      std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
+      // binding 0
+      layoutBindings.emplace_back(0, vk::DescriptorType::eStorageBuffer, 1,
+                                  vk::ShaderStageFlagBits::eCompute);
+      // binding 1
+      layoutBindings.emplace_back(1, vk::DescriptorType::eUniformBuffer, 1,
+                                  vk::ShaderStageFlagBits::eCompute);
+
+      vk::DescriptorSetLayoutCreateInfo layoutCI(
+          vk::DescriptorSetLayoutCreateFlags{}, layoutBindings);
+      compute.descriptorSetLayout =
+          vk::raii::DescriptorSetLayout(device, layoutCI);
+      setLayouts.push_back(*compute.descriptorSetLayout);
+    }
+
+    // create pipelineLayout
+    vk::PipelineLayoutCreateInfo pipelineLayoutCI({}, setLayouts);
+    compute.pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutCI);
+  }
+
+  // create descriptorSets
+  {
+    vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
+                                            *compute.descriptorSetLayout);
+    compute.descriptorSets.reserve(MAX_CONCURRENT_FRAMES);
+    for (size_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      compute.descriptorSets.push_back(
+          std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
+    }
+
+    std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
+    writeDescriptorSets.reserve(compute.descriptorSets.size());
+    std::vector<vk::DescriptorBufferInfo> storageBufferInfos;
+    storageBufferInfos.reserve(compute.descriptorSets.size());
+    std::vector<vk::DescriptorBufferInfo> uniformBufferInfos;
+    uniformBufferInfos.reserve(compute.descriptorSets.size());
+    for (size_t i = 0; i < compute.descriptorSets.size(); i++) {
+      storageBufferInfos.push_back(compute.storageBuffers[i]->descriptorInfo());
+      writeDescriptorSets.emplace_back(*compute.descriptorSets[i],
+                                       0 /*binding*/, 0,
+                                       vk::DescriptorType::eStorageBuffer,
+                                       nullptr, storageBufferInfos.back());
+      uniformBufferInfos.push_back(compute.uniformBuffers[i]->descriptorInfo());
+      writeDescriptorSets.emplace_back(*compute.descriptorSets[i],
+                                       1 /*binding*/, 0,
+                                       vk::DescriptorType::eUniformBuffer,
+                                       nullptr, uniformBufferInfos.back());
+    }
+    device.updateDescriptorSets(writeDescriptorSets, nullptr);
+  }
+
+  // create pipeline
+
+  // create commandPool
+}
 
 void VgeExample::loadAssets() {
   // NOTE: no flip or preTransform for animation and skinning
@@ -294,6 +358,21 @@ void VgeExample::createUniformBuffers() {
   }
 }
 
+void VgeExample::createDescriptorPool() {
+  std::vector<vk::DescriptorPoolSize> poolSizes;
+  poolSizes.emplace_back(vk::DescriptorType::eUniformBuffer,
+                         MAX_CONCURRENT_FRAMES * 2);
+  poolSizes.emplace_back(vk::DescriptorType::eUniformBufferDynamic,
+                         MAX_CONCURRENT_FRAMES);
+  poolSizes.emplace_back(vk::DescriptorType::eStorageBuffer,
+                         MAX_CONCURRENT_FRAMES);
+  // NOTE: need to check flag
+  vk::DescriptorPoolCreateInfo descriptorPoolCI(
+      vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+      MAX_CONCURRENT_FRAMES * 4, poolSizes);
+  descriptorPool = vk::raii::DescriptorPool(device, descriptorPoolCI);
+}
+
 void VgeExample::createDescriptorSetLayout() {
   std::vector<vk::DescriptorSetLayout> setLayouts;
 
@@ -308,39 +387,8 @@ void VgeExample::createDescriptorSetLayout() {
     setLayouts.push_back(*graphics.globalUboDescriptorSetLayout);
   }
 
-  // set 1
-  {
-    vk::DescriptorSetLayoutBinding layoutBinding(
-        0, vk::DescriptorType::eUniformBufferDynamic, 1,
-        vk::ShaderStageFlagBits::eVertex);
-    vk::DescriptorSetLayoutCreateInfo layoutCI({}, 1, &layoutBinding);
-    dynamicUboDescriptorSetLayout =
-        vk::raii::DescriptorSetLayout(device, layoutCI);
-    setLayouts.push_back(*dynamicUboDescriptorSetLayout);
-  }
-
-  // set 2
-  // TODO: need to improve structure. descriptorSetLayout per model
-  setLayouts.push_back(*modelInstances[0].model->descriptorSetLayoutImage);
-
-  // set3
-  setLayouts.push_back(*modelInstances[0].model->descriptorSetLayoutUbo);
-
   vk::PipelineLayoutCreateInfo pipelineLayoutCI({}, setLayouts);
   graphics.pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutCI);
-}
-
-void VgeExample::createDescriptorPool() {
-  std::vector<vk::DescriptorPoolSize> poolSizes;
-  poolSizes.emplace_back(vk::DescriptorType::eUniformBuffer,
-                         MAX_CONCURRENT_FRAMES);
-  poolSizes.emplace_back(vk::DescriptorType::eUniformBufferDynamic,
-                         MAX_CONCURRENT_FRAMES);
-  // NOTE: need to check flag
-  vk::DescriptorPoolCreateInfo descriptorPoolCI(
-      vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-      MAX_CONCURRENT_FRAMES * 2, poolSizes);
-  descriptorPool = vk::raii::DescriptorPool(device, descriptorPoolCI);
 }
 
 void VgeExample::createDescriptorSets() {
@@ -368,6 +416,7 @@ void VgeExample::createDescriptorSets() {
     }
     device.updateDescriptorSets(writeDescriptorSets, nullptr);
   }
+
   // dynamic UBO
   {
     vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
@@ -396,14 +445,7 @@ void VgeExample::createDescriptorSets() {
 
 void VgeExample::createPipelines() {
   vk::PipelineVertexInputStateCreateInfo vertexInputSCI =
-      vgeu::glTF::Vertex::getPipelineVertexInputState({
-          vgeu::glTF::VertexComponent::kPosition,
-          vgeu::glTF::VertexComponent::kNormal,
-          vgeu::glTF::VertexComponent::kUV,
-          vgeu::glTF::VertexComponent::kColor,
-          vgeu::glTF::VertexComponent::kJoint0,
-          vgeu::glTF::VertexComponent::kWeight0,
-      });
+      vertexInfos.vertexInputSCI;
 
   vk::PipelineInputAssemblyStateCreateInfo inputAssemblySCI(
       vk::PipelineInputAssemblyStateCreateFlags(),
