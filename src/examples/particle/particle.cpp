@@ -239,6 +239,12 @@ void VgeExample::createStorageBuffers() {
   rndEngine.seed(1111);
   std::normal_distribution<float> normalDist(0.0f, 1.0f);
 
+  const float kR = 255.f;
+  const float kG = 255.f * 256.f;
+  const float kB = 255.f * 256.f * 256.f;
+  std::vector<float> colors{
+      kR, kG, kB, kR + kG, kG + kB, kB + kR,
+  };
   for (size_t i = 0; i < attractor.size(); i++) {
     uint32_t numParticlesPerAttractor = numParticles / attractor.size();
     if (i == attractor.size() - 1) {
@@ -250,8 +256,8 @@ void VgeExample::createStorageBuffers() {
       glm::vec3 position;
       glm::vec3 velocity;
       float mass;
-      float colorOffset =
-          static_cast<float>(i) / static_cast<float>(attractor.size());
+      float colorOffset = colors[i % colors.size()];
+
       if (j == 0) {
         position = attractor[i] * 1.5f;
         velocity = glm::vec3{0.f};
@@ -454,7 +460,7 @@ void VgeExample::createPipelines() {
 
   vk::PipelineInputAssemblyStateCreateInfo inputAssemblySCI(
       vk::PipelineInputAssemblyStateCreateFlags(),
-      vk::PrimitiveTopology::eTriangleList);
+      vk::PrimitiveTopology::ePointList);
 
   vk::PipelineViewportStateCreateInfo viewportSCI(
       vk::PipelineViewportStateCreateFlags(), 1, nullptr, 1, nullptr);
@@ -476,8 +482,9 @@ void VgeExample::createPipelines() {
       stencilOpState);
 
   vk::PipelineColorBlendAttachmentState colorBlendAttachmentState(
-      false, vk::BlendFactor::eZero, vk::BlendFactor::eZero, vk::BlendOp::eAdd,
-      vk::BlendFactor::eZero, vk::BlendFactor::eZero, vk::BlendOp::eAdd,
+      true, vk::BlendFactor::eSrcAlpha, vk::BlendFactor::eOneMinusSrcAlpha,
+      vk::BlendOp::eAdd, vk::BlendFactor::eOne, vk::BlendFactor::eZero,
+      vk::BlendOp::eAdd,
       vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
           vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA);
 
@@ -494,9 +501,9 @@ void VgeExample::createPipelines() {
       vk::PipelineDynamicStateCreateFlags(), dynamicStates);
 
   auto vertCode =
-      vgeu::readFile(getShadersPath() + "/animation/phong.vert.spv");
+      vgeu::readFile(getShadersPath() + "/particle/particle.vert.spv");
   auto fragCode =
-      vgeu::readFile(getShadersPath() + "/animation/phong.frag.spv");
+      vgeu::readFile(getShadersPath() + "/particle/particle.frag.spv");
   // NOTE: after pipeline creation, shader modules can be destroyed.
   vk::raii::ShaderModule vertShaderModule =
       vgeu::createShaderModule(device, vertCode);
@@ -607,27 +614,10 @@ void VgeExample::buildCommandBuffers() {
     drawCmdBuffers[currentFrameIndex].bindPipeline(
         vk::PipelineBindPoint::eGraphics, *graphics.pipeline);
 
-    // draw all instances including model based and bones.
-    for (size_t instanceIdx = 0; instanceIdx < modelInstances.size();
-         instanceIdx++) {
-      const auto& modelInstance = modelInstances[instanceIdx];
-      if (modelInstance.isBone) {
-        continue;
-      }
-      // bind dynamic
-      drawCmdBuffers[currentFrameIndex].bindDescriptorSets(
-          vk::PipelineBindPoint::eGraphics, *graphics.pipelineLayout,
-          1 /*set 1*/, {*dynamicUboDescriptorSets[currentFrameIndex]},
-          alignedSizeDynamicUboElt * instanceIdx);
-      // bind vertex buffer
-      // bind index buffer
-      modelInstance.model->bindBuffers(drawCmdBuffers[currentFrameIndex]);
-      // draw indexed
-      modelInstance.model->draw(
-          currentFrameIndex, drawCmdBuffers[currentFrameIndex],
-          vgeu::RenderFlagBits::kBindImages, *graphics.pipelineLayout,
-          2u /*set 2*/, 3 /*set 3*/);
-    }
+    vk::DeviceSize offset(0);
+    drawCmdBuffers[currentFrameIndex].bindVertexBuffers(
+        0, compute.storageBuffers[currentFrameIndex]->getBuffer(), offset);
+    drawCmdBuffers[currentFrameIndex].draw(numParticles, 1, 0, 0);
   }
 
   // UI overlay draw
@@ -661,6 +651,10 @@ void VgeExample::updateGraphicsUbo() {
   graphics.globalUbo.view = camera.getView();
   graphics.globalUbo.projection = camera.getProjection();
   graphics.globalUbo.inverseView = camera.getInverseView();
+  graphics.globalUbo.screenDim = glm::vec2{
+      static_cast<float>(width),
+      static_cast<float>(height),
+  };
   std::memcpy(graphics.globalUniformBuffers[currentFrameIndex]->getMappedData(),
               &graphics.globalUbo, sizeof(GlobalUbo));
 }
