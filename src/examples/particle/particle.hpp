@@ -52,6 +52,7 @@ class VgeExample : public VgeBase {
   void loadAssets();
   void createDescriptorPool();
 
+  void createVertexSCI();
   void createStorageBuffers();
   void createUniformBuffers();
 

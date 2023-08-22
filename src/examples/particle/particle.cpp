@@ -46,13 +46,13 @@ void VgeExample::prepare() {
   createDescriptorPool();
   graphics.queueFamilyIndex = queueFamilyIndices.graphics;
   compute.queueFamilyIndex = queueFamilyIndices.compute;
+  createStorageBuffers();
+  createVertexSCI();
   prepareGraphics();
   prepareCompute();
   prepared = true;
 }
 void VgeExample::prepareGraphics() {
-  createStorageBuffers();
-  setupDynamicUbo();
   createUniformBuffers();
   createDescriptorSetLayout();
   createDescriptorSets();
@@ -60,6 +60,42 @@ void VgeExample::prepareGraphics() {
 }
 
 void VgeExample::prepareCompute() {
+  setupDynamicUbo();
+  // create ubo
+  {
+    // compute UBO
+    compute.uniformBuffers.reserve(MAX_CONCURRENT_FRAMES);
+    for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      compute.uniformBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
+          globalAllocator->getAllocator(), sizeof(GlobalUbo), 1,
+          vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_AUTO,
+          VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+              VMA_ALLOCATION_CREATE_MAPPED_BIT |
+              VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT));
+      std::memcpy(compute.uniformBuffers[i]->getMappedData(), &compute.ubo,
+                  sizeof(compute.ubo));
+    }
+
+    // dynamic UBO
+    alignedSizeDynamicUboElt = padUniformBufferSize(sizeof(DynamicUboElt));
+    dynamicUniformBuffers.reserve(MAX_CONCURRENT_FRAMES);
+    for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      dynamicUniformBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
+          globalAllocator->getAllocator(), alignedSizeDynamicUboElt,
+          dynamicUbo.size(), vk::BufferUsageFlagBits::eUniformBuffer,
+          VMA_MEMORY_USAGE_AUTO,
+          VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+              VMA_ALLOCATION_CREATE_MAPPED_BIT |
+              VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT));
+      for (size_t j = 0; j < dynamicUbo.size(); j++) {
+        std::memcpy(
+            static_cast<char*>(dynamicUniformBuffers[i]->getMappedData()) +
+                j * alignedSizeDynamicUboElt,
+            &dynamicUbo[j], alignedSizeDynamicUboElt);
+      }
+    }
+  }
+
   // create queue
   compute.queue = vk::raii::Queue(device, compute.queueFamilyIndex, 0);
 
@@ -82,6 +118,17 @@ void VgeExample::prepareCompute() {
       compute.descriptorSetLayout =
           vk::raii::DescriptorSetLayout(device, layoutCI);
       setLayouts.push_back(*compute.descriptorSetLayout);
+    }
+
+    // set 1 dynamic ubo
+    {
+      vk::DescriptorSetLayoutBinding layoutBinding(
+          0, vk::DescriptorType::eUniformBufferDynamic, 1,
+          vk::ShaderStageFlagBits::eVertex);
+      vk::DescriptorSetLayoutCreateInfo layoutCI({}, 1, &layoutBinding);
+      dynamicUboDescriptorSetLayout =
+          vk::raii::DescriptorSetLayout(device, layoutCI);
+      setLayouts.push_back(*dynamicUboDescriptorSetLayout);
     }
 
     // create pipelineLayout
@@ -118,6 +165,31 @@ void VgeExample::prepareCompute() {
                                        nullptr, uniformBufferInfos.back());
     }
     device.updateDescriptorSets(writeDescriptorSets, nullptr);
+
+    // dynamic UBO
+    {
+      vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
+                                              *dynamicUboDescriptorSetLayout);
+      dynamicUboDescriptorSets.reserve(MAX_CONCURRENT_FRAMES);
+      for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+        dynamicUboDescriptorSets.push_back(
+            std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
+      }
+      std::vector<vk::DescriptorBufferInfo> bufferInfos;
+      bufferInfos.reserve(dynamicUniformBuffers.size());
+      std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
+      writeDescriptorSets.reserve(dynamicUniformBuffers.size());
+      for (int i = 0; i < dynamicUniformBuffers.size(); i++) {
+        // NOTE: descriptorBufferInfo range be alignedSizeDynamicUboElt
+        bufferInfos.push_back(dynamicUniformBuffers[i]->descriptorInfo(
+            alignedSizeDynamicUboElt, 0));
+        writeDescriptorSets.emplace_back(
+            *dynamicUboDescriptorSets[i], 0, 0,
+            vk::DescriptorType::eUniformBufferDynamic, nullptr,
+            bufferInfos.back());
+      }
+      device.updateDescriptorSets(writeDescriptorSets, nullptr);
+    }
   }
 
   // create pipeline
@@ -250,32 +322,22 @@ void VgeExample::createStorageBuffers() {
           }
         });
   }
-  // TODO: vertex binding and attribute descriptions
-  vertexInfos.bindingDescriptions.resize(1);
-  vertexInfos.bindingDescriptions[0] = vk::VertexInputBindingDescription(
-      0 /*binding*/, sizeof(Particle), vk::VertexInputRate::eVertex);
+}
 
-  vertexInfos.attributeDescriptions.resize(10);
-  vertexInfos.attributeDescriptions[0] = vk::VertexInputAttributeDescription(
+void VgeExample::createVertexSCI() {
+  // TODO: vertex binding and attribute descriptions
+  vertexInfos.bindingDescriptions.emplace_back(0 /*binding*/, sizeof(Particle),
+                                               vk::VertexInputRate::eVertex);
+
+  vertexInfos.attributeDescriptions.emplace_back(
       0 /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
       offsetof(Particle, pos));
-  vertexInfos.attributeDescriptions[1] = vk::VertexInputAttributeDescription(
+  vertexInfos.attributeDescriptions.emplace_back(
       1 /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
       offsetof(Particle, vel));
 
   // for Runge-Kutta explicit method. RK4. but not used as vertex
-  // for (size_t i = 2; i < 2 + 4; i++) {
-  //   vertexInfos.attributeDescriptions[i] =
-  //   vk::VertexInputAttributeDescription(
-  //       i /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
-  //       offsetof(Particle, pk[i - 2]));
-  // }
-  // for (size_t i = 6; i < 6 + 4; i++) {
-  //   vertexInfos.attributeDescriptions[i] =
-  //   vk::VertexInputAttributeDescription(
-  //       i /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
-  //       offsetof(Particle, vk[i - 6]));
-  // }
+
   vertexInfos.vertexInputSCI = vk::PipelineVertexInputStateCreateInfo(
       vk::PipelineVertexInputStateCreateFlags{},
       vertexInfos.bindingDescriptions, vertexInfos.attributeDescriptions);
@@ -323,38 +385,6 @@ void VgeExample::createUniformBuffers() {
             VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT));
     std::memcpy(graphics.globalUniformBuffers[i]->getMappedData(),
                 &graphics.globalUbo, sizeof(GlobalUbo));
-  }
-
-  // compute UBO
-  compute.uniformBuffers.reserve(MAX_CONCURRENT_FRAMES);
-  for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
-    compute.uniformBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
-        globalAllocator->getAllocator(), sizeof(GlobalUbo), 1,
-        vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_AUTO,
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-            VMA_ALLOCATION_CREATE_MAPPED_BIT |
-            VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT));
-    std::memcpy(compute.uniformBuffers[i]->getMappedData(), &compute.ubo,
-                sizeof(compute.ubo));
-  }
-
-  // dynamic UBO
-  alignedSizeDynamicUboElt = padUniformBufferSize(sizeof(DynamicUboElt));
-  dynamicUniformBuffers.reserve(MAX_CONCURRENT_FRAMES);
-  for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
-    dynamicUniformBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
-        globalAllocator->getAllocator(), alignedSizeDynamicUboElt,
-        dynamicUbo.size(), vk::BufferUsageFlagBits::eUniformBuffer,
-        VMA_MEMORY_USAGE_AUTO,
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-            VMA_ALLOCATION_CREATE_MAPPED_BIT |
-            VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT));
-    for (size_t j = 0; j < dynamicUbo.size(); j++) {
-      std::memcpy(
-          static_cast<char*>(dynamicUniformBuffers[i]->getMappedData()) +
-              j * alignedSizeDynamicUboElt,
-          &dynamicUbo[j], alignedSizeDynamicUboElt);
-    }
   }
 }
 
@@ -413,31 +443,6 @@ void VgeExample::createDescriptorSets() {
       writeDescriptorSets.emplace_back(*graphics.globalUboDescriptorSets[i], 0,
                                        0, vk::DescriptorType::eUniformBuffer,
                                        nullptr, bufferInfos.back());
-    }
-    device.updateDescriptorSets(writeDescriptorSets, nullptr);
-  }
-
-  // dynamic UBO
-  {
-    vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
-                                            *dynamicUboDescriptorSetLayout);
-    dynamicUboDescriptorSets.reserve(MAX_CONCURRENT_FRAMES);
-    for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
-      dynamicUboDescriptorSets.push_back(
-          std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
-    }
-    std::vector<vk::DescriptorBufferInfo> bufferInfos;
-    bufferInfos.reserve(dynamicUniformBuffers.size());
-    std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
-    writeDescriptorSets.reserve(dynamicUniformBuffers.size());
-    for (int i = 0; i < dynamicUniformBuffers.size(); i++) {
-      // NOTE: descriptorBufferInfo range be alignedSizeDynamicUboElt
-      bufferInfos.push_back(dynamicUniformBuffers[i]->descriptorInfo(
-          alignedSizeDynamicUboElt, 0));
-      writeDescriptorSets.emplace_back(
-          *dynamicUboDescriptorSets[i], 0, 0,
-          vk::DescriptorType::eUniformBufferDynamic, nullptr,
-          bufferInfos.back());
     }
     device.updateDescriptorSets(writeDescriptorSets, nullptr);
   }
