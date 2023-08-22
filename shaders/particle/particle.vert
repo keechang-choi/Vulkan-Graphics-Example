@@ -3,7 +3,7 @@
 layout (location = 0) in vec4 inPos;
 layout (location = 1) in vec4 inVel;
 
-layout (location = 0) out float outPackedColor;
+layout (location = 0) out vec3 outColor;
 
 layout (set = 0, binding = 0) uniform GlobalUbo 
 {
@@ -20,6 +20,22 @@ out gl_PerVertex
 	float gl_PointSize;
 };
 
+
+// https://stackoverflow.com/questions/6893302/decode-rgb-value-to-single-float-without-bit-shift-in-glsl
+float packColor(vec3 color) {
+    return color.r + color.g * 256.0 + color.b * 256.0 * 256.0;
+}
+
+vec3 unpackColor(float f) {
+    vec3 color;
+    color.b = floor(f / 256.0 / 256.0);
+    color.g = floor((f - color.b * 256.0 * 256.0) / 256.0);
+    color.r = floor(f - color.b * 256.0 * 256.0 - color.g * 256.0);
+    // now we have a vec3 with the 3 components in range [0..255]. Let's normalize it!
+    return color / 255.0;
+}
+
+
 void main () 
 {
 	const float spriteSize = 0.005 * inPos.w; // Point size influenced by mass (stored in inPos.w);
@@ -30,5 +46,5 @@ void main ()
 	
 	gl_Position = globalUbo.projection * eyePos;
 
-	outPackedColor = inVel.w;
+	outColor = unpackColor(inVel.w);
 }
