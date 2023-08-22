@@ -477,14 +477,14 @@ void VgeExample::createPipelines() {
                                     vk::StencilOp::eKeep,
                                     vk::CompareOp::eAlways);
   vk::PipelineDepthStencilStateCreateInfo depthStencilSCI(
-      vk::PipelineDepthStencilStateCreateFlags(), false /*depthTestEnable*/,
+      vk::PipelineDepthStencilStateCreateFlags(), true /*depthTestEnable*/,
       true, vk::CompareOp::eLessOrEqual, false, false, stencilOpState,
       stencilOpState);
 
   vk::PipelineColorBlendAttachmentState colorBlendAttachmentState(
       true, vk::BlendFactor::eSrcAlpha, vk::BlendFactor::eOneMinusSrcAlpha,
-      vk::BlendOp::eAdd, vk::BlendFactor::eSrcAlpha,
-      vk::BlendFactor::eOneMinusSrcAlpha, vk::BlendOp::eAdd,
+      vk::BlendOp::eAdd, vk::BlendFactor::eOne, vk::BlendFactor::eZero,
+      vk::BlendOp::eAdd,
       vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
           vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA);
 
