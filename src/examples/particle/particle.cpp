@@ -16,6 +16,11 @@
 #include <random>
 #include <unordered_set>
 
+namespace {
+float packColor(uint8_t r, uint8_t g, uint8_t b) {
+  return r * 1.0f + g * 256.0f + b * 256.0f * 256.0f;
+}
+}  // namespace
 namespace vge {
 VgeExample::VgeExample() : VgeBase() { title = "Particle Example"; }
 VgeExample::~VgeExample() {}
@@ -239,11 +244,14 @@ void VgeExample::createStorageBuffers() {
   rndEngine.seed(1111);
   std::normal_distribution<float> normalDist(0.0f, 1.0f);
 
-  const float kR = 255.f;
-  const float kG = 255.f * 256.f;
-  const float kB = 255.f * 256.f * 256.f;
+  uint8_t additiveColor = 25u;
   std::vector<float> colors{
-      kR, kG, kB, kR + kG, kG + kB, kB + kR,
+      ::packColor(255, additiveColor, additiveColor),
+      ::packColor(additiveColor, 255, additiveColor),
+      ::packColor(additiveColor, additiveColor, 255),
+      ::packColor(additiveColor, 255, 255),
+      ::packColor(255, additiveColor, 255),
+      ::packColor(255, 255, additiveColor),
   };
   for (size_t i = 0; i < attractor.size(); i++) {
     uint32_t numParticlesPerAttractor = numParticles / attractor.size();
@@ -477,14 +485,13 @@ void VgeExample::createPipelines() {
                                     vk::StencilOp::eKeep,
                                     vk::CompareOp::eAlways);
   vk::PipelineDepthStencilStateCreateInfo depthStencilSCI(
-      vk::PipelineDepthStencilStateCreateFlags(), true /*depthTestEnable*/,
+      vk::PipelineDepthStencilStateCreateFlags(), false /*depthTestEnable*/,
       true, vk::CompareOp::eLessOrEqual, false, false, stencilOpState,
       stencilOpState);
 
   vk::PipelineColorBlendAttachmentState colorBlendAttachmentState(
-      true, vk::BlendFactor::eSrcAlpha, vk::BlendFactor::eOneMinusSrcAlpha,
-      vk::BlendOp::eAdd, vk::BlendFactor::eOne, vk::BlendFactor::eZero,
-      vk::BlendOp::eAdd,
+      true, vk::BlendFactor::eOne, vk::BlendFactor::eOne, vk::BlendOp::eAdd,
+      vk::BlendFactor::eSrcAlpha, vk::BlendFactor::eDstAlpha, vk::BlendOp::eAdd,
       vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
           vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA);
 

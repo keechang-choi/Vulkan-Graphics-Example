@@ -9,5 +9,5 @@ void main ()
 {
     vec2 coord = gl_PointCoord - vec2(0.5);
     float alpha = max(0.25 - dot(coord, coord), 0.0) * 4.0;
-	outFragColor = vec4(inColor, alpha);
+	outFragColor = vec4(inColor * alpha, 1.0);
 }

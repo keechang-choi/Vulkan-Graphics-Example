@@ -129,6 +129,6 @@ class VgeExample : public VgeBase {
 
   float animationTime = 0.f;
   float animationLastTime = 0.f;
-  uint32_t numParticles = 1024u;
+  uint32_t numParticles = 1024u * 6u;
 };
 }  // namespace vge
