@@ -22,11 +22,11 @@ out gl_PerVertex
 
 
 // https://stackoverflow.com/questions/6893302/decode-rgb-value-to-single-float-without-bit-shift-in-glsl
-float packColor(vec3 color) {
+float packColor(in vec3 color) {
     return color.r + color.g * 256.0 + color.b * 256.0 * 256.0;
 }
 
-vec3 unpackColor(float f) {
+vec3 unpackColor(in float f) {
     vec3 color;
     color.b = floor(f / 256.0 / 256.0);
     color.g = floor((f - color.b * 256.0 * 256.0) / 256.0);

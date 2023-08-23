@@ -197,8 +197,42 @@ void VgeExample::prepareCompute() {
     }
   }
 
-  // create pipeline
+  // create pipelines
+  {
+    auto compCalculateCode = vgeu::readFile(
+        getShadersPath() + "/particle/particle_caculate.comp.spv");
+    vk::raii::ShaderModule compShaderModule =
+        vgeu::createShaderModule(device, compCalculateCode);
 
+    SpecializationData specializationData;
+    specializationData.sharedDataSize = std::min(
+        1024u,
+        static_cast<uint32_t>(
+            physicalDevice.getProperties().limits.maxComputeSharedMemorySize /
+            sizeof(glm::vec4)));
+    specializationData.gravity = 0.0002f;
+    specializationData.power = 0.75;
+    specializationData.soften = 0.05f;
+
+    std::vector<vk::SpecializationMapEntry> specializationMapEntries;
+    specializationMapEntries.emplace_back(
+        0u, offsetof(SpecializationData, sharedDataSize), sizeof(uint32_t));
+    specializationMapEntries.emplace_back(
+        1u, offsetof(SpecializationData, gravity), sizeof(float));
+    specializationMapEntries.emplace_back(
+        2u, offsetof(SpecializationData, power), sizeof(float));
+    specializationMapEntries.emplace_back(
+        3u, offsetof(SpecializationData, soften), sizeof(float));
+
+    vk::SpecializationInfo specilizationInfo(specializationMapEntries,
+                                             specializationData);
+
+    vk::PipelineShaderStageCreateInfo computeShaderStageCI(
+        vk::PipelineShaderStageCreateFlags{},
+        vk::ShaderStageFlagBits::eCompute, );
+    vk::ComputePipelineCreateInfo computePipelineCI(
+        vk::PipelineCreateFlags{}, );
+  }
   // create commandPool
 }
 
@@ -246,12 +280,12 @@ void VgeExample::createStorageBuffers() {
 
   uint8_t additiveColor = 25u;
   std::vector<float> colors{
-      ::packColor(255, additiveColor, additiveColor),
-      ::packColor(additiveColor, 255, additiveColor),
-      ::packColor(additiveColor, additiveColor, 255),
-      ::packColor(additiveColor, 255, 255),
-      ::packColor(255, additiveColor, 255),
-      ::packColor(255, 255, additiveColor),
+      ::packColor(255u, additiveColor, additiveColor),
+      ::packColor(additiveColor, 255u, additiveColor),
+      ::packColor(additiveColor, additiveColor, 255u),
+      ::packColor(additiveColor, 255u, 255u),
+      ::packColor(255u, additiveColor, 255u),
+      ::packColor(255u, 255u, additiveColor),
   };
   for (size_t i = 0; i < attractor.size(); i++) {
     uint32_t numParticlesPerAttractor = numParticles / attractor.size();

@@ -41,6 +41,13 @@ struct Particle {
   glm::vec4 vk[4];
 };
 
+struct SpecializationData {
+  uint32_t sharedDataSize;
+  float gravity;
+  float power;
+  float soften;
+};
+
 class VgeExample : public VgeBase {
  public:
   VgeExample();
