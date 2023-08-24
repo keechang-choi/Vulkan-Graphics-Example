@@ -201,7 +201,7 @@ void VgeExample::prepareCompute() {
   {
     auto compCalculateCode = vgeu::readFile(
         getShadersPath() + "/particle/particle_caculate.comp.spv");
-    vk::raii::ShaderModule compShaderModule =
+    vk::raii::ShaderModule compCacluateShaderModule =
         vgeu::createShaderModule(device, compCalculateCode);
 
     SpecializationData specializationData{};
@@ -232,10 +232,23 @@ void VgeExample::prepareCompute() {
 
     vk::PipelineShaderStageCreateInfo computeShaderStageCI(
         vk::PipelineShaderStageCreateFlags{}, vk::ShaderStageFlagBits::eCompute,
-        *compShaderModule, "main", &specializationInfo);
+        *compCacluateShaderModule, "main", &specializationInfo);
     vk::ComputePipelineCreateInfo computePipelineCI(vk::PipelineCreateFlags{},
                                                     computeShaderStageCI,
                                                     *compute.pipelineLayout);
+
+    // 1st pass
+    compute.pipelineCalculate =
+        vk::raii::Pipeline(device, pipelineCache, computePipelineCI);
+
+    // 2nd pass
+    auto compIntegrateCode = vgeu::readFile(
+        getShadersPath() + "/particle/particle_integrate.comp.spv");
+    vk::raii::ShaderModule compIntegrateShaderModule =
+        vgeu::createShaderModule(device, compIntegrateCode);
+    computePipelineCI.stage.module = *compIntegrateShaderModule;
+    compute.pipelineCalculate =
+        vk::raii::Pipeline(device, pipelineCache, computePipelineCI);
   }
   // create commandPool
 }
