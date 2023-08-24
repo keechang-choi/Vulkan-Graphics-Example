@@ -204,7 +204,7 @@ void VgeExample::prepareCompute() {
     vk::raii::ShaderModule compShaderModule =
         vgeu::createShaderModule(device, compCalculateCode);
 
-    SpecializationData specializationData;
+    SpecializationData specializationData{};
     specializationData.sharedDataSize = std::min(
         1024u,
         static_cast<uint32_t>(
@@ -224,14 +224,18 @@ void VgeExample::prepareCompute() {
     specializationMapEntries.emplace_back(
         3u, offsetof(SpecializationData, soften), sizeof(float));
 
-    vk::SpecializationInfo specilizationInfo(specializationMapEntries,
-                                             specializationData);
+    // NOTE: template argument deduction not work with implicit conversion
+    vk::SpecializationInfo specializationInfo(
+        specializationMapEntries,
+        vk::ArrayProxyNoTemporaries<const SpecializationData>(
+            specializationData));
 
     vk::PipelineShaderStageCreateInfo computeShaderStageCI(
-        vk::PipelineShaderStageCreateFlags{},
-        vk::ShaderStageFlagBits::eCompute, );
-    vk::ComputePipelineCreateInfo computePipelineCI(
-        vk::PipelineCreateFlags{}, );
+        vk::PipelineShaderStageCreateFlags{}, vk::ShaderStageFlagBits::eCompute,
+        *compShaderModule, "main", &specializationInfo);
+    vk::ComputePipelineCreateInfo computePipelineCI(vk::PipelineCreateFlags{},
+                                                    computeShaderStageCI,
+                                                    *compute.pipelineLayout);
   }
   // create commandPool
 }
