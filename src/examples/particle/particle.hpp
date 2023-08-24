@@ -46,6 +46,7 @@ struct SpecializationData {
   float gravity;
   float power;
   float soften;
+  uint32_t rkStep;
 };
 
 class VgeExample : public VgeBase {

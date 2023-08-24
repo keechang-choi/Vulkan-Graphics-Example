@@ -213,6 +213,8 @@ void VgeExample::prepareCompute() {
     specializationData.gravity = 0.0002f;
     specializationData.power = 0.75;
     specializationData.soften = 0.05f;
+    // TODO: for 1~4
+    specializationData.rkStep = 1u;
 
     std::vector<vk::SpecializationMapEntry> specializationMapEntries;
     specializationMapEntries.emplace_back(
@@ -223,6 +225,8 @@ void VgeExample::prepareCompute() {
         2u, offsetof(SpecializationData, power), sizeof(float));
     specializationMapEntries.emplace_back(
         3u, offsetof(SpecializationData, soften), sizeof(float));
+    specializationMapEntries.emplace_back(
+        4u, offsetof(SpecializationData, rkStep), sizeof(uint32_t));
 
     // NOTE: template argument deduction not work with implicit conversion
     vk::SpecializationInfo specializationInfo(

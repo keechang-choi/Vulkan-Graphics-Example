@@ -1,0 +1,95 @@
+
+#version 450
+
+struct Particle
+{
+	vec4 pos;
+	vec4 vel;
+	vec4 pk[];
+	vec4 vk[];
+};
+
+// Binding 0 : Position storage buffer
+layout(std140, binding = 0) buffer SSBO 
+{
+   Particle particles[ ];
+};
+
+layout (local_size_x = 256) in;
+
+layout (binding = 1) uniform UBO 
+{
+	float deltaT;
+	int particleCount;
+} ubo;
+
+layout (constant_id = 0) const int SHARED_DATA_SIZE = 512;
+layout (constant_id = 1) const float GRAVITY = 0.002;
+layout (constant_id = 2) const float POWER = 0.75;
+layout (constant_id = 3) const float SOFTEN = 0.0075;
+layout (constant_id = 4) const int RKSTEP = 0;
+
+// Share data between computer shader invocations to speed up caluclations
+shared vec4 sharedData[SHARED_DATA_SIZE];
+
+void RkStepInput(in Particle particle, out vec4 outPos, out vec4 outVel){
+	if (RKSTEP == 1){
+		outPos = particle.pos;
+		outVel = particle.vel;
+	}else if (RKSTEP == 2){
+		outPos = particle.pos + 0.5 * particle.pk[0];
+		outVel = particle.vel + 0.5 * particle.vk[0];
+	}else if (RKSTEP == 3){
+		outPos = particle.pos + 0.5 * particle.pk[1];
+		outVel = particle.vel + 0.5 * particle.vk[1];
+	}else if (RKSTEP == 4){
+		outPos = particle.pos + particle.pk[2];
+		outVel = particle.vel + particle.vk[2];
+	}
+}
+
+void main() 
+{
+	// Current SSBO index
+	uint index = gl_GlobalInvocationID.x;
+	if (index >= ubo.particleCount) 
+		return;	
+
+	vec4 position; 
+	vec4 velocity; 
+	RkStepInput(particles[index], position, velocity);
+	vec4 acceleration = vec4(0.0);
+
+	for (int i = 0; i < ubo.particleCount; i += SHARED_DATA_SIZE)
+	{
+		if (i + gl_LocalInvocationID.x < ubo.particleCount)
+		{
+			vec4 otherPos;
+			vec4 otherVel;
+			RkStepInput(particles[i + gl_LocalInvocationID.x], otherPos, otherVel);
+			sharedData[gl_LocalInvocationID.x] = otherPos;
+		}
+		else
+		{
+			sharedData[gl_LocalInvocationID.x] = vec4(0.0);
+		}
+
+		memoryBarrierShared();
+		barrier();
+
+		for (int j = 0; j < gl_WorkGroupSize.x; j++)
+		{
+			vec4 other = sharedData[j];
+			vec3 len = other.xyz - position.xyz;
+			acceleration.xyz += GRAVITY * len * other.w / pow(dot(len, len) + SOFTEN, POWER);
+		}
+
+		memoryBarrierShared();
+		barrier();
+	}
+
+	// RK step output
+	particles[index].pk[RKSTEP-1].xyz = ubo.deltaT * velocity.xyz;
+	particles[index].vk[RKSTEP-1].xyz = ubo.deltaT * acceleration.xyz;
+
+}
