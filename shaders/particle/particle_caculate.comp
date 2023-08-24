@@ -5,8 +5,8 @@ struct Particle
 {
 	vec4 pos;
 	vec4 vel;
-	vec4 pk[];
-	vec4 vk[];
+	vec4 pk[4];
+	vec4 vk[4];
 };
 
 // Binding 0 : Position storage buffer
@@ -19,7 +19,7 @@ layout (local_size_x = 256) in;
 
 layout (binding = 1) uniform UBO 
 {
-	float deltaT;
+	float dt;
 	int particleCount;
 } ubo;
 
@@ -89,7 +89,7 @@ void main()
 	}
 
 	// RK step output
-	particles[index].pk[RKSTEP-1].xyz = ubo.deltaT * velocity.xyz;
-	particles[index].vk[RKSTEP-1].xyz = ubo.deltaT * acceleration.xyz;
+	particles[index].pk[RKSTEP-1].xyz = ubo.dt * velocity.xyz;
+	particles[index].vk[RKSTEP-1].xyz = ubo.dt * acceleration.xyz;
 
 }

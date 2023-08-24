@@ -1,0 +1,44 @@
+
+#version 450
+
+struct Particle
+{
+	vec4 pos;
+	vec4 vel;
+	vec4 pk[4];
+	vec4 vk[4];
+};
+
+// Binding 0 : Position storage buffer
+layout(std140, binding = 0) buffer SSBO 
+{
+   Particle particles[ ];
+};
+
+layout (local_size_x = 256) in;
+
+layout (binding = 1) uniform UBO 
+{
+	float dt;
+	int particleCount;
+} ubo;
+
+void main() 
+{
+	// Current SSBO index
+	uint index = gl_GlobalInvocationID.x;
+	particles[index].pos.xyz += (
+		particles[index].pk[0].xyz + 
+		2.0 * particles[index].pk[1].xyz + 
+		2.0 * particles[index].pk[2].xyz + 
+		particles[index].pk[3].xyz
+	) / 6.0;
+
+	particles[index].vel.xyz += (
+		particles[index].vk[0].xyz + 
+		2.0 * particles[index].vk[1].xyz + 
+		2.0 * particles[index].vk[2].xyz + 
+		particles[index].vk[3].xyz
+	) / 6.0;
+
+}
