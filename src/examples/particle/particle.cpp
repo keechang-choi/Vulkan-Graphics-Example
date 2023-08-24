@@ -254,7 +254,14 @@ void VgeExample::prepareCompute() {
     compute.pipelineCalculate =
         vk::raii::Pipeline(device, pipelineCache, computePipelineCI);
   }
+  // TODO:
   // create commandPool
+
+  // create commandBuffer
+
+  // create semaphore for compute-graphics sync
+
+  // not here : recording command buffer -> in draw each frame.
 }
 
 void VgeExample::loadAssets() {

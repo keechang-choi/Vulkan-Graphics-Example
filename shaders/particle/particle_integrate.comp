@@ -27,6 +27,8 @@ void main()
 {
 	// Current SSBO index
 	uint index = gl_GlobalInvocationID.x;
+
+	// RK4 integrate
 	particles[index].pos.xyz += (
 		particles[index].pk[0].xyz + 
 		2.0 * particles[index].pk[1].xyz + 
