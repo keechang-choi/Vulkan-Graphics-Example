@@ -658,20 +658,47 @@ void VgeExample::draw() {
   updateComputeUbo();
   updateGraphicsUbo();
 
-  buildComputeCommandBuffers();
+  // TODO: Fence and compute recording order
 
-  // draw cmds recording or command buffers should be built already.
-  buildCommandBuffers();
+  //  compute recording and submitting
+  {
+    buildComputeCommandBuffers();
+    vk::PipelineStageFlags computeWaitDstStageMask(
+        vk::PipelineStageFlagBits::eComputeShader);
+    vk::SubmitInfo computeSubmitInfo(*graphics.semaphores[currentFrameIndex],
+                                     computeWaitDstStageMask,
+                                     *compute.cmdBuffers[currentFrameIndex],
+                                     *compute.semaphores[currentFrameIndex]);
+    compute.queue.submit(computeSubmitInfo);
+  }
 
-  vk::PipelineStageFlags waitDstStageMask(
-      vk::PipelineStageFlagBits::eColorAttachmentOutput);
-  // NOTE: parameter array type has no r value constructor
-  vk::SubmitInfo submitInfo(*presentCompleteSemaphores[currentFrameIndex],
-                            waitDstStageMask,
-                            *drawCmdBuffers[currentFrameIndex],
-                            *renderCompleteSemaphores[currentFrameIndex]);
+  {
+    // draw cmds recording or command buffers should be built already.
+    buildCommandBuffers();
 
-  queue.submit(submitInfo, *waitFences[currentFrameIndex]);
+    std::vector<vk::PipelineStageFlags> graphicsWaitDstStageMasks{
+        vk::PipelineStageFlagBits::eVertexInput,
+        vk::PipelineStageFlagBits::eColorAttachmentOutput,
+    };
+
+    std::vector<vk::Semaphore> graphicsWaitSemaphores{
+        *compute.semaphores[currentFrameIndex],
+        *presentCompleteSemaphores[currentFrameIndex],
+    };
+
+    std::vector<vk::Semaphore> graphicsSignalSemaphore{
+        *graphics.semaphores[currentFrameIndex],
+        *renderCompleteSemaphores[currentFrameIndex],
+    };
+
+    // NOTE: parameter array type has no r value constructor
+    vk::SubmitInfo graphicsSubmitInfo(
+        graphicsWaitSemaphores, graphicsWaitDstStageMasks,
+        *drawCmdBuffers[currentFrameIndex], graphicsSignalSemaphore);
+
+    // TODO: fence?
+    queue.submit(graphicsSubmitInfo, *waitFences[currentFrameIndex]);
+  }
   submitFrame();
 }
 
