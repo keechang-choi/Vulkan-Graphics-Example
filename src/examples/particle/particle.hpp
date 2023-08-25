@@ -101,7 +101,7 @@ class VgeExample : public VgeBase {
     vk::raii::DescriptorSetLayout globalUboDescriptorSetLayout = nullptr;
     vk::raii::PipelineLayout pipelineLayout = nullptr;
     vk::raii::Pipeline pipeline = nullptr;
-    vk::raii::Semaphore semaphore = nullptr;
+    std::vector<vk::raii::Semaphore> semaphores;
   } graphics;
 
   struct {
@@ -111,7 +111,7 @@ class VgeExample : public VgeBase {
     vk::raii::Queue queue = nullptr;
     vk::raii::CommandPool cmdPool = nullptr;
     vk::raii::CommandBuffers cmdBuffers = nullptr;
-    vk::raii::Semaphore semaphore = nullptr;
+    std::vector<vk::raii::Semaphore> semaphores;
 
     vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
     std::vector<vk::raii::DescriptorSet> descriptorSets;

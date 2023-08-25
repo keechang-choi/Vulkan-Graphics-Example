@@ -62,6 +62,22 @@ void VgeExample::prepareGraphics() {
   createDescriptorSetLayout();
   createDescriptorSets();
   createPipelines();
+  // create semaphore for compute-graphics sync
+  {
+    std::vector<vk::Semaphore> semaphoresToSignal;
+    semaphoresToSignal.reserve(MAX_CONCURRENT_FRAMES);
+    graphics.semaphores.reserve(MAX_CONCURRENT_FRAMES);
+    for (size_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      vk::raii::Semaphore& semaphore =
+          graphics.semaphores.emplace_back(device, vk::SemaphoreCreateInfo());
+      semaphoresToSignal.push_back(*semaphore);
+    }
+    // initial signaled
+
+    vk::SubmitInfo submitInfo({}, {}, {}, semaphoresToSignal);
+    queue.submit(submitInfo);
+    queue.waitIdle();
+  }
 }
 
 void VgeExample::prepareCompute() {
@@ -256,10 +272,28 @@ void VgeExample::prepareCompute() {
   }
   // TODO:
   // create commandPool
+  {
+    vk::CommandPoolCreateInfo cmdPoolCI(
+        vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+        compute.queueFamilyIndex);
+    compute.cmdPool = vk::raii::CommandPool(device, cmdPoolCI);
+  }
 
   // create commandBuffer
+  {
+    vk::CommandBufferAllocateInfo cmdBufferAI(*compute.cmdPool,
+                                              vk::CommandBufferLevel::ePrimary,
+                                              MAX_CONCURRENT_FRAMES);
+    compute.cmdBuffers = vk::raii::CommandBuffers(device, cmdBufferAI);
+  }
 
   // create semaphore for compute-graphics sync
+  {
+    compute.semaphores.reserve(MAX_CONCURRENT_FRAMES);
+    for (size_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      compute.semaphores.emplace_back(device, vk::SemaphoreCreateInfo());
+    }
+  }
 
   // not here : recording command buffer -> in draw each frame.
 }
