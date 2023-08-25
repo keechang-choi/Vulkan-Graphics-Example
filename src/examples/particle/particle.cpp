@@ -270,7 +270,6 @@ void VgeExample::prepareCompute() {
     compute.pipelineCalculate =
         vk::raii::Pipeline(device, pipelineCache, computePipelineCI);
   }
-  // TODO:
   // create commandPool
   {
     vk::CommandPoolCreateInfo cmdPoolCI(
@@ -294,8 +293,6 @@ void VgeExample::prepareCompute() {
       compute.semaphores.emplace_back(device, vk::SemaphoreCreateInfo());
     }
   }
-
-  // not here : recording command buffer -> in draw each frame.
 }
 
 void VgeExample::loadAssets() {
@@ -418,6 +415,7 @@ void VgeExample::createStorageBuffers() {
                 vk::BufferCopy(0, 0, stagingBuffer.getBufferSize()));
             // TODO: pipeline barrier to the compute queue?
             // TODO: check spec and exs for ownership transfer
+            // release
             if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
               vk::BufferMemoryBarrier bufferBarrier(
                   vk::AccessFlagBits::eTransferWrite, vk::AccessFlags{},
@@ -426,7 +424,9 @@ void VgeExample::createStorageBuffers() {
                   compute.storageBuffers[i]->getBufferSize());
               cmdBuffer.pipelineBarrier(
                   vk::PipelineStageFlagBits::eTransfer,
-                  vk::PipelineStageFlagBits::eComputeShader,
+                  vk::PipelineStageFlagBits::
+                      eComputeShader /*vk::PipelineStageFlagBits::eBottomOfPipe*/
+                  ,
                   vk::DependencyFlags{}, nullptr, bufferBarrier, nullptr);
             }
           }
@@ -660,6 +660,8 @@ void VgeExample::draw() {
   updateComputeUbo();
   updateGraphicsUbo();
 
+  buildComputeCommandBuffers();
+
   // draw cmds recording or command buffers should be built already.
   buildCommandBuffers();
 
@@ -690,6 +692,21 @@ void VgeExample::buildCommandBuffers() {
       *renderPass, *frameBuffers[currentImageIndex],
       vk::Rect2D(vk::Offset2D(0, 0), swapChainData->swapChainExtent),
       clearValues);
+
+  // acquire barrier compute -> graphics
+  if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
+    vk::BufferMemoryBarrier bufferBarrier(
+        vk::AccessFlags{}, vk::AccessFlagBits::eVertexAttributeRead,
+        compute.queueFamilyIndex, graphics.queueFamilyIndex,
+        compute.storageBuffers[currentFrameIndex]->getBuffer(), 0ull,
+        compute.storageBuffers[currentFrameIndex]->getBufferSize());
+    drawCmdBuffers[currentFrameIndex].pipelineBarrier(
+        vk::PipelineStageFlagBits::
+            eComputeShader /*vk::PipelineStageFlagBits::eTopOfPipe*/,
+        vk::PipelineStageFlagBits::eVertexInput, vk::DependencyFlags{}, nullptr,
+        bufferBarrier, nullptr);
+  }
+
   // NOTE: no secondary cmd buffers
   drawCmdBuffers[currentFrameIndex].beginRenderPass(
       renderPassBeginInfo, vk::SubpassContents::eInline);
@@ -729,9 +746,83 @@ void VgeExample::buildCommandBuffers() {
   // end renderpass
   drawCmdBuffers[currentFrameIndex].endRenderPass();
 
+  // release graphics -> compute
+  if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
+    vk::BufferMemoryBarrier bufferBarrier(
+        vk::AccessFlagBits::eVertexAttributeRead, vk::AccessFlags{},
+        graphics.queueFamilyIndex, compute.queueFamilyIndex,
+        compute.storageBuffers[currentFrameIndex]->getBuffer(), 0ull,
+        compute.storageBuffers[currentFrameIndex]->getBufferSize());
+    drawCmdBuffers[currentFrameIndex].pipelineBarrier(
+        vk::PipelineStageFlagBits::eVertexInput,
+        vk::PipelineStageFlagBits::
+            eComputeShader /*vk::PipelineStageFlagBits::eBottomOfPipe*/,
+        vk::DependencyFlags{}, nullptr, bufferBarrier, nullptr);
+  }
+
   // end command buffer
   drawCmdBuffers[currentFrameIndex].end();
 }
+
+void VgeExample::buildComputeCommandBuffers() {
+  compute.cmdBuffers[currentFrameIndex].begin({});
+
+  // acquire barrier graphics -> compute
+  if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
+    vk::BufferMemoryBarrier bufferBarrier(
+        vk::AccessFlags{}, vk::AccessFlagBits::eShaderWrite,
+        graphics.queueFamilyIndex, compute.queueFamilyIndex,
+        compute.storageBuffers[currentFrameIndex]->getBuffer(), 0ull,
+        compute.storageBuffers[currentFrameIndex]->getBufferSize());
+    // NOTE: top of pipeline -> same as all commands,
+    // and between frames -> graphics queue can proceed until vertex in
+    compute.cmdBuffers[currentFrameIndex].pipelineBarrier(
+        vk::PipelineStageFlagBits::
+            eVertexInput /*vk::PipelineStageFlagBits::eTopOfPipe*/,
+        vk::PipelineStageFlagBits::eComputeShader, vk::DependencyFlags{},
+        nullptr, bufferBarrier, nullptr);
+  }
+
+  // 1st pass
+  compute.cmdBuffers[currentFrameIndex].bindPipeline(
+      vk::PipelineBindPoint::eCompute, *compute.pipelineCalculate);
+  compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+      vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 0,
+      *compute.descriptorSets[currentFrameIndex], nullptr);
+  compute.cmdBuffers[currentFrameIndex].dispatch(numParticles / 256, 1, 1);
+
+  // memory barrier
+  vk::BufferMemoryBarrier bufferBarrier(
+      vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eShaderRead,
+      VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+      compute.storageBuffers[currentFrameIndex]->getBuffer(), 0ull,
+      compute.storageBuffers[currentFrameIndex]->getBufferSize());
+  compute.cmdBuffers[currentFrameIndex].pipelineBarrier(
+      vk::PipelineStageFlagBits::eComputeShader,
+      vk::PipelineStageFlagBits::eComputeShader, vk::DependencyFlags{}, nullptr,
+      bufferBarrier, nullptr);
+
+  // 2nd pass
+  compute.cmdBuffers[currentFrameIndex].bindPipeline(
+      vk::PipelineBindPoint::eCompute, *compute.pipelineIntegrate);
+  compute.cmdBuffers[currentFrameIndex].dispatch(numParticles / 256, 1, 1);
+
+  // release barrier
+  if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
+    vk::BufferMemoryBarrier bufferBarrier(
+        vk::AccessFlagBits::eShaderWrite, vk::AccessFlags{},
+        compute.queueFamilyIndex, graphics.queueFamilyIndex,
+        compute.storageBuffers[currentFrameIndex]->getBuffer(), 0ull,
+        compute.storageBuffers[currentFrameIndex]->getBufferSize());
+    compute.cmdBuffers[currentFrameIndex].pipelineBarrier(
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::PipelineStageFlagBits::
+            eVertexInput /*vk::PipelineStageFlagBits::eBottomOfPipe*/,
+        vk::DependencyFlags{}, nullptr, bufferBarrier, nullptr);
+  }
+  compute.cmdBuffers[currentFrameIndex].end();
+}
+
 void VgeExample::viewChanged() {
   // std::cout << "Call: viewChanged()" << std::endl;
   camera.setAspectRatio(static_cast<float>(width) / static_cast<float>(height));
