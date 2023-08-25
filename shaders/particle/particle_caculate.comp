@@ -9,15 +9,21 @@ struct Particle
 	vec4 vk[4];
 };
 
-// Binding 0 : Position storage buffer
-layout(std140, binding = 0) buffer SSBO 
+// Binding 0 : Position storage buffer prev frame
+layout(std140, binding = 0) readonly buffer SSBOIn
+{
+   Particle particlesIn[ ];
+};
+
+// Binding 1 : Position storage buffer
+layout(std140, binding = 1) buffer SSBO
 {
    Particle particles[ ];
 };
 
 layout (local_size_x = 256) in;
 
-layout (binding = 1) uniform UBO 
+layout (binding = 2) uniform UBO 
 {
 	float dt;
 	int particleCount;
@@ -57,7 +63,7 @@ void main()
 
 	vec4 position; 
 	vec4 velocity; 
-	RkStepInput(particles[index], position, velocity);
+	RkStepInput(particlesIn[index], position, velocity);
 	vec4 acceleration = vec4(0.0);
 
 	for (int i = 0; i < ubo.particleCount; i += SHARED_DATA_SIZE)
@@ -66,7 +72,7 @@ void main()
 		{
 			vec4 otherPos;
 			vec4 otherVel;
-			RkStepInput(particles[i + gl_LocalInvocationID.x], otherPos, otherVel);
+			RkStepInput(particlesIn[i + gl_LocalInvocationID.x], otherPos, otherVel);
 			sharedData[gl_LocalInvocationID.x] = otherPos;
 		}
 		else

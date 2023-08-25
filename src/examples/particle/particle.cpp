@@ -127,11 +127,15 @@ void VgeExample::prepareCompute() {
     // set 0
     {
       std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
-      // binding 0
-      layoutBindings.emplace_back(0, vk::DescriptorType::eStorageBuffer, 1,
+
+      layoutBindings.emplace_back(0 /* binding */,
+                                  vk::DescriptorType::eStorageBuffer, 1,
                                   vk::ShaderStageFlagBits::eCompute);
-      // binding 1
-      layoutBindings.emplace_back(1, vk::DescriptorType::eUniformBuffer, 1,
+      layoutBindings.emplace_back(1 /* binding */,
+                                  vk::DescriptorType::eStorageBuffer, 1,
+                                  vk::ShaderStageFlagBits::eCompute);
+      layoutBindings.emplace_back(2 /* binding */,
+                                  vk::DescriptorType::eUniformBuffer, 1,
                                   vk::ShaderStageFlagBits::eCompute);
 
       vk::DescriptorSetLayoutCreateInfo layoutCI(
@@ -167,23 +171,30 @@ void VgeExample::prepareCompute() {
           std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
     }
 
-    std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
-    writeDescriptorSets.reserve(compute.descriptorSets.size());
     std::vector<vk::DescriptorBufferInfo> storageBufferInfos;
     storageBufferInfos.reserve(compute.descriptorSets.size());
     std::vector<vk::DescriptorBufferInfo> uniformBufferInfos;
     uniformBufferInfos.reserve(compute.descriptorSets.size());
     for (size_t i = 0; i < compute.descriptorSets.size(); i++) {
       storageBufferInfos.push_back(compute.storageBuffers[i]->descriptorInfo());
-      writeDescriptorSets.emplace_back(*compute.descriptorSets[i],
-                                       0 /*binding*/, 0,
-                                       vk::DescriptorType::eStorageBuffer,
-                                       nullptr, storageBufferInfos.back());
       uniformBufferInfos.push_back(compute.uniformBuffers[i]->descriptorInfo());
-      writeDescriptorSets.emplace_back(*compute.descriptorSets[i],
-                                       1 /*binding*/, 0,
-                                       vk::DescriptorType::eUniformBuffer,
-                                       nullptr, uniformBufferInfos.back());
+    }
+    std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
+    writeDescriptorSets.reserve(compute.descriptorSets.size());
+    for (size_t i = 0; i < compute.descriptorSets.size(); i++) {
+      int prevFrameIdx =
+          (i - 1 + MAX_CONCURRENT_FRAMES) % MAX_CONCURRENT_FRAMES;
+      writeDescriptorSets.emplace_back(
+          *compute.descriptorSets[i], 0 /*binding*/, 0,
+          vk::DescriptorType::eStorageBuffer, nullptr,
+          storageBufferInfos[prevFrameIdx]);
+      writeDescriptorSets.emplace_back(
+          *compute.descriptorSets[i], 1 /*binding*/, 0,
+          vk::DescriptorType::eStorageBuffer, nullptr, storageBufferInfos[i]);
+
+      writeDescriptorSets.emplace_back(
+          *compute.descriptorSets[i], 2 /*binding*/, 0,
+          vk::DescriptorType::eUniformBuffer, nullptr, uniformBufferInfos[i]);
     }
     device.updateDescriptorSets(writeDescriptorSets, nullptr);
 
@@ -503,11 +514,12 @@ void VgeExample::createDescriptorPool() {
   poolSizes.emplace_back(vk::DescriptorType::eUniformBufferDynamic,
                          MAX_CONCURRENT_FRAMES);
   poolSizes.emplace_back(vk::DescriptorType::eStorageBuffer,
-                         MAX_CONCURRENT_FRAMES);
+                         MAX_CONCURRENT_FRAMES * 2);
   // NOTE: need to check flag
   vk::DescriptorPoolCreateInfo descriptorPoolCI(
       vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-      MAX_CONCURRENT_FRAMES * 4, poolSizes);
+      MAX_CONCURRENT_FRAMES * 3 /*set globalUBO, dynamicUBO, computeUbo*/,
+      poolSizes);
   descriptorPool = vk::raii::DescriptorPool(device, descriptorPoolCI);
 }
 
