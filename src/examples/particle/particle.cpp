@@ -267,7 +267,7 @@ void VgeExample::prepareCompute() {
     vk::raii::ShaderModule compIntegrateShaderModule =
         vgeu::createShaderModule(device, compIntegrateCode);
     computePipelineCI.stage.module = *compIntegrateShaderModule;
-    compute.pipelineCalculate =
+    compute.pipelineIntegrate =
         vk::raii::Pipeline(device, pipelineCache, computePipelineCI);
   }
   // create commandPool
@@ -424,9 +424,7 @@ void VgeExample::createStorageBuffers() {
                   compute.storageBuffers[i]->getBufferSize());
               cmdBuffer.pipelineBarrier(
                   vk::PipelineStageFlagBits::eTransfer,
-                  vk::PipelineStageFlagBits::
-                      eComputeShader /*vk::PipelineStageFlagBits::eBottomOfPipe*/
-                  ,
+                  vk::PipelineStageFlagBits::eBottomOfPipe,
                   vk::DependencyFlags{}, nullptr, bufferBarrier, nullptr);
             }
           }
@@ -701,8 +699,7 @@ void VgeExample::buildCommandBuffers() {
         compute.storageBuffers[currentFrameIndex]->getBuffer(), 0ull,
         compute.storageBuffers[currentFrameIndex]->getBufferSize());
     drawCmdBuffers[currentFrameIndex].pipelineBarrier(
-        vk::PipelineStageFlagBits::
-            eComputeShader /*vk::PipelineStageFlagBits::eTopOfPipe*/,
+        vk::PipelineStageFlagBits::eTopOfPipe,
         vk::PipelineStageFlagBits::eVertexInput, vk::DependencyFlags{}, nullptr,
         bufferBarrier, nullptr);
   }
@@ -755,9 +752,8 @@ void VgeExample::buildCommandBuffers() {
         compute.storageBuffers[currentFrameIndex]->getBufferSize());
     drawCmdBuffers[currentFrameIndex].pipelineBarrier(
         vk::PipelineStageFlagBits::eVertexInput,
-        vk::PipelineStageFlagBits::
-            eComputeShader /*vk::PipelineStageFlagBits::eBottomOfPipe*/,
-        vk::DependencyFlags{}, nullptr, bufferBarrier, nullptr);
+        vk::PipelineStageFlagBits::eBottomOfPipe, vk::DependencyFlags{},
+        nullptr, bufferBarrier, nullptr);
   }
 
   // end command buffer
@@ -775,10 +771,8 @@ void VgeExample::buildComputeCommandBuffers() {
         compute.storageBuffers[currentFrameIndex]->getBuffer(), 0ull,
         compute.storageBuffers[currentFrameIndex]->getBufferSize());
     // NOTE: top of pipeline -> same as all commands,
-    // and between frames -> graphics queue can proceed until vertex in
     compute.cmdBuffers[currentFrameIndex].pipelineBarrier(
-        vk::PipelineStageFlagBits::
-            eVertexInput /*vk::PipelineStageFlagBits::eTopOfPipe*/,
+        vk::PipelineStageFlagBits::eTopOfPipe,
         vk::PipelineStageFlagBits::eComputeShader, vk::DependencyFlags{},
         nullptr, bufferBarrier, nullptr);
   }
@@ -816,9 +810,8 @@ void VgeExample::buildComputeCommandBuffers() {
         compute.storageBuffers[currentFrameIndex]->getBufferSize());
     compute.cmdBuffers[currentFrameIndex].pipelineBarrier(
         vk::PipelineStageFlagBits::eComputeShader,
-        vk::PipelineStageFlagBits::
-            eVertexInput /*vk::PipelineStageFlagBits::eBottomOfPipe*/,
-        vk::DependencyFlags{}, nullptr, bufferBarrier, nullptr);
+        vk::PipelineStageFlagBits::eBottomOfPipe, vk::DependencyFlags{},
+        nullptr, bufferBarrier, nullptr);
   }
   compute.cmdBuffers[currentFrameIndex].end();
 }
