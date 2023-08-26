@@ -9,6 +9,12 @@ struct Particle
 	vec4 vk[4];
 };
 
+// Binding 0 : Position storage buffer prev frame
+layout(std140, binding = 0) readonly buffer SSBOIn
+{
+   Particle particlesIn[ ];
+};
+
 // Binding 1 : Position storage buffer
 layout(std140, binding = 1) buffer SSBO
 {
@@ -44,7 +50,8 @@ void main()
 	// ) / 6.0;
 
 	// euler method
-	particles[index].pos.xyz += particles[index].pk[0].xyz / 2.0;
-	particles[index].vel.xyz += particles[index].vk[0].xyz / 2.0;
+	particles[index].pos.xyz = particlesIn[index].pos.xyz + particles[index].pk[0].xyz / 2.0;
+	particles[index].vel.xyz = particlesIn[index].vel.xyz + particles[index].vk[0].xyz / 2.0;
+
 
 }

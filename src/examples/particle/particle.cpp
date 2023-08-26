@@ -88,7 +88,7 @@ void VgeExample::prepareCompute() {
     compute.uniformBuffers.reserve(MAX_CONCURRENT_FRAMES);
     for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
       compute.uniformBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
-          globalAllocator->getAllocator(), sizeof(GlobalUbo), 1,
+          globalAllocator->getAllocator(), sizeof(compute.ubo), 1,
           vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_AUTO,
           VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
               VMA_ALLOCATION_CREATE_MAPPED_BIT |
@@ -181,7 +181,7 @@ void VgeExample::prepareCompute() {
     }
     std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
     writeDescriptorSets.reserve(compute.descriptorSets.size());
-    for (size_t i = 0; i < compute.descriptorSets.size(); i++) {
+    for (int i = 0; i < compute.descriptorSets.size(); i++) {
       int prevFrameIdx =
           (i - 1 + MAX_CONCURRENT_FRAMES) % MAX_CONCURRENT_FRAMES;
       writeDescriptorSets.emplace_back(
@@ -227,7 +227,7 @@ void VgeExample::prepareCompute() {
   // create pipelines
   {
     auto compCalculateCode = vgeu::readFile(
-        getShadersPath() + "/particle/particle_caculate.comp.spv");
+        getShadersPath() + "/particle/particle_calculate.comp.spv");
     vk::raii::ShaderModule compCacluateShaderModule =
         vgeu::createShaderModule(device, compCalculateCode);
 
@@ -237,7 +237,7 @@ void VgeExample::prepareCompute() {
         static_cast<uint32_t>(
             physicalDevice.getProperties().limits.maxComputeSharedMemorySize /
             sizeof(glm::vec4)));
-    specializationData.gravity = 0.0002f;
+    specializationData.gravity = 0.02f;
     specializationData.power = 0.75;
     specializationData.soften = 0.05f;
     // TODO: for 1~4
@@ -337,7 +337,7 @@ void VgeExample::loadAssets() {
 }
 
 void VgeExample::createStorageBuffers() {
-  std::vector<glm::vec3> attractor = {
+  std::vector<glm::vec3> attractors = {
       glm::vec3(5.0f, 0.0f, 0.0f), glm::vec3(-5.0f, 0.0f, 0.0f),
       glm::vec3(0.0f, 5.0f, 0.0f), glm::vec3(0.0f, -5.0f, 0.0f),
       glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f, 0.0f, -5.0f),
@@ -348,7 +348,7 @@ void VgeExample::createStorageBuffers() {
   rndEngine.seed(1111);
   std::normal_distribution<float> normalDist(0.0f, 1.0f);
 
-  uint8_t additiveColor = 25u;
+  uint8_t additiveColor = 10u;
   std::vector<float> colors{
       ::packColor(255u, additiveColor, additiveColor),
       ::packColor(additiveColor, 255u, additiveColor),
@@ -357,11 +357,11 @@ void VgeExample::createStorageBuffers() {
       ::packColor(255u, additiveColor, 255u),
       ::packColor(255u, 255u, additiveColor),
   };
-  for (size_t i = 0; i < attractor.size(); i++) {
-    uint32_t numParticlesPerAttractor = numParticles / attractor.size();
-    if (i == attractor.size() - 1) {
+  for (size_t i = 0; i < attractors.size(); i++) {
+    uint32_t numParticlesPerAttractor = numParticles / attractors.size();
+    if (i == attractors.size() - 1) {
       numParticlesPerAttractor =
-          numParticles - numParticlesPerAttractor * (attractor.size() - 1);
+          numParticles - numParticlesPerAttractor * (attractors.size() - 1);
     }
     for (size_t j = 0; j < numParticlesPerAttractor; j++) {
       Particle& particle = particles.emplace_back();
@@ -371,23 +371,25 @@ void VgeExample::createStorageBuffers() {
       float colorOffset = colors[i % colors.size()];
 
       if (j == 0) {
-        position = attractor[i] * 1.5f;
+        position = attractors[i] * 1.5f;
         velocity = glm::vec3{0.f};
-        mass = 1000.0f;
+        mass = 90000.0f;
       } else {
-        position = attractor[i] + glm::vec3{
-                                      normalDist(rndEngine),
-                                      normalDist(rndEngine),
-                                      normalDist(rndEngine),
-                                  } * 0.75f;
+        position = attractors[i] * (normalDist(rndEngine) * 0.5f + 0.5f) +
+                   glm::vec3{
+                       normalDist(rndEngine),
+                       normalDist(rndEngine),
+                       normalDist(rndEngine),
+                   } * 0.75f;
 
-        velocity =
-            glm::vec3{
-                normalDist(rndEngine),
-                normalDist(rndEngine),
-                normalDist(rndEngine),
-            } *
-            0.025f;
+        velocity = (glm::vec3{
+                        normalDist(rndEngine),
+                        normalDist(rndEngine),
+                        normalDist(rndEngine),
+                    } * 0.2f -
+                    glm::normalize(position)) *
+                   10.0f;
+
         mass = (normalDist(rndEngine) * 0.5f + 0.5f) * 75.f;
       }
       particle.pos = glm::vec4(position, mass);

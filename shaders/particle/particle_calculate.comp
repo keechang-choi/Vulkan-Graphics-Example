@@ -52,6 +52,7 @@ void RkStepInput(in Particle particle, out vec4 outPos, out vec4 outVel){
 		outPos = particle.pos + particle.pk[2];
 		outVel = particle.vel + particle.vk[2];
 	}
+	outPos.w = particle.pos.w;
 }
 
 void main() 
@@ -95,7 +96,7 @@ void main()
 	}
 
 	// RK step output
-	particles[index].pk[RKSTEP-1].xyz = ubo.dt * velocity.xyz;
+	particles[index].pk[RKSTEP-1].xyz = ubo.dt * velocity.xyz; 
 	particles[index].vk[RKSTEP-1].xyz = ubo.dt * acceleration.xyz;
 
 }
