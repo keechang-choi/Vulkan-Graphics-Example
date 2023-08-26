@@ -28,7 +28,7 @@ VgeExample::~VgeExample() {}
 void VgeExample::initVulkan() {
   cameraController.moveSpeed = 5.f;
   // camera setup
-  camera.setViewTarget(glm::vec3{0.f, -6.f, -10.f}, glm::vec3{0.f, 0.f, 0.f});
+  camera.setViewTarget(glm::vec3{0.f, -10.f, -15.f}, glm::vec3{0.f, 0.f, 0.f});
   camera.setPerspectiveProjection(
       glm::radians(60.f),
       static_cast<float>(width) / (static_cast<float>(height)), 0.1f, 256.f);
@@ -348,14 +348,11 @@ void VgeExample::createStorageBuffers() {
   rndEngine.seed(1111);
   std::normal_distribution<float> normalDist(0.0f, 1.0f);
 
-  uint8_t additiveColor = 10u;
   std::vector<float> colors{
-      ::packColor(255u, additiveColor, additiveColor),
-      ::packColor(additiveColor, 255u, additiveColor),
-      ::packColor(additiveColor, additiveColor, 255u),
-      ::packColor(additiveColor, 255u, 255u),
-      ::packColor(255u, additiveColor, 255u),
-      ::packColor(255u, 255u, additiveColor),
+      ::packColor(30, 3, 1),
+      // ::packColor(5, 12, 129),  ::packColor(202, 42, 1),
+      // ::packColor(41, 86, 143), ::packColor(161, 40, 48),
+      // ::packColor(1, 75, 255),  ::packColor(246, 7, 9),
   };
   for (size_t i = 0; i < attractors.size(); i++) {
     uint32_t numParticlesPerAttractor = numParticles / attractors.size();
@@ -375,23 +372,32 @@ void VgeExample::createStorageBuffers() {
         velocity = glm::vec3{0.f};
         mass = 90000.0f;
       } else {
-        position = attractors[i] * (normalDist(rndEngine) * 0.5f + 0.5f) +
-                   glm::vec3{
-                       normalDist(rndEngine),
-                       normalDist(rndEngine),
-                       normalDist(rndEngine),
-                   } * 0.75f;
+        position = attractors[i] + glm::vec3{
+                                       normalDist(rndEngine),
+                                       normalDist(rndEngine),
+                                       normalDist(rndEngine),
+                                   } * 0.75f;
+        float len = glm::length(glm::normalize(position - attractors[i]));
+        position.y *= 2.0f - (len * len);
 
-        velocity = (glm::vec3{
-                        normalDist(rndEngine),
-                        normalDist(rndEngine),
-                        normalDist(rndEngine),
-                    } * 0.2f -
-                    glm::normalize(position)) *
-                   10.0f;
+        // velocity = (glm::vec3{
+        //                 normalDist(rndEngine),
+        //                 normalDist(rndEngine),
+        //                 normalDist(rndEngine),
+        //             } * 0.2f -
+        //             glm::normalize(position)) *
+        //            10.0f;
+        glm::vec3 angular =
+            glm::vec3(0.5f, 1.5f, 0.5f) * (((i % 2) == 0) ? 1.0f : -1.0f);
+        velocity = glm::cross((position - attractors[i]), angular) +
+                   glm::vec3(normalDist(rndEngine), normalDist(rndEngine),
+                             normalDist(rndEngine) * 0.025f);
 
         mass = (normalDist(rndEngine) * 0.5f + 0.5f) * 75.f;
       }
+      glm::vec3 rot =
+          glm::cross(glm::vec3{0.f, -1.0f, 0.f}, glm::normalize(attractors[i]));
+      velocity += rot * 50.f;
       particle.pos = glm::vec4(position, mass);
       particle.vel = glm::vec4(velocity, colorOffset);
     }
