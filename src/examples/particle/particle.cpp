@@ -26,9 +26,9 @@ VgeExample::VgeExample() : VgeBase() { title = "Particle Example"; }
 VgeExample::~VgeExample() {}
 
 void VgeExample::initVulkan() {
-  cameraController.moveSpeed = 5.f;
+  cameraController.moveSpeed = 10.f;
   // camera setup
-  camera.setViewTarget(glm::vec3{0.f, -10.f, -15.f}, glm::vec3{0.f, 0.f, 0.f});
+  camera.setViewTarget(glm::vec3{0.f, -15.f, -20.f}, glm::vec3{0.f, 0.f, 0.f});
   camera.setPerspectiveProjection(
       glm::radians(60.f),
       static_cast<float>(width) / (static_cast<float>(height)), 0.1f, 256.f);
@@ -237,9 +237,9 @@ void VgeExample::prepareCompute() {
         static_cast<uint32_t>(
             physicalDevice.getProperties().limits.maxComputeSharedMemorySize /
             sizeof(glm::vec4)));
-    specializationData.gravity = 0.02f;
-    specializationData.power = 0.75;
-    specializationData.soften = 0.05f;
+    specializationData.gravity = 0.15f;
+    specializationData.power = 1.0f;
+    specializationData.soften = 0.1f;
     // TODO: for 1~4
     specializationData.rkStep = 1u;
 
@@ -349,7 +349,7 @@ void VgeExample::createStorageBuffers() {
   std::normal_distribution<float> normalDist(0.0f, 1.0f);
 
   std::vector<float> colors{
-      ::packColor(30, 3, 1),
+      ::packColor(2, 20, 200),
       // ::packColor(5, 12, 129),  ::packColor(202, 42, 1),
       // ::packColor(41, 86, 143), ::packColor(161, 40, 48),
       // ::packColor(1, 75, 255),  ::packColor(246, 7, 9),
@@ -397,7 +397,7 @@ void VgeExample::createStorageBuffers() {
       }
       glm::vec3 rot =
           glm::cross(glm::vec3{0.f, -1.0f, 0.f}, glm::normalize(attractors[i]));
-      velocity += rot * 50.f;
+      velocity += rot * 200.f;
       particle.pos = glm::vec4(position, mass);
       particle.vel = glm::vec4(velocity, colorOffset);
     }
