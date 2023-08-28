@@ -868,7 +868,6 @@ void VgeExample::buildComputeCommandBuffers() {
   // 2nd pass
   compute.cmdBuffers[currentFrameIndex].bindPipeline(
       vk::PipelineBindPoint::eCompute, *compute.pipelineIntegrate);
-  // TODO: +1 makes program stop.
   compute.cmdBuffers[currentFrameIndex].dispatch(numParticles / 256 + 1, 1, 1);
 
   // release barrier
