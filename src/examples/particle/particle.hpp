@@ -140,6 +140,10 @@ class VgeExample : public VgeBase {
   float animationTime = 0.f;
   float animationLastTime = 0.f;
   uint32_t numParticles = 1024u * 4u * 6u;
+  uint32_t numAttractors = 6u;
   uint32_t integrateStep = 1;
+  float rotationVelocity = 50.f;
+  float gravity = 0.02f;
+  float power = 1.0f;
 };
 }  // namespace vge

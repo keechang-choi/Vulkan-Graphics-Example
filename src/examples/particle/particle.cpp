@@ -231,14 +231,16 @@ void VgeExample::prepareCompute() {
     vk::raii::ShaderModule compCacluateShaderModule =
         vgeu::createShaderModule(device, compCalculateCode);
 
+    uint32_t maxComputeSharedMemorySize =
+        physicalDevice.getProperties().limits.maxComputeSharedMemorySize;
+    std::cout << "maxComputeSharedMemorySize: " << maxComputeSharedMemorySize
+              << std::endl;
     SpecializationData specializationData{};
     specializationData.sharedDataSize = std::min(
         1024u,
-        static_cast<uint32_t>(
-            physicalDevice.getProperties().limits.maxComputeSharedMemorySize /
-            sizeof(glm::vec4)));
-    specializationData.gravity = 0.02f;
-    specializationData.power = 1.0f;
+        static_cast<uint32_t>(maxComputeSharedMemorySize / sizeof(glm::vec4)));
+    specializationData.gravity = gravity;
+    specializationData.power = power;
     specializationData.soften = 0.1f;
     // TODO: for 1~4
     specializationData.rkStep = integrateStep;
@@ -347,11 +349,17 @@ void VgeExample::loadAssets() {
 }
 
 void VgeExample::createStorageBuffers() {
-  std::vector<glm::vec3> attractors = {
+  std::vector<glm::vec3> attractorsData = {
       glm::vec3(5.0f, 0.0f, 0.0f), glm::vec3(-5.0f, 0.0f, 0.0f),
       glm::vec3(0.0f, 5.0f, 0.0f), glm::vec3(0.0f, -5.0f, 0.0f),
       glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f, 0.0f, -5.0f),
   };
+  std::vector<glm::vec3> attractors;
+  for (size_t i = 0; i < std::min(numAttractors,
+                                  static_cast<uint32_t>(attractorsData.size()));
+       i++) {
+    attractors.push_back(attractorsData[i]);
+  }
 
   std::vector<Particle> particles;
   std::default_random_engine rndEngine;
@@ -407,7 +415,7 @@ void VgeExample::createStorageBuffers() {
       }
       glm::vec3 rot =
           glm::cross(glm::vec3{0.f, -1.0f, 0.f}, glm::normalize(attractors[i]));
-      velocity += rot * 50.f;
+      velocity += rot * rotationVelocity;
       particle.pos = glm::vec4(position, mass);
       particle.vel = glm::vec4(velocity, colorOffset);
     }
@@ -841,6 +849,7 @@ void VgeExample::buildComputeCommandBuffers() {
     compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
         vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 0,
         *compute.descriptorSets[currentFrameIndex], nullptr);
+    // NOTE: number of local work group should cover all vertices
     compute.cmdBuffers[currentFrameIndex].dispatch(numParticles / 256, 1, 1);
 
     // memory barrier
@@ -970,7 +979,18 @@ const std::vector<size_t>& VgeExample::findInstances(const std::string& name) {
 
 void VgeExample::setupCommandLineParser(CLI::App& app) {
   VgeBase::setupCommandLineParser(app);
-  app.add_option("--step", integrateStep, "Integrate Step 1, 2, 4")
+  app.add_option("--step, -s", integrateStep, "Integrate Step 1, 2, 4")
+      ->capture_default_str();
+  app.add_option("--numParticles, --np", numParticles, "number of particles")
+      ->capture_default_str();
+  app.add_option("--numAttractors, --na", numAttractors, "number of attractors")
+      ->capture_default_str();
+  app.add_option("--rotationVelocity, --rv", rotationVelocity,
+                 "initial y-axis rotation velocity )")
+      ->capture_default_str();
+  app.add_option("--gravity, -g", gravity, "gravity constants")
+      ->capture_default_str();
+  app.add_option("--power, -p", power, "power constants")
       ->capture_default_str();
 }
 

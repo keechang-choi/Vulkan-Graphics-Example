@@ -35,21 +35,8 @@ void main()
 {
 	// Current SSBO index
 	uint index = gl_GlobalInvocationID.x;
-
-	// // RK4 integrate
-	// particles[index].pos.xyz += (
-	// 	particles[index].pk[0].xyz + 
-	// 	2.0 * particles[index].pk[1].xyz + 
-	// 	2.0 * particles[index].pk[2].xyz + 
-	// 	particles[index].pk[3].xyz
-	// ) / 6.0;
-
-	// particles[index].vel.xyz += (
-	// 	particles[index].vk[0].xyz + 
-	// 	2.0 * particles[index].vk[1].xyz + 
-	// 	2.0 * particles[index].vk[2].xyz + 
-	// 	particles[index].vk[3].xyz
-	// ) / 6.0;
+	if (index >= ubo.particleCount) 
+		return;	
 
 	if (RKSTEP == 1){
 		// euler method
@@ -59,6 +46,21 @@ void main()
 		// midpoint method
 		particles[index].pos.xyz = particlesIn[index].pos.xyz + particles[index].pk[1].xyz;
 		particles[index].vel.xyz = particlesIn[index].vel.xyz + particles[index].vk[1].xyz;
+	} else if(RKSTEP == 4){
+		// RK4 integrate
+	particles[index].pos.xyz = particlesIn[index].pos.xyz + (
+		particles[index].pk[0].xyz + 
+		2.0 * particles[index].pk[1].xyz + 
+		2.0 * particles[index].pk[2].xyz + 
+		particles[index].pk[3].xyz
+	) / 6.0;
+
+	particles[index].vel.xyz = particlesIn[index].vel.xyz + (
+		particles[index].vk[0].xyz + 
+		2.0 * particles[index].vk[1].xyz + 
+		2.0 * particles[index].vk[2].xyz + 
+		particles[index].vk[3].xyz
+	) / 6.0;
 	}
 
 
