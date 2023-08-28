@@ -26,7 +26,7 @@ class VgeBase {
   VgeBase();
   ~VgeBase();
 
-  void setupCommandLineParser(CLI::App& app);
+  virtual void setupCommandLineParser(CLI::App& app);
   // initVulkan vk instance
   // device, queue, sema
   virtual void initVulkan();

@@ -29,6 +29,8 @@ layout (binding = 2) uniform UBO
 	int particleCount;
 } ubo;
 
+layout (constant_id = 4) const int RKSTEP = 0;
+
 void main() 
 {
 	// Current SSBO index
@@ -49,9 +51,15 @@ void main()
 	// 	particles[index].vk[3].xyz
 	// ) / 6.0;
 
-	// euler method
-	particles[index].pos.xyz = particlesIn[index].pos.xyz + particles[index].pk[0].xyz / 2.0;
-	particles[index].vel.xyz = particlesIn[index].vel.xyz + particles[index].vk[0].xyz / 2.0;
+	if (RKSTEP == 1){
+		// euler method
+		particles[index].pos.xyz = particlesIn[index].pos.xyz + particles[index].pk[0].xyz;
+		particles[index].vel.xyz = particlesIn[index].vel.xyz + particles[index].vk[0].xyz;
+	} else if(RKSTEP == 2){
+		// midpoint method
+		particles[index].pos.xyz = particlesIn[index].pos.xyz + particles[index].pk[1].xyz;
+		particles[index].vel.xyz = particlesIn[index].vel.xyz + particles[index].vk[1].xyz;
+	}
 
 
 }

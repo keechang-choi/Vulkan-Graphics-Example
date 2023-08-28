@@ -237,11 +237,11 @@ void VgeExample::prepareCompute() {
         static_cast<uint32_t>(
             physicalDevice.getProperties().limits.maxComputeSharedMemorySize /
             sizeof(glm::vec4)));
-    specializationData.gravity = 0.15f;
+    specializationData.gravity = 0.02f;
     specializationData.power = 1.0f;
     specializationData.soften = 0.1f;
     // TODO: for 1~4
-    specializationData.rkStep = 1u;
+    specializationData.rkStep = integrateStep;
 
     std::vector<vk::SpecializationMapEntry> specializationMapEntries;
     specializationMapEntries.emplace_back(
@@ -255,29 +255,39 @@ void VgeExample::prepareCompute() {
     specializationMapEntries.emplace_back(
         4u, offsetof(SpecializationData, rkStep), sizeof(uint32_t));
 
-    // NOTE: template argument deduction not work with implicit conversion
-    vk::SpecializationInfo specializationInfo(
-        specializationMapEntries,
-        vk::ArrayProxyNoTemporaries<const SpecializationData>(
-            specializationData));
-
-    vk::PipelineShaderStageCreateInfo computeShaderStageCI(
-        vk::PipelineShaderStageCreateFlags{}, vk::ShaderStageFlagBits::eCompute,
-        *compCacluateShaderModule, "main", &specializationInfo);
-    vk::ComputePipelineCreateInfo computePipelineCI(vk::PipelineCreateFlags{},
-                                                    computeShaderStageCI,
-                                                    *compute.pipelineLayout);
-
-    // 1st pass
-    compute.pipelineCalculate =
-        vk::raii::Pipeline(device, pipelineCache, computePipelineCI);
-
+    for (uint32_t i = 1; i <= integrateStep; i++) {
+      specializationData.rkStep = i;
+      // NOTE: template argument deduction not work with implicit conversion
+      vk::SpecializationInfo specializationInfo(
+          specializationMapEntries,
+          vk::ArrayProxyNoTemporaries<const SpecializationData>(
+              specializationData));
+      vk::PipelineShaderStageCreateInfo computeShaderStageCI(
+          vk::PipelineShaderStageCreateFlags{},
+          vk::ShaderStageFlagBits::eCompute, *compCacluateShaderModule, "main",
+          &specializationInfo);
+      vk::ComputePipelineCreateInfo computePipelineCI(vk::PipelineCreateFlags{},
+                                                      computeShaderStageCI,
+                                                      *compute.pipelineLayout);
+      // 1st pass
+      compute.pipelineCalculate.emplace_back(device, pipelineCache,
+                                             computePipelineCI);
+    }
     // 2nd pass
     auto compIntegrateCode = vgeu::readFile(
         getShadersPath() + "/particle/particle_integrate.comp.spv");
     vk::raii::ShaderModule compIntegrateShaderModule =
         vgeu::createShaderModule(device, compIntegrateCode);
-    computePipelineCI.stage.module = *compIntegrateShaderModule;
+    vk::SpecializationInfo specializationInfo(
+        specializationMapEntries,
+        vk::ArrayProxyNoTemporaries<const SpecializationData>(
+            specializationData));
+    vk::PipelineShaderStageCreateInfo computeShaderStageCI(
+        vk::PipelineShaderStageCreateFlags{}, vk::ShaderStageFlagBits::eCompute,
+        *compIntegrateShaderModule, "main", &specializationInfo);
+    vk::ComputePipelineCreateInfo computePipelineCI(vk::PipelineCreateFlags{},
+                                                    computeShaderStageCI,
+                                                    *compute.pipelineLayout);
     compute.pipelineIntegrate =
         vk::raii::Pipeline(device, pipelineCache, computePipelineCI);
   }
@@ -349,10 +359,10 @@ void VgeExample::createStorageBuffers() {
   std::normal_distribution<float> normalDist(0.0f, 1.0f);
 
   std::vector<float> colors{
-      ::packColor(2, 20, 200),
-      // ::packColor(5, 12, 129),  ::packColor(202, 42, 1),
-      // ::packColor(41, 86, 143), ::packColor(161, 40, 48),
-      // ::packColor(1, 75, 255),  ::packColor(246, 7, 9),
+      //::packColor(2, 20, 200),
+      ::packColor(5, 12, 129),  ::packColor(202, 42, 1),
+      ::packColor(41, 86, 143), ::packColor(161, 40, 48),
+      ::packColor(1, 75, 255),  ::packColor(246, 7, 9),
   };
   for (size_t i = 0; i < attractors.size(); i++) {
     uint32_t numParticlesPerAttractor = numParticles / attractors.size();
@@ -397,7 +407,7 @@ void VgeExample::createStorageBuffers() {
       }
       glm::vec3 rot =
           glm::cross(glm::vec3{0.f, -1.0f, 0.f}, glm::normalize(attractors[i]));
-      velocity += rot * 200.f;
+      velocity += rot * 50.f;
       particle.pos = glm::vec4(position, mass);
       particle.vel = glm::vec4(velocity, colorOffset);
     }
@@ -824,25 +834,26 @@ void VgeExample::buildComputeCommandBuffers() {
         nullptr, bufferBarrier, nullptr);
   }
 
-  // 1st pass
-  compute.cmdBuffers[currentFrameIndex].bindPipeline(
-      vk::PipelineBindPoint::eCompute, *compute.pipelineCalculate);
-  compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
-      vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 0,
-      *compute.descriptorSets[currentFrameIndex], nullptr);
-  compute.cmdBuffers[currentFrameIndex].dispatch(numParticles / 256, 1, 1);
+  for (size_t i = 0; i < integrateStep; i++) {
+    // 1st pass
+    compute.cmdBuffers[currentFrameIndex].bindPipeline(
+        vk::PipelineBindPoint::eCompute, *compute.pipelineCalculate[i]);
+    compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+        vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 0,
+        *compute.descriptorSets[currentFrameIndex], nullptr);
+    compute.cmdBuffers[currentFrameIndex].dispatch(numParticles / 256, 1, 1);
 
-  // memory barrier
-  vk::BufferMemoryBarrier bufferBarrier(
-      vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eShaderRead,
-      VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
-      compute.storageBuffers[currentFrameIndex]->getBuffer(), 0ull,
-      compute.storageBuffers[currentFrameIndex]->getBufferSize());
-  compute.cmdBuffers[currentFrameIndex].pipelineBarrier(
-      vk::PipelineStageFlagBits::eComputeShader,
-      vk::PipelineStageFlagBits::eComputeShader, vk::DependencyFlags{}, nullptr,
-      bufferBarrier, nullptr);
-
+    // memory barrier
+    vk::BufferMemoryBarrier bufferBarrier(
+        vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eShaderRead,
+        VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+        compute.storageBuffers[currentFrameIndex]->getBuffer(), 0ull,
+        compute.storageBuffers[currentFrameIndex]->getBufferSize());
+    compute.cmdBuffers[currentFrameIndex].pipelineBarrier(
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::PipelineStageFlagBits::eComputeShader, vk::DependencyFlags{},
+        nullptr, bufferBarrier, nullptr);
+  }
   // 2nd pass
   compute.cmdBuffers[currentFrameIndex].bindPipeline(
       vk::PipelineBindPoint::eCompute, *compute.pipelineIntegrate);
@@ -955,6 +966,12 @@ const std::vector<size_t>& VgeExample::findInstances(const std::string& name) {
   assert(instanceMap.find(name) != instanceMap.end() &&
          "failed to find instance by name.");
   return instanceMap.at(name);
+}
+
+void VgeExample::setupCommandLineParser(CLI::App& app) {
+  VgeBase::setupCommandLineParser(app);
+  app.add_option("--step", integrateStep, "Integrate Step 1, 2, 4")
+      ->capture_default_str();
 }
 
 }  // namespace vge

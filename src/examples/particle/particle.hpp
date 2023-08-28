@@ -53,10 +53,13 @@ class VgeExample : public VgeBase {
  public:
   VgeExample();
   ~VgeExample();
-  void initVulkan();
-  void getEnabledExtensions();
-  void render();
-  void prepare();
+  virtual void initVulkan();
+  virtual void getEnabledExtensions();
+  virtual void render();
+  virtual void prepare();
+  virtual void viewChanged();
+  virtual void setupCommandLineParser(CLI::App& app);
+
   void loadAssets();
   void createDescriptorPool();
 
@@ -77,7 +80,6 @@ class VgeExample : public VgeBase {
   void buildCommandBuffers();
   void buildComputeCommandBuffers();
 
-  void viewChanged();
   void setupDynamicUbo();
   size_t padUniformBufferSize(size_t originalSize);
   void updateGraphicsUbo();
@@ -116,7 +118,7 @@ class VgeExample : public VgeBase {
     vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
     std::vector<vk::raii::DescriptorSet> descriptorSets;
     vk::raii::PipelineLayout pipelineLayout = nullptr;
-    vk::raii::Pipeline pipelineCalculate = nullptr;
+    std::vector<vk::raii::Pipeline> pipelineCalculate;
     vk::raii::Pipeline pipelineIntegrate = nullptr;
     struct computeUbo {
       float dt;
@@ -138,5 +140,6 @@ class VgeExample : public VgeBase {
   float animationTime = 0.f;
   float animationLastTime = 0.f;
   uint32_t numParticles = 1024u * 4u * 6u;
+  uint32_t integrateStep = 1;
 };
 }  // namespace vge
