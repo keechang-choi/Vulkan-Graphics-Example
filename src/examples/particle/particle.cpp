@@ -850,7 +850,9 @@ void VgeExample::buildComputeCommandBuffers() {
         vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 0,
         *compute.descriptorSets[currentFrameIndex], nullptr);
     // NOTE: number of local work group should cover all vertices
-    compute.cmdBuffers[currentFrameIndex].dispatch(numParticles / 256, 1, 1);
+    // TODO: +1 makes program stop.
+    compute.cmdBuffers[currentFrameIndex].dispatch(numParticles / 256 + 1, 1,
+                                                   1);
 
     // memory barrier
     vk::BufferMemoryBarrier bufferBarrier(
@@ -866,7 +868,8 @@ void VgeExample::buildComputeCommandBuffers() {
   // 2nd pass
   compute.cmdBuffers[currentFrameIndex].bindPipeline(
       vk::PipelineBindPoint::eCompute, *compute.pipelineIntegrate);
-  compute.cmdBuffers[currentFrameIndex].dispatch(numParticles / 256, 1, 1);
+  // TODO: +1 makes program stop.
+  compute.cmdBuffers[currentFrameIndex].dispatch(numParticles / 256 + 1, 1, 1);
 
   // release barrier
   if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {

@@ -143,7 +143,14 @@ class VgeBase {
       vge::VgeExample vgeExample{};           \
       CLI::App app;                           \
       vgeExample.setupCommandLineParser(app); \
-      CLI11_PARSE(app, argc, argv);           \
+      if (argc == 2) /* for vscode launch */  \
+        try {                                 \
+          app.parse(std::string(argv[1]));    \
+        } catch (const CLI::ParseError& e) {  \
+          return app.exit(e);                 \
+        }                                     \
+      else                                    \
+        CLI11_PARSE(app, argc, argv);         \
       vgeExample.initVulkan();                \
       vgeExample.prepare();                   \
       vgeExample.renderLoop();                \

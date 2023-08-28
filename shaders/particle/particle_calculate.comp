@@ -30,6 +30,7 @@ layout (binding = 2) uniform UBO
 } ubo;
 
 // layout (constant_id = 0) const int SHARED_DATA_SIZE = 512;
+// TODO: check being greater than local group size intended for calculation and approximation.
 const int SHARED_DATA_SIZE = 256;
 layout (constant_id = 1) const float GRAVITY = 0.002;
 layout (constant_id = 2) const float POWER = 0.75;
