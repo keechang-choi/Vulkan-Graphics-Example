@@ -88,9 +88,19 @@ void main()
 
 		for (int j = 0; j < gl_WorkGroupSize.x; j++)
 		{
+			if(i+j == index){
+				continue;
+			}
 			vec4 other = sharedData[j];
 			vec3 len = other.xyz - position.xyz;
-			acceleration.xyz += GRAVITY * len * other.w / pow(dot(len, len) + SOFTEN, POWER);
+			if(i + j < ubo.particleCount){
+				float rSquare = dot(len, len);
+				if(rSquare < 1e-2){
+					continue;
+				}
+				acceleration.xyz += GRAVITY * len * other.w / pow(rSquare + SOFTEN, POWER);
+			}
+			
 		}
 
 		memoryBarrierShared();

@@ -145,5 +145,6 @@ class VgeExample : public VgeBase {
   float rotationVelocity = 50.f;
   float gravity = 0.02f;
   float power = 1.0f;
+  float soften = 0.1;
 };
 }  // namespace vge

@@ -38,8 +38,7 @@ vec3 unpackColor(in float f) {
 
 void main () 
 {
-	// const float spriteSize = 0.005 * inPos.w; // Point size influenced by mass (stored in inPos.w);
-	const float spriteSize = 3.0;
+	 const float spriteSize = 0.005 * inPos.w; // Point size influenced by mass (stored in inPos.w);
 
 	vec4 eyePos = globalUbo.view * vec4(inPos.x, inPos.y, inPos.z, 1.0); 
 	vec4 projectedCorner = globalUbo.projection * vec4(0.5 * spriteSize, 0.5 * spriteSize, eyePos.z, eyePos.w);

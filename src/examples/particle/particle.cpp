@@ -241,7 +241,7 @@ void VgeExample::prepareCompute() {
         static_cast<uint32_t>(maxComputeSharedMemorySize / sizeof(glm::vec4)));
     specializationData.gravity = gravity;
     specializationData.power = power;
-    specializationData.soften = 0.1f;
+    specializationData.soften = soften;
     // TODO: for 1~4
     specializationData.rkStep = integrateStep;
 
@@ -981,7 +981,7 @@ const std::vector<size_t>& VgeExample::findInstances(const std::string& name) {
 
 void VgeExample::setupCommandLineParser(CLI::App& app) {
   VgeBase::setupCommandLineParser(app);
-  app.add_option("--step, -s", integrateStep, "Integrate Step 1, 2, 4")
+  app.add_option("--intStep, --is", integrateStep, "Integrate Step 1, 2, 4")
       ->capture_default_str();
   app.add_option("--numParticles, --np", numParticles, "number of particles")
       ->capture_default_str();
@@ -993,6 +993,8 @@ void VgeExample::setupCommandLineParser(CLI::App& app) {
   app.add_option("--gravity, -g", gravity, "gravity constants")
       ->capture_default_str();
   app.add_option("--power, -p", power, "power constants")
+      ->capture_default_str();
+  app.add_option("--soften, -s", soften, "soften constants")
       ->capture_default_str();
 }
 
