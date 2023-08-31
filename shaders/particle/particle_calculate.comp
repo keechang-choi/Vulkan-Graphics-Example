@@ -91,8 +91,12 @@ void main()
 		for (int j = 0; j < gl_WorkGroupSize.x; j++)
 		{
 			vec4 other = sharedData[j];
-			vec3 len = other.xyz - position.xyz;
-			acceleration.xyz += GRAVITY * len * other.w / pow(dot(len, len) + SOFTEN, POWER);
+			vec3 r = other.xyz - position.xyz;
+			float dotR = dot(r, r);
+			float close = float(dotR < SOFTEN);
+			dotR = 1.0*close + dotR*(1.0-close);
+			r = vec3(0.0)*close + r*(1.0-close);
+			acceleration.xyz +=  (GRAVITY * other.w / pow(dotR, POWER)) * r;
 		}
 
 		// memoryBarrierShared();

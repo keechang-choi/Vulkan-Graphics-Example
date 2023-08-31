@@ -28,7 +28,7 @@ VgeExample::~VgeExample() {}
 void VgeExample::initVulkan() {
   cameraController.moveSpeed = 10.f;
   // camera setup
-  camera.setViewTarget(glm::vec3{0.f, -15.f, -20.f}, glm::vec3{0.f, 0.f, 0.f});
+  camera.setViewTarget(glm::vec3{0.f, -15.f, -1.f}, glm::vec3{0.f, 0.f, 0.f});
   camera.setPerspectiveProjection(
       glm::radians(60.f),
       static_cast<float>(width) / (static_cast<float>(height)), 0.1f, 256.f);
