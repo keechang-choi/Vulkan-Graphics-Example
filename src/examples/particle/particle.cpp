@@ -28,7 +28,7 @@ VgeExample::~VgeExample() {}
 void VgeExample::initVulkan() {
   cameraController.moveSpeed = 10.f;
   // camera setup
-  camera.setViewTarget(glm::vec3{0.f, -15.f, -1.f}, glm::vec3{0.f, 0.f, 0.f});
+  camera.setViewTarget(glm::vec3{0.f, -20.f, -.1f}, glm::vec3{0.f, 0.f, 0.f});
   camera.setPerspectiveProjection(
       glm::radians(60.f),
       static_cast<float>(width) / (static_cast<float>(height)), 0.1f, 256.f);
@@ -688,6 +688,19 @@ void VgeExample::draw() {
   assert(result != vk::Result::eTimeout && "Timed out: waitFence");
 
   device.resetFences(*waitFences[currentFrameIndex]);
+
+  // calculate tail
+  float tailTimer = 0.f;
+  size_t tailSize = 10;
+  const float tailSampleTime = 1.0f;
+
+  void* mappedData = compute.storageBuffers[currentFrameIndex]->getMappedData();
+  Particle* particles = static_cast<Particle*>(mappedData);
+  tailTimer += frameTimer;
+  if (tailTimer > tailSampleTime) {
+    tails.pop();
+    while (tails.size() <) tailTimer = 0.f;
+  }
 
   prepareFrame();
 

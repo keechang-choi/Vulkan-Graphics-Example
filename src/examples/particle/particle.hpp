@@ -5,6 +5,7 @@
 
 // std
 #include <memory>
+#include <queue>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -146,5 +147,17 @@ class VgeExample : public VgeBase {
   float gravity = 0.02f;
   float power = 1.0f;
   float soften = 0.1;
+
+  // vertex buffer ->
+  struct TailPosition {
+    // xyz color
+    glm::vec4 pos;
+    // color
+    glm::vec4 vel;
+  };
+  // numParticles * tailSize * 4(xyz, color)
+  std::vector<std::queue<glm::vec4>> tails;
+  std::vector<std::unique_ptr<vgeu::VgeuBuffer>> tailBuffers;
+  vk::raii::Pipeline tailPipeline = nullptr;
 };
 }  // namespace vge

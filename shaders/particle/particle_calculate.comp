@@ -92,10 +92,10 @@ void main()
 		{
 			vec4 other = sharedData[j];
 			vec3 r = other.xyz - position.xyz;
-			float dotR = dot(r, r);
-			float close = float(dotR < SOFTEN);
-			dotR = 1.0*close + dotR*(1.0-close);
-			r = vec3(0.0)*close + r*(1.0-close);
+			float dotR = dot(r, r) ;
+			bool isClose = (dotR < SOFTEN);
+			dotR = isClose ? 1.0 : dotR;
+			r = isClose ? vec3(0.0) : r;
 			acceleration.xyz +=  (GRAVITY * other.w / pow(dotR, POWER)) * r;
 		}
 
