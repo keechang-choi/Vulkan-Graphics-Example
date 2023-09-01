@@ -917,13 +917,6 @@ void VgeExample::buildCommandBuffers() {
         0, tailBuffers[currentFrameIndex]->getBuffer(), offset);
     drawCmdBuffers[currentFrameIndex].bindIndexBuffer(
         tailIndexBuffer->getBuffer(), 0, vk::IndexType::eUint32);
-    // for (size_t i = 0; i < numParticles; i++) {
-    //   // TODO: indexedDraw
-    //   drawCmdBuffers[currentFrameIndex].drawIndexed(tailSize + 1, 1,
-    //                                                 i * (tailSize + 1), 0,
-    //                                                 i);
-    // }
-
     drawCmdBuffers[currentFrameIndex].drawIndexed(numParticles * (tailSize + 1),
                                                   1, 0, 0, 0);
   }
@@ -1122,6 +1115,10 @@ void VgeExample::setupCommandLineParser(CLI::App& app) {
       ->capture_default_str();
   app.add_option("--soften, -s", soften, "soften constants")
       ->capture_default_str();
+  app.add_option("--tailSize, --ts", tailSize, "tail size")
+      ->capture_default_str();
+  app.add_option("--tailSampleTime, --tst", tailSampleTime, "tail sample time")
+      ->capture_default_str();
 }
 void VgeExample::updateTailSSBO() {
   // update
@@ -1146,7 +1143,9 @@ void VgeExample::updateTailSSBO() {
       }
       tailTimer = 0.f;
     }
-    tailTimer += frameTimer;
+    if (!paused) {
+      tailTimer += frameTimer;
+    }
   }
   // copy
   {

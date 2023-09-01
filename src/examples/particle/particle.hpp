@@ -167,7 +167,7 @@ class VgeExample : public VgeBase {
   vk::raii::Pipeline tailPipeline = nullptr;
   float tailTimer = -1.f;
   size_t tailSize = 300;
-  const float tailSampleTime = 0.1f;
+  float tailSampleTime = 0.1f;
   VertexInfos tailVertexInfos;
 };
 }  // namespace vge
