@@ -1,7 +1,6 @@
 #version 450
 
 layout (location = 0) in vec4 inPos;
-layout (location = 1) in vec4 inVel;
 
 layout (location = 0) out vec3 outColor;
 
@@ -38,8 +37,8 @@ vec3 unpackColor(in float f) {
 
 void main () 
 {
-	
+	gl_PointSize = 3.0;
 	vec4 eyePos = globalUbo.view * vec4(inPos.x, inPos.y, inPos.z, 1.0); 
 	gl_Position = globalUbo.projection * eyePos;
-	outColor = unpackColor(inVel.w);
+	outColor = unpackColor(inPos.w);
 }

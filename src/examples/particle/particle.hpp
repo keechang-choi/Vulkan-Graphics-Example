@@ -91,7 +91,7 @@ class VgeExample : public VgeBase {
   void addModelInstance(const ModelInstance& newInstance);
   const std::vector<size_t>& findInstances(const std::string& name);
 
-  struct {
+  struct VertexInfos {
     vk::PipelineVertexInputStateCreateInfo vertexInputSCI;
     std::vector<vk::VertexInputBindingDescription> bindingDescriptions;
     std::vector<vk::VertexInputAttributeDescription> attributeDescriptions;
@@ -150,19 +150,24 @@ class VgeExample : public VgeBase {
   float soften = 0.1;
 
   // vertex buffer ->
+  // TODO: to use this data for vertex buffer,
+  // change also vertexSCI to be consistent with offsetof()
   struct TailElt {
     // xyz color
-    glm::vec4 pos;
+    glm::vec4 pos{0.f};
     // color
-    glm::vec4 vel;
+    // glm::vec4 vel{0.f};
   };
   // numParticles * tailSize * 4(xyz, color)
   std::vector<std::list<glm::vec4>> tails;
   std::vector<TailElt> tailsData;
   std::vector<std::unique_ptr<vgeu::VgeuBuffer>> tailBuffers;
+  std::unique_ptr<vgeu::VgeuBuffer> tailIndexBuffer;
+
   vk::raii::Pipeline tailPipeline = nullptr;
   float tailTimer = -1.f;
-  size_t tailSize = 100;
+  size_t tailSize = 300;
   const float tailSampleTime = 0.1f;
+  VertexInfos tailVertexInfos;
 };
 }  // namespace vge

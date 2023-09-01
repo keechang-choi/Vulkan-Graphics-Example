@@ -471,19 +471,65 @@ void VgeExample::createStorageBuffers() {
   // tail
   {
     tails.resize(numParticles);
-    tailsData.resize(numParticles * tailSize);
+    // for (size_t i = 0; i < tails.size(); i++) {
+    //   for (size_t j = 0; j < tailSize; j++) {
+    //     glm::vec4 pos{1.f, 0.f, 2.f, 0.f};
+    //     pos.z +=
+    //         3.0 * (static_cast<float>(j + 1) / static_cast<float>(tailSize));
+    //     pos.w = ::packColor(246, 7, 9);
+    //     tails[i].push_back(pos);
+    //   }
+    // }
+    tailsData.resize(tails.size() * tailSize);
     tailBuffers.resize(MAX_CONCURRENT_FRAMES);
     for (size_t i = 0; i < tailBuffers.size(); i++) {
       tailBuffers[i] = std::make_unique<vgeu::VgeuBuffer>(
-          globalAllocator->getAllocator(), sizeof(TailElt),
-          numParticles * tailSize,
+          globalAllocator->getAllocator(), sizeof(TailElt), tailsData.size(),
           vk::BufferUsageFlagBits::eVertexBuffer |
               vk::BufferUsageFlagBits::eStorageBuffer,
           VMA_MEMORY_USAGE_AUTO,
           VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
               VMA_ALLOCATION_CREATE_MAPPED_BIT);
     }
+
+    // index buffer
+    std::vector<uint32_t> indices;
+    indices.reserve(tails.size() * (tailSize + 1));
+    for (size_t i = 0; i < tails.size(); i++) {
+      for (size_t j = 0; j < tailSize; j++) {
+        indices.push_back(i * tailSize + j);
+      }
+      // https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VkPipelineInputAssemblyStateCreateInfo.html
+      // 0xffffffff
+      indices.push_back(static_cast<uint32_t>(-1));
+    }
+
+    vgeu::VgeuBuffer indexStagingBuffer(
+        globalAllocator->getAllocator(), sizeof(uint32_t), indices.size(),
+        vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT);
+    std::memcpy(indexStagingBuffer.getMappedData(), indices.data(),
+                indexStagingBuffer.getBufferSize());
+
+    tailIndexBuffer = std::make_unique<vgeu::VgeuBuffer>(
+        globalAllocator->getAllocator(), sizeof(uint32_t), indices.size(),
+        vk::BufferUsageFlagBits::eIndexBuffer |
+            vk::BufferUsageFlagBits::eTransferDst,
+        VMA_MEMORY_USAGE_AUTO,
+        /*VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT*/
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT);
+    // single Time command copy both buffers
+    vgeu::oneTimeSubmit(
+        device, commandPool, queue,
+        [&](const vk::raii::CommandBuffer& cmdBuffer) {
+          cmdBuffer.copyBuffer(
+              indexStagingBuffer.getBuffer(), tailIndexBuffer->getBuffer(),
+              vk::BufferCopy(0, 0, indexStagingBuffer.getBufferSize()));
+        });
   }
+  uint32_t* a = static_cast<uint32_t*>(tailIndexBuffer->getMappedData());
 }
 
 void VgeExample::createVertexSCI() {
@@ -503,6 +549,22 @@ void VgeExample::createVertexSCI() {
   vertexInfos.vertexInputSCI = vk::PipelineVertexInputStateCreateInfo(
       vk::PipelineVertexInputStateCreateFlags{},
       vertexInfos.bindingDescriptions, vertexInfos.attributeDescriptions);
+
+  // tail
+  tailVertexInfos.bindingDescriptions.emplace_back(
+      0 /*binding*/, sizeof(TailElt), vk::VertexInputRate::eVertex);
+
+  tailVertexInfos.attributeDescriptions.emplace_back(
+      0 /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
+      offsetof(TailElt, pos));
+  // tailVertexInfos.attributeDescriptions.emplace_back(
+  //     1 /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
+  //     offsetof(TailElt, vel));
+
+  tailVertexInfos.vertexInputSCI = vk::PipelineVertexInputStateCreateInfo(
+      vk::PipelineVertexInputStateCreateFlags{},
+      tailVertexInfos.bindingDescriptions,
+      tailVertexInfos.attributeDescriptions);
 }
 
 void VgeExample::setupDynamicUbo() {
@@ -684,9 +746,15 @@ void VgeExample::createPipelines() {
 
   graphics.pipeline =
       vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
-  if (enabledFeatures.fillModeNonSolid) {
+  {
+    vertexInputSCI.setVertexBindingDescriptions(
+        tailVertexInfos.bindingDescriptions);
+    vertexInputSCI.setVertexAttributeDescriptions(
+        tailVertexInfos.attributeDescriptions);
+    // primitive restart enabled
     inputAssemblySCI.topology = vk::PrimitiveTopology::eLineStrip;
-    rasterizationSCI.polygonMode = vk::PolygonMode::eLine;
+    inputAssemblySCI.primitiveRestartEnable = true;
+    rasterizationSCI.polygonMode = vk::PolygonMode::eFill;
     vertCode = vgeu::readFile(getShadersPath() + "/particle/tail.vert.spv");
     fragCode = vgeu::readFile(getShadersPath() + "/particle/tail.frag.spv");
     // NOTE: after pipeline creation, shader modules can be destroyed.
@@ -841,15 +909,23 @@ void VgeExample::buildCommandBuffers() {
 
   // tail
   {
+    drawCmdBuffers[currentFrameIndex].setLineWidth(1.f);
     drawCmdBuffers[currentFrameIndex].bindPipeline(
         vk::PipelineBindPoint::eGraphics, *tailPipeline);
     vk::DeviceSize offset(0);
     drawCmdBuffers[currentFrameIndex].bindVertexBuffers(
         0, tailBuffers[currentFrameIndex]->getBuffer(), offset);
-    for (size_t i = 0; i < numParticles; i++) {
-      // TODO: indexedDraw
-      drawCmdBuffers[currentFrameIndex].draw(tailSize, 1, i * tailSize, i);
-    }
+    drawCmdBuffers[currentFrameIndex].bindIndexBuffer(
+        tailIndexBuffer->getBuffer(), 0, vk::IndexType::eUint32);
+    // for (size_t i = 0; i < numParticles; i++) {
+    //   // TODO: indexedDraw
+    //   drawCmdBuffers[currentFrameIndex].drawIndexed(tailSize + 1, 1,
+    //                                                 i * (tailSize + 1), 0,
+    //                                                 i);
+    // }
+
+    drawCmdBuffers[currentFrameIndex].drawIndexed(numParticles * (tailSize + 1),
+                                                  1, 0, 0, 0);
   }
 
   // UI overlay draw
@@ -1053,13 +1129,19 @@ void VgeExample::updateTailSSBO() {
     const Particle* particles = static_cast<Particle*>(
         compute.storageBuffers[currentFrameIndex]->getMappedData());
     if (tailTimer > tailSampleTime || tailTimer < 0.f) {
-      for (size_t i = 0; i < numParticles; i++) {
+      for (size_t i = 0; i < tails.size(); i++) {
         // need to check not empty.
-        if (!tails[i].empty()) tails[i].pop_back();
+        // float eps = std::numeric_limits<float>::min();
+        bool isInit = false;
+        if (!tails[i].empty())
+          tails[i].pop_front();
+        else
+          isInit = true;
         while (tails[i].size() < tailSize) {
           glm::vec4 packedTailElt = particles[i].pos;
-          packedTailElt.w = particles[i].vel.w;
-          tails[i].push_front(packedTailElt);
+          // packedTailElt.x += eps * static_cast<float>(tails[i].size());
+          packedTailElt.w = isInit ? 0.f : particles[i].vel.w;
+          tails[i].push_back(packedTailElt);
         }
       }
       tailTimer = 0.f;
@@ -1075,7 +1157,7 @@ void VgeExample::updateTailSSBO() {
         tailsData[i * tailSize + j].pos.x = packedTailElt.x;
         tailsData[i * tailSize + j].pos.y = packedTailElt.y;
         tailsData[i * tailSize + j].pos.z = packedTailElt.z;
-        tailsData[i * tailSize + j].vel.w = packedTailElt.w;
+        tailsData[i * tailSize + j].pos.w = packedTailElt.w;
         j++;
       }
     }
