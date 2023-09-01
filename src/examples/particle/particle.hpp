@@ -4,8 +4,8 @@
 #include "vgeu_gltf.hpp"
 
 // std
+#include <list>
 #include <memory>
-#include <queue>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -86,6 +86,7 @@ class VgeExample : public VgeBase {
   void updateGraphicsUbo();
   void updateComputeUbo();
   void updateDynamicUbo();
+  void updateTailSSBO();
 
   void addModelInstance(const ModelInstance& newInstance);
   const std::vector<size_t>& findInstances(const std::string& name);
@@ -149,15 +150,19 @@ class VgeExample : public VgeBase {
   float soften = 0.1;
 
   // vertex buffer ->
-  struct TailPosition {
+  struct TailElt {
     // xyz color
     glm::vec4 pos;
     // color
     glm::vec4 vel;
   };
   // numParticles * tailSize * 4(xyz, color)
-  std::vector<std::queue<glm::vec4>> tails;
+  std::vector<std::list<glm::vec4>> tails;
+  std::vector<TailElt> tailsData;
   std::vector<std::unique_ptr<vgeu::VgeuBuffer>> tailBuffers;
   vk::raii::Pipeline tailPipeline = nullptr;
+  float tailTimer = -1.f;
+  size_t tailSize = 100;
+  const float tailSampleTime = 0.1f;
 };
 }  // namespace vge

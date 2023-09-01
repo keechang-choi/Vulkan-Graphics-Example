@@ -467,6 +467,23 @@ void VgeExample::createStorageBuffers() {
           }
         });
   }
+
+  // tail
+  {
+    tails.resize(numParticles);
+    tailsData.resize(numParticles * tailSize);
+    tailBuffers.resize(MAX_CONCURRENT_FRAMES);
+    for (size_t i = 0; i < tailBuffers.size(); i++) {
+      tailBuffers[i] = std::make_unique<vgeu::VgeuBuffer>(
+          globalAllocator->getAllocator(), sizeof(TailElt),
+          numParticles * tailSize,
+          vk::BufferUsageFlagBits::eVertexBuffer |
+              vk::BufferUsageFlagBits::eStorageBuffer,
+          VMA_MEMORY_USAGE_AUTO,
+          VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+              VMA_ALLOCATION_CREATE_MAPPED_BIT);
+    }
+  }
 }
 
 void VgeExample::createVertexSCI() {
@@ -667,6 +684,23 @@ void VgeExample::createPipelines() {
 
   graphics.pipeline =
       vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
+  if (enabledFeatures.fillModeNonSolid) {
+    inputAssemblySCI.topology = vk::PrimitiveTopology::eLineStrip;
+    rasterizationSCI.polygonMode = vk::PolygonMode::eLine;
+    vertCode = vgeu::readFile(getShadersPath() + "/particle/tail.vert.spv");
+    fragCode = vgeu::readFile(getShadersPath() + "/particle/tail.frag.spv");
+    // NOTE: after pipeline creation, shader modules can be destroyed.
+    vertShaderModule = vgeu::createShaderModule(device, vertCode);
+    fragShaderModule = vgeu::createShaderModule(device, fragCode);
+    shaderStageCIs[0] = vk::PipelineShaderStageCreateInfo(
+        vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eVertex,
+        *vertShaderModule, "main", nullptr);
+    shaderStageCIs[1] = vk::PipelineShaderStageCreateInfo(
+        vk::PipelineShaderStageCreateFlags(),
+        vk::ShaderStageFlagBits::eFragment, *fragShaderModule, "main", nullptr);
+    tailPipeline =
+        vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
+  }
 }
 
 void VgeExample::render() {
@@ -690,17 +724,7 @@ void VgeExample::draw() {
   device.resetFences(*waitFences[currentFrameIndex]);
 
   // calculate tail
-  float tailTimer = 0.f;
-  size_t tailSize = 10;
-  const float tailSampleTime = 1.0f;
-
-  void* mappedData = compute.storageBuffers[currentFrameIndex]->getMappedData();
-  Particle* particles = static_cast<Particle*>(mappedData);
-  tailTimer += frameTimer;
-  if (tailTimer > tailSampleTime) {
-    tails.pop();
-    while (tails.size() <) tailTimer = 0.f;
-  }
+  updateTailSSBO();
 
   prepareFrame();
 
@@ -796,7 +820,7 @@ void VgeExample::buildCommandBuffers() {
       vk::PipelineBindPoint::eGraphics, *graphics.pipelineLayout, 0 /*set 0*/,
       {*graphics.globalUboDescriptorSets[currentFrameIndex]}, nullptr);
 
-  // Top view
+  // particles
   {
     drawCmdBuffers[currentFrameIndex].setLineWidth(1.f);
     drawCmdBuffers[currentFrameIndex].setViewport(
@@ -813,6 +837,18 @@ void VgeExample::buildCommandBuffers() {
     drawCmdBuffers[currentFrameIndex].bindVertexBuffers(
         0, compute.storageBuffers[currentFrameIndex]->getBuffer(), offset);
     drawCmdBuffers[currentFrameIndex].draw(numParticles, 1, 0, 0);
+  }
+
+  // tail
+  {
+    drawCmdBuffers[currentFrameIndex].bindPipeline(
+        vk::PipelineBindPoint::eGraphics, *tailPipeline);
+    vk::DeviceSize offset(0);
+    drawCmdBuffers[currentFrameIndex].bindVertexBuffers(
+        0, tailBuffers[currentFrameIndex]->getBuffer(), offset);
+    for (size_t i = 0; i < numParticles; i++) {
+      drawCmdBuffers[currentFrameIndex].draw(tailSize, 1, i * tailSize, i);
+    }
   }
 
   // UI overlay draw
@@ -1009,6 +1045,42 @@ void VgeExample::setupCommandLineParser(CLI::App& app) {
       ->capture_default_str();
   app.add_option("--soften, -s", soften, "soften constants")
       ->capture_default_str();
+}
+void VgeExample::updateTailSSBO() {
+  // update
+  {
+    const Particle* particles = static_cast<Particle*>(
+        compute.storageBuffers[currentFrameIndex]->getMappedData());
+    if (tailTimer > tailSampleTime || tailTimer < 0.f) {
+      for (size_t i = 0; i < numParticles; i++) {
+        // need to check not empty.
+        if (!tails[i].empty()) tails[i].pop_back();
+        while (tails[i].size() < tailSize) {
+          glm::vec4 packedTailElt = particles[i].pos;
+          packedTailElt.w = particles[i].vel.w;
+          tails[i].push_front(packedTailElt);
+        }
+      }
+      tailTimer = 0.f;
+    }
+    tailTimer += frameTimer;
+  }
+  // copy
+  {
+    for (size_t i = 0; i < tails.size(); i++) {
+      size_t j = 0;
+      for (auto it = tails[i].begin(); it != tails[i].end(); it++) {
+        glm::vec4 packedTailElt = *it;
+        tailsData[i * tailSize + j].pos.x = packedTailElt.x;
+        tailsData[i * tailSize + j].pos.y = packedTailElt.y;
+        tailsData[i * tailSize + j].pos.z = packedTailElt.z;
+        tailsData[i * tailSize + j].vel.w = packedTailElt.w;
+        j++;
+      }
+    }
+    std::memcpy(tailBuffers[currentFrameIndex]->getMappedData(),
+                tailsData.data(), sizeof(TailElt) * tailsData.size());
+  }
 }
 
 }  // namespace vge
