@@ -847,6 +847,7 @@ void VgeExample::buildCommandBuffers() {
     drawCmdBuffers[currentFrameIndex].bindVertexBuffers(
         0, tailBuffers[currentFrameIndex]->getBuffer(), offset);
     for (size_t i = 0; i < numParticles; i++) {
+      // TODO: indexedDraw
       drawCmdBuffers[currentFrameIndex].draw(tailSize, 1, i * tailSize, i);
     }
   }
