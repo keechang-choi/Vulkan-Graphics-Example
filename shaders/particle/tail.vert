@@ -1,6 +1,7 @@
 #version 450
 
 layout (location = 0) in vec4 inPos;
+layout (location = 1) in float inInsertedAt;
 
 layout (location = 0) out vec3 outColor;
 
@@ -8,9 +9,9 @@ layout (set = 0, binding = 0) uniform GlobalUbo
 {
 	mat4 projection;
     mat4 view;
-	vec4 lightPos;
 	mat4 inverseView;
     vec2 screenDim;
+    vec2 tailInfo;
 } globalUbo;
 
 out gl_PerVertex
@@ -40,5 +41,8 @@ void main ()
 	gl_PointSize = 3.0;
 	vec4 eyePos = globalUbo.view * vec4(inPos.x, inPos.y, inPos.z, 1.0); 
 	gl_Position = globalUbo.projection * eyePos;
-	outColor = unpackColor(inPos.w);
+    float tailSize = globalUbo.tailInfo.x;
+    float tailFrontIndex = globalUbo.tailInfo.y;
+    float alpha = (tailSize - mod((tailFrontIndex + tailSize - inInsertedAt), tailSize))/tailSize;
+	outColor = unpackColor(inPos.w) * pow(alpha, 2.0);
 }

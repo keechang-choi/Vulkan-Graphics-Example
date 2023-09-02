@@ -9,9 +9,9 @@ layout (set = 0, binding = 0) uniform GlobalUbo
 {
 	mat4 projection;
     mat4 view;
-	vec4 lightPos;
 	mat4 inverseView;
     vec2 screenDim;
+	vec2 tailInfo;
 } globalUbo;
 
 out gl_PerVertex

@@ -15,9 +15,11 @@ namespace vge {
 struct GlobalUbo {
   glm::mat4 projection{1.f};
   glm::mat4 view{1.f};
-  glm::vec4 lightPos{0.f};
   glm::mat4 inverseView{1.f};
+  // tailSize, tailFrontIndex
   glm::vec2 screenDim;
+  // NOTE: alignment
+  glm::vec2 tailInfo{0.f};
 };
 
 // NOTE: for current animation implementation,
@@ -153,21 +155,21 @@ class VgeExample : public VgeBase {
   // TODO: to use this data for vertex buffer,
   // change also vertexSCI to be consistent with offsetof()
   struct TailElt {
-    // xyz color
+    // xyz,w=packedColor
     glm::vec4 pos{0.f};
-    // color
-    // glm::vec4 vel{0.f};
+    // head index just inserted at
+    float insertedAt = 0.f;
   };
-  // numParticles * tailSize * 4(xyz, color)
-  std::vector<std::list<glm::vec4>> tails;
-  std::vector<TailElt> tailsData;
+  std::vector<TailElt> tailData;
   std::vector<std::unique_ptr<vgeu::VgeuBuffer>> tailBuffers;
-  std::unique_ptr<vgeu::VgeuBuffer> tailIndexBuffer;
+  std::vector<uint32_t> tailIndices;
+  std::vector<std::unique_ptr<vgeu::VgeuBuffer>> tailIndexBuffers;
 
   vk::raii::Pipeline tailPipeline = nullptr;
   float tailTimer = -1.f;
   size_t tailSize = 300;
   float tailSampleTime = 0.1f;
   VertexInfos tailVertexInfos;
+  int tailFrontIndex = -1;
 };
 }  // namespace vge

@@ -41,7 +41,6 @@ void VgeExample::initVulkan() {
       glm::radians(60.f),
       static_cast<float>(width) / (static_cast<float>(height)), 0.1f, 256.f);
   // NOTE: coordinate space in world
-  graphics.globalUbo.lightPos = glm::vec4(20.f, -10.f, -10.f, 0.f);
   VgeBase::initVulkan();
 }
 
@@ -478,21 +477,11 @@ void VgeExample::createStorageBuffers() {
 
   // tail
   {
-    tails.resize(numParticles);
-    // for (size_t i = 0; i < tails.size(); i++) {
-    //   for (size_t j = 0; j < tailSize; j++) {
-    //     glm::vec4 pos{1.f, 0.f, 2.f, 0.f};
-    //     pos.z +=
-    //         3.0 * (static_cast<float>(j + 1) / static_cast<float>(tailSize));
-    //     pos.w = ::packColor(246, 7, 9);
-    //     tails[i].push_back(pos);
-    //   }
-    // }
-    tailsData.resize(tails.size() * tailSize);
+    tailData.resize(numParticles * tailSize);
     tailBuffers.resize(MAX_CONCURRENT_FRAMES);
     for (size_t i = 0; i < tailBuffers.size(); i++) {
       tailBuffers[i] = std::make_unique<vgeu::VgeuBuffer>(
-          globalAllocator->getAllocator(), sizeof(TailElt), tailsData.size(),
+          globalAllocator->getAllocator(), sizeof(TailElt), tailData.size(),
           vk::BufferUsageFlagBits::eVertexBuffer |
               vk::BufferUsageFlagBits::eStorageBuffer,
           VMA_MEMORY_USAGE_AUTO,
@@ -501,43 +490,19 @@ void VgeExample::createStorageBuffers() {
     }
 
     // index buffer
-    std::vector<uint32_t> indices;
-    indices.reserve(tails.size() * (tailSize + 1));
-    for (size_t i = 0; i < tails.size(); i++) {
-      for (size_t j = 0; j < tailSize; j++) {
-        indices.push_back(i * tailSize + j);
-      }
-      // https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VkPipelineInputAssemblyStateCreateInfo.html
-      // 0xffffffff
-      indices.push_back(static_cast<uint32_t>(-1));
+    tailIndices.resize(numParticles * (tailSize + 1));
+    tailIndexBuffers.resize(MAX_CONCURRENT_FRAMES);
+    for (size_t i = 0; i < tailIndexBuffers.size(); i++) {
+      tailIndexBuffers[i] = std::make_unique<vgeu::VgeuBuffer>(
+          globalAllocator->getAllocator(), sizeof(uint32_t), tailIndices.size(),
+          vk::BufferUsageFlagBits::eIndexBuffer |
+              vk::BufferUsageFlagBits::eTransferDst,
+          VMA_MEMORY_USAGE_AUTO,
+          /*VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT*/
+          VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+              VMA_ALLOCATION_CREATE_MAPPED_BIT);
     }
-
-    vgeu::VgeuBuffer indexStagingBuffer(
-        globalAllocator->getAllocator(), sizeof(uint32_t), indices.size(),
-        vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_AUTO,
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-            VMA_ALLOCATION_CREATE_MAPPED_BIT);
-    std::memcpy(indexStagingBuffer.getMappedData(), indices.data(),
-                indexStagingBuffer.getBufferSize());
-
-    tailIndexBuffer = std::make_unique<vgeu::VgeuBuffer>(
-        globalAllocator->getAllocator(), sizeof(uint32_t), indices.size(),
-        vk::BufferUsageFlagBits::eIndexBuffer |
-            vk::BufferUsageFlagBits::eTransferDst,
-        VMA_MEMORY_USAGE_AUTO,
-        /*VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT*/
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-            VMA_ALLOCATION_CREATE_MAPPED_BIT);
-    // single Time command copy both buffers
-    vgeu::oneTimeSubmit(
-        device, commandPool, queue,
-        [&](const vk::raii::CommandBuffer& cmdBuffer) {
-          cmdBuffer.copyBuffer(
-              indexStagingBuffer.getBuffer(), tailIndexBuffer->getBuffer(),
-              vk::BufferCopy(0, 0, indexStagingBuffer.getBufferSize()));
-        });
   }
-  uint32_t* a = static_cast<uint32_t*>(tailIndexBuffer->getMappedData());
 }
 
 void VgeExample::createVertexSCI() {
@@ -565,9 +530,9 @@ void VgeExample::createVertexSCI() {
   tailVertexInfos.attributeDescriptions.emplace_back(
       0 /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
       offsetof(TailElt, pos));
-  // tailVertexInfos.attributeDescriptions.emplace_back(
-  //     1 /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
-  //     offsetof(TailElt, vel));
+  tailVertexInfos.attributeDescriptions.emplace_back(
+      1 /*location*/, 0 /* binding */, vk::Format::eR32Sfloat,
+      offsetof(TailElt, insertedAt));
 
   tailVertexInfos.vertexInputSCI = vk::PipelineVertexInputStateCreateInfo(
       vk::PipelineVertexInputStateCreateFlags{},
@@ -924,7 +889,8 @@ void VgeExample::buildCommandBuffers() {
     drawCmdBuffers[currentFrameIndex].bindVertexBuffers(
         0, tailBuffers[currentFrameIndex]->getBuffer(), offset);
     drawCmdBuffers[currentFrameIndex].bindIndexBuffer(
-        tailIndexBuffer->getBuffer(), 0, vk::IndexType::eUint32);
+        tailIndexBuffers[currentFrameIndex]->getBuffer(), 0,
+        vk::IndexType::eUint32);
     drawCmdBuffers[currentFrameIndex].drawIndexed(numParticles * (tailSize + 1),
                                                   1, 0, 0, 0);
   }
@@ -1038,6 +1004,8 @@ void VgeExample::updateGraphicsUbo() {
       static_cast<float>(width),
       static_cast<float>(height),
   };
+  graphics.globalUbo.tailInfo.x = static_cast<float>(tailSize);
+  graphics.globalUbo.tailInfo.y = static_cast<float>(tailFrontIndex);
   std::memcpy(graphics.globalUniformBuffers[currentFrameIndex]->getMappedData(),
               &graphics.globalUbo, sizeof(GlobalUbo));
 }
@@ -1129,56 +1097,48 @@ void VgeExample::setupCommandLineParser(CLI::App& app) {
       ->capture_default_str();
 }
 void VgeExample::updateTailSSBO() {
-  // update
+  // vertex update
   {
     const Particle* particles = static_cast<Particle*>(
         compute.storageBuffers[currentFrameIndex]->getMappedData());
     if (tailTimer > tailSampleTime || tailTimer < 0.f) {
-      for (size_t i = 0; i < tails.size(); i++) {
-        bool isInit = false;
-        // need to check not empty before pop.
-        if (!tails[i].empty())
-          tails[i].pop_front();
-        else
-          isInit = true;
-        // back is head side, front is tail side.
-        while (tails[i].size() < tailSize) {
-          glm::vec4 packedTailElt = particles[i].pos;
-          packedTailElt.w = isInit ? 0.f : particles[i].vel.w;
-          tails[i].push_back(packedTailElt);
+      for (size_t i = 0; i < numParticles; i++) {
+        glm::vec4 packedTailElt = particles[i].pos;
+        packedTailElt.w = particles[i].vel.w;
+        if (tailFrontIndex == -1) {
+          // initialize
+          for (size_t j = 0; j < tailSize; j++) {
+            tailData[i * tailSize + j].pos = packedTailElt;
+            tailData[i * tailSize + j].insertedAt = 0.0f;
+          }
+        } else {
+          tailData[i * tailSize + tailFrontIndex].pos = packedTailElt;
+          tailData[i * tailSize + tailFrontIndex].insertedAt =
+              static_cast<float>(tailFrontIndex);
         }
       }
+      tailFrontIndex = (tailFrontIndex + 1) % tailSize;
       tailTimer = 0.f;
     }
     if (!paused) {
       tailTimer += frameTimer;
     }
-  }
-  // copy
-  {
-    for (size_t i = 0; i < tails.size(); i++) {
-      size_t j = 0;
-      for (auto it = tails[i].begin(); it != tails[i].end(); it++) {
-        glm::vec4 packedTailElt = *it;
-        tailsData[i * tailSize + j].pos.x = packedTailElt.x;
-        tailsData[i * tailSize + j].pos.y = packedTailElt.y;
-        tailsData[i * tailSize + j].pos.z = packedTailElt.z;
-        tailsData[i * tailSize + j].pos.w = packedTailElt.w;
-        // color
-        // glm::vec3 color = ::unpackColor(packedTailElt.w);
-        // glm::vec3 fadedColor =
-        //     color * (static_cast<float>((j + 1) * (j + 1)) /
-        //              static_cast<float>(tails[i].size() * tails[i].size()));
-        // tailsData[i * tailSize + j].pos.w =
-        //     ::packColor(static_cast<uint8_t>(fadedColor.r),
-        //                 static_cast<uint8_t>(fadedColor.g),
-        //                 static_cast<uint8_t>(fadedColor.b));
-
-        j++;
-      }
-    }
     std::memcpy(tailBuffers[currentFrameIndex]->getMappedData(),
-                tailsData.data(), sizeof(TailElt) * tailsData.size());
+                tailData.data(), sizeof(TailElt) * tailData.size());
+  }
+  // index update
+  {
+    for (size_t i = 0; i < numParticles; i++) {
+      for (size_t j = 0; j < tailSize; j++) {
+        tailIndices[i * tailSize + j] =
+            i * tailSize + (tailFrontIndex + tailSize - 1 - j) % tailSize;
+      }
+      // https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VkPipelineInputAssemblyStateCreateInfo.html
+      // 0xffffffff
+      tailIndices[i * tailSize + tailSize - 1] = static_cast<uint32_t>(-1);
+    }
+    std::memcpy(tailIndexBuffers[currentFrameIndex]->getMappedData(),
+                tailIndices.data(), sizeof(uint32_t) * tailIndices.size());
   }
 }
 
