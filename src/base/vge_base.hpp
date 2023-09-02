@@ -60,7 +60,7 @@ class VgeBase {
   std::string title = "Vulkan Example KC";
   std::string name = "vulkanExample";
   uint32_t apiVersion = VK_API_VERSION_1_3;
-  float frameTimer = 1.0f;
+  float frameTimer = 0.0f;
   bool prepared = false;
   bool resized = false;
   bool viewUpdated = false;
