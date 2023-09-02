@@ -20,6 +20,14 @@ namespace {
 float packColor(uint8_t r, uint8_t g, uint8_t b) {
   return r * 1.0f + g * 256.0f + b * 256.0f * 256.0f;
 }
+glm::vec3 unpackColor(float f) {
+  glm::vec3 color;
+  color.b = std::floor(f / 256.0f / 256.0f);
+  color.g = std::floor((f - color.b * 256.0f * 256.0f) / 256.0f);
+  color.r = std::floor(f - color.b * 256.0f * 256.0f - color.g * 256.0f);
+  // each field in 0.0 ~ 255.0
+  return color;
+}
 }  // namespace
 namespace vge {
 VgeExample::VgeExample() : VgeBase() { title = "Particle Example"; }
@@ -1127,16 +1135,15 @@ void VgeExample::updateTailSSBO() {
         compute.storageBuffers[currentFrameIndex]->getMappedData());
     if (tailTimer > tailSampleTime || tailTimer < 0.f) {
       for (size_t i = 0; i < tails.size(); i++) {
-        // need to check not empty.
-        // float eps = std::numeric_limits<float>::min();
         bool isInit = false;
+        // need to check not empty before pop.
         if (!tails[i].empty())
           tails[i].pop_front();
         else
           isInit = true;
+        // back is head side, front is tail side.
         while (tails[i].size() < tailSize) {
           glm::vec4 packedTailElt = particles[i].pos;
-          // packedTailElt.x += eps * static_cast<float>(tails[i].size());
           packedTailElt.w = isInit ? 0.f : particles[i].vel.w;
           tails[i].push_back(packedTailElt);
         }
@@ -1157,6 +1164,16 @@ void VgeExample::updateTailSSBO() {
         tailsData[i * tailSize + j].pos.y = packedTailElt.y;
         tailsData[i * tailSize + j].pos.z = packedTailElt.z;
         tailsData[i * tailSize + j].pos.w = packedTailElt.w;
+        // color
+        // glm::vec3 color = ::unpackColor(packedTailElt.w);
+        // glm::vec3 fadedColor =
+        //     color * (static_cast<float>((j + 1) * (j + 1)) /
+        //              static_cast<float>(tails[i].size() * tails[i].size()));
+        // tailsData[i * tailSize + j].pos.w =
+        //     ::packColor(static_cast<uint8_t>(fadedColor.r),
+        //                 static_cast<uint8_t>(fadedColor.g),
+        //                 static_cast<uint8_t>(fadedColor.b));
+
         j++;
       }
     }

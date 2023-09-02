@@ -92,11 +92,7 @@ void main()
 		{
 			vec4 other = sharedData[j];
 			vec3 r = other.xyz - position.xyz;
-			float dotR = dot(r, r) ;
-			bool isClose = (dotR < SOFTEN);
-			dotR = isClose ? 1.0 : dotR;
-			r = isClose ? vec3(0.0) : r;
-			acceleration.xyz +=  (GRAVITY * other.w / pow(dotR, POWER)) * r;
+			acceleration.xyz +=  (GRAVITY * other.w / pow(dot(r, r) + SOFTEN, POWER)) * r;
 		}
 
 		// memoryBarrierShared();
