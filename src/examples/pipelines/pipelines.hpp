@@ -16,6 +16,7 @@ struct GlobalUbo {
   glm::mat4 normalMatrix{1.f};
   glm::mat4 inverseView{1.f};
 };
+struct Options {};
 
 class VgeExample : public VgeBase {
  public:
@@ -34,6 +35,7 @@ class VgeExample : public VgeBase {
   void draw();
   void buildCommandBuffers();
   void viewChanged();
+  void setOptions(const std::optional<Options>& opts){};
 
   std::unique_ptr<vgeu::glTF::Model> scene;
 
@@ -51,5 +53,6 @@ class VgeExample : public VgeBase {
     vk::raii::Pipeline toon = nullptr;
     vk::raii::Pipeline wireframe = nullptr;
   } pipelines;
+  Options opts{};
 };
 }  // namespace vge

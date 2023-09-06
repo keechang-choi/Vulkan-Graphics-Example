@@ -116,4 +116,20 @@ bool UIOverlay::sliderInt(const char* caption, int32_t* value, int32_t min,
   return res;
 }
 
+bool UIOverlay::button(const char* caption) {
+  bool res = ImGui::Button(caption);
+  if (res) {
+    updated = true;
+  };
+  return res;
+}
+
+bool UIOverlay::colorPicker(const char* caption, float* color) {
+  bool res = ImGui::ColorEdit4(caption, color, ImGuiColorEditFlags_NoInputs);
+  if (res) {
+    updated = true;
+  };
+  return res;
+}
+
 }  // namespace vgeu

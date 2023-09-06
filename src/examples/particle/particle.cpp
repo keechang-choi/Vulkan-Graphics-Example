@@ -373,12 +373,20 @@ void VgeExample::createStorageBuffers() {
   rndEngine.seed(1111);
   std::normal_distribution<float> normalDist(0.0f, 1.0f);
 
-  std::vector<float> colors{
-      //::packColor(2, 20, 200),
-      ::packColor(5, 12, 129),  ::packColor(202, 42, 1),
-      ::packColor(41, 86, 143), ::packColor(161, 40, 48),
-      ::packColor(1, 75, 255),  ::packColor(246, 7, 9),
-  };
+  // std::vector<float> colors{
+  //     //::packColor(2, 20, 200),
+  //     ::packColor(5, 12, 129),  ::packColor(202, 42, 1),
+  //     ::packColor(41, 86, 143), ::packColor(161, 40, 48),
+  //     ::packColor(1, 75, 255),  ::packColor(246, 7, 9),
+  // };
+  std::vector<float> colors;
+  for (size_t i = 0; i < numAttractors; i++) {
+    colors.push_back(
+        ::packColor(static_cast<uint8_t>(opts.colors[i][0] * 255.f),
+                    static_cast<uint8_t>(opts.colors[i][1] * 255.f),
+                    static_cast<uint8_t>(opts.colors[i][2] * 255.f)));
+  }
+
   for (size_t i = 0; i < attractors.size(); i++) {
     uint32_t numParticlesPerAttractor = numParticles / attractors.size();
     if (i == attractors.size() - 1) {
@@ -1142,14 +1150,29 @@ void VgeExample::updateTailSSBO() {
   }
 }
 void VgeExample::onUpdateUIOverlay() {
+  if (uiOverlay->button("Restart")) {
+    restart = true;
+  }
   if (uiOverlay->header("Settings")) {
-    int32_t uiNumParticles = static_cast<int32_t>(numParticles);
-    if (uiOverlay->sliderInt("numParticles", &uiNumParticles, 2, 1024 * 16)) {
-      restart = true;
-      numParticles = static_cast<uint32_t>(uiNumParticles);
+    uiOverlay->sliderInt("numAttractors", &opts.numAttractors, 2, 6);
+    uiOverlay->sliderInt("numParticles", &opts.numParticles, 2, 1024 * 16);
+    for (size_t i = 0; i < opts.numAttractors; i++) {
+      std::string caption = "colors" + std::to_string(i);
+      uiOverlay->colorPicker(caption.c_str(), opts.colors[i].data());
     }
   }
 }
+void VgeExample::setOptions(const std::optional<Options>& opts) {
+  if (opts.has_value()) {
+    this->opts = opts.value();
+    numAttractors = static_cast<uint32_t>(this->opts.numAttractors);
+    numParticles = static_cast<uint32_t>(this->opts.numParticles);
+  } else {
+    this->opts.numAttractors = static_cast<int32_t>(numAttractors);
+    this->opts.numParticles = static_cast<int32_t>(numParticles);
+  }
+}
+
 }  // namespace vge
 
 VULKAN_EXAMPLE_MAIN()

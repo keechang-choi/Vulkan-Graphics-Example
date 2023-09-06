@@ -53,13 +53,20 @@ struct SpecializationData {
 };
 
 struct Options {
-  uint32_t numPartices{1024};
+  int32_t numParticles{1024};
+  int32_t numAttractors{6};
+  std::vector<std::vector<float>> colors = {
+      {5.f / 255.f, 12.f / 255.f, 129.f / 255.f, 1.f},
+      {202.f / 255.f, 42.f / 255.f, 1.f / 255.f, 1.f},
+      {41.f / 255.f, 86.f / 255.f, 143.f / 255.f, 1.f},
+      {161.f / 255.f, 40.f / 255.f, 48.f / 255.f, 1.f},
+      {1.f / 255.f, 75.f / 255.f, 255.f / 255.f, 1.f},
+      {246.f / 255.f, 7.f / 255.f, 9.f / 255.f, 1.f}};
 };
 
 class VgeExample : public VgeBase {
  public:
   VgeExample();
-  VgeExample(Options& opts);
   ~VgeExample();
   virtual void initVulkan();
   virtual void getEnabledExtensions();
@@ -103,6 +110,8 @@ class VgeExample : public VgeBase {
 
   void addModelInstance(const ModelInstance& newInstance);
   const std::vector<size_t>& findInstances(const std::string& name);
+
+  void setOptions(const std::optional<Options>& opts);
 
   struct VertexInfos {
     vk::PipelineVertexInputStateCreateInfo vertexInputSCI;
@@ -182,5 +191,7 @@ class VgeExample : public VgeBase {
   float tailSampleTime = 0.1f;
   VertexInfos tailVertexInfos;
   int tailFrontIndex = -1;
+
+  Options opts{};
 };
 }  // namespace vge

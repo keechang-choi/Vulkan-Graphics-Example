@@ -15,6 +15,7 @@
 // std
 #include <chrono>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 
 namespace vge {
@@ -69,6 +70,7 @@ class VgeBase {
   bool paused = false;
   vgeu::VgeuCamera camera;
   vgeu::KeyBoardMovementController cameraController{};
+  bool restart = false;
 
   struct Settings {
 #ifdef NDEBUG
@@ -127,7 +129,6 @@ class VgeBase {
 
   uint32_t currentFrameIndex = 0;
   uint32_t currentImageIndex;
-  bool restart = false;
 
  private:
   void windowResize();
@@ -138,32 +139,34 @@ class VgeBase {
 };
 }  // namespace vge
 
-#define VULKAN_EXAMPLE_MAIN()                               \
-  int main(int argc, char** argv) {                         \
-    try {                                                   \
-      vge::VgeExample vgeExample{};                         \
-      CLI::App app;                                         \
-      vgeExample.setupCommandLineParser(app);               \
-      if (argc == 2) /* for vscode launch */                \
-        try {                                               \
-          app.parse(std::string(argv[1]));                  \
-        } catch (const CLI::ParseError& e) {                \
-          return app.exit(e);                               \
-        }                                                   \
-      else                                                  \
-        CLI11_PARSE(app, argc, argv);                       \
-      do {                                                  \
-        vgeExample.initVulkan();                            \
-        vgeExample.prepare();                               \
-        vgeExample.renderLoop();                            \
-        if (vgeExample.restart)                             \
-          vgeExample = vge::VgeExample(vgeExample.options); \
-        else                                                \
-          break;                                            \
-      } while (1)                                           \
-    } catch (const std::exception& e) {                     \
-      std::cerr << e.what() << std::endl;                   \
-      return EXIT_FAILURE;                                  \
-    }                                                       \
-    return 0;                                               \
+#define VULKAN_EXAMPLE_MAIN()                   \
+  int main(int argc, char** argv) {             \
+    try {                                       \
+      std::optional<vge::Options> opts;         \
+      while (1) {                               \
+        vge::VgeExample vgeExample{};           \
+        CLI::App app;                           \
+        vgeExample.setupCommandLineParser(app); \
+        if (argc == 2) /* for vscode launch */  \
+          try {                                 \
+            app.parse(std::string(argv[1]));    \
+          } catch (const CLI::ParseError& e) {  \
+            return app.exit(e);                 \
+          }                                     \
+        else                                    \
+          CLI11_PARSE(app, argc, argv);         \
+        vgeExample.setOptions(opts);            \
+        vgeExample.initVulkan();                \
+        vgeExample.prepare();                   \
+        vgeExample.renderLoop();                \
+        if (vgeExample.restart)                 \
+          opts = vgeExample.opts;               \
+        else                                    \
+          break;                                \
+      }                                         \
+    } catch (const std::exception& e) {         \
+      std::cerr << e.what() << std::endl;       \
+      return EXIT_FAILURE;                      \
+    }                                           \
+    return 0;                                   \
   }
