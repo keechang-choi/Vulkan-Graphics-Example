@@ -1019,7 +1019,7 @@ void VgeExample::updateGraphicsUbo() {
 }
 
 void VgeExample::updateComputeUbo() {
-  compute.ubo.dt = paused ? 0.0f : frameTimer * 0.05f;
+  compute.ubo.dt = paused ? 0.0f : frameTimer * opts.coefficientDeltaTime;
   std::memcpy(compute.uniformBuffers[currentFrameIndex]->getMappedData(),
               &compute.ubo, sizeof(compute.ubo));
 }
@@ -1154,6 +1154,8 @@ void VgeExample::onUpdateUIOverlay() {
     restart = true;
   }
   if (uiOverlay->header("Settings")) {
+    uiOverlay->inputFloat("coefficientDeltaTime", &opts.coefficientDeltaTime,
+                          0.001, "%.3f");
     uiOverlay->sliderInt("numAttractors", &opts.numAttractors, 2, 6);
     uiOverlay->sliderInt("numParticles", &opts.numParticles, 2, 1024 * 16);
     for (size_t i = 0; i < opts.numAttractors; i++) {

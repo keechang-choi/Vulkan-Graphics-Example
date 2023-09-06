@@ -62,6 +62,7 @@ struct Options {
       {161.f / 255.f, 40.f / 255.f, 48.f / 255.f, 1.f},
       {1.f / 255.f, 75.f / 255.f, 255.f / 255.f, 1.f},
       {246.f / 255.f, 7.f / 255.f, 9.f / 255.f, 1.f}};
+  float coefficientDeltaTime = 0.05f;
 };
 
 class VgeExample : public VgeBase {

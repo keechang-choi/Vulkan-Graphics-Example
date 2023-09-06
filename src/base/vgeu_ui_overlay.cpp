@@ -132,4 +132,13 @@ bool UIOverlay::colorPicker(const char* caption, float* color) {
   return res;
 }
 
+bool UIOverlay::inputFloat(const char* caption, float* value, float step,
+                           const char* format) {
+  bool res = ImGui::InputFloat(caption, value, step, step * 10.0f, format);
+  if (res) {
+    updated = true;
+  };
+  return res;
+}
+
 }  // namespace vgeu
