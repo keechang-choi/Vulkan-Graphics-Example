@@ -94,4 +94,26 @@ void UIOverlay::resize(uint32_t width, uint32_t height) {
   io.DisplaySize = ImVec2((float)(width), (float)(height));
 }
 
+bool UIOverlay::header(const char* caption) {
+  return ImGui::CollapsingHeader(caption, ImGuiTreeNodeFlags_DefaultOpen);
+}
+
+bool UIOverlay::sliderFloat(const char* caption, float* value, float min,
+                            float max) {
+  bool res = ImGui::SliderFloat(caption, value, min, max);
+  if (res) {
+    updated = true;
+  };
+  return res;
+}
+
+bool UIOverlay::sliderInt(const char* caption, int32_t* value, int32_t min,
+                          int32_t max) {
+  bool res = ImGui::SliderInt(caption, value, min, max);
+  if (res) {
+    updated = true;
+  };
+  return res;
+}
+
 }  // namespace vgeu

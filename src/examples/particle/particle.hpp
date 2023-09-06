@@ -52,9 +52,14 @@ struct SpecializationData {
   uint32_t rkStep;
 };
 
+struct Options {
+  uint32_t numPartices{1024};
+};
+
 class VgeExample : public VgeBase {
  public:
   VgeExample();
+  VgeExample(Options& opts);
   ~VgeExample();
   virtual void initVulkan();
   virtual void getEnabledExtensions();
@@ -62,6 +67,12 @@ class VgeExample : public VgeBase {
   virtual void prepare();
   virtual void viewChanged();
   virtual void setupCommandLineParser(CLI::App& app);
+  virtual void onUpdateUIOverlay();
+
+  // to separate cmd line init and restart variable
+  void setupCommandLineParser(CLI::App& app, Options& opts);
+  // copy option values to member variables
+  void initFromOptions();
 
   void loadAssets();
   void createDescriptorPool();

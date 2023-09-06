@@ -162,6 +162,7 @@ void VgeBase::renderLoop() {
 
     // UI overlay update
     updateUIOverlay();
+    if (restart) break;
 
     // NOTE: submitting cmd should be called after ui render()
     render();

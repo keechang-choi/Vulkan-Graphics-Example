@@ -1141,7 +1141,15 @@ void VgeExample::updateTailSSBO() {
                 tailIndices.data(), sizeof(uint32_t) * tailIndices.size());
   }
 }
-
+void VgeExample::onUpdateUIOverlay() {
+  if (uiOverlay->header("Settings")) {
+    int32_t uiNumParticles = static_cast<int32_t>(numParticles);
+    if (uiOverlay->sliderInt("numParticles", &uiNumParticles, 2, 1024 * 16)) {
+      restart = true;
+      numParticles = static_cast<uint32_t>(uiNumParticles);
+    }
+  }
+}
 }  // namespace vge
 
 VULKAN_EXAMPLE_MAIN()
