@@ -1180,21 +1180,27 @@ void VgeExample::onUpdateUIOverlay() {
   glm::vec3 p1(ps[0].pos);
   glm::vec3 p2(ps[1].pos);
   float dist = glm::distance(p1, p2);
-  static float values[1000] = {};
-  static int values_offset = 0;
-  values[values_offset % 1000] = dist;
-  values_offset = (values_offset + 1);
-  std::string t = std::to_string(values_offset) + ": " + std::to_string(dist);
-  ImGui::Text(t.c_str());
+  max_dist = std::max(max_dist, dist);
+  if (!paused) {
+    values[values_offset % 1000] = dist;
+    values_offset = (values_offset + 1);
+  }
+  // std::string t = std::to_string(values_offset) + ": " +
+  // std::to_string(dist);
+  ImGui::Text("frameCount %d => distance %.4f \n max: %.4f", values_offset,
+              dist, max_dist);
 
-  ImGui::PlotLines("dist", values, 1000, values_offset % 1000, nullptr, 15.f,
-                   20.f, ImVec2(0, 80.0f));
+  ImGui::PlotLines("dist", values.data(), 1000, values_offset % 1000, nullptr,
+                   15.f, max_dist + 0.1f, ImVec2(0, 200.0f));
   if (uiOverlay->header("Settings")) {
     if (ImGui::TreeNodeEx("Immediate", ImGuiTreeNodeFlags_DefaultOpen)) {
       uiOverlay->inputFloat("coefficientDeltaTime", &opts.coefficientDeltaTime,
                             0.001f, "%.3f");
       uiOverlay->inputFloat("tailSampleTime", &opts.tailSampleTime, 0.01f,
                             "%.3f");
+      if (uiOverlay->inputFloat("moveSpeed", &opts.moveSpeed, 0.01f, "%.3f")) {
+        cameraController.moveSpeed = this->opts.moveSpeed;
+      }
       ImGui::TreePop();
     }
     if (ImGui::TreeNodeEx("Initializers", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -1238,6 +1244,7 @@ void VgeExample::setOptions(const std::optional<Options>& opts) {
     tailSampleTime = this->opts.tailSampleTime;
     tailSize = static_cast<uint32_t>(this->opts.tailSize);
     integrator = static_cast<uint32_t>(this->opts.integrator);
+    cameraController.moveSpeed = this->opts.moveSpeed;
   } else {
     // save cli args for initial run
     this->opts.numAttractors = static_cast<int32_t>(numAttractors);

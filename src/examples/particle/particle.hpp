@@ -71,6 +71,7 @@ struct Options {
   int32_t tailSize = 300;
   float tailSampleTime = 0.1;
   int32_t integrator = 1;
+  float moveSpeed = 10.f;
 };
 
 class VgeExample : public VgeBase {
@@ -202,5 +203,8 @@ class VgeExample : public VgeBase {
   int tailFrontIndex = -1;
 
   Options opts{};
+  std::vector<float> values = std::vector<float>(1000, 0.f);
+  int values_offset = 0;
+  float max_dist = 0.f;
 };
 }  // namespace vge

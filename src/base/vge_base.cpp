@@ -18,9 +18,10 @@
 
 namespace vge {
 VgeBase::VgeBase() {
+  std::cout << "=============== Created: Vulkan Example Base ==============="
+            << std::endl;
   std::cout << "FileSystem::CurrentPath: " << std::filesystem::current_path()
             << std::endl;
-  std::cout << "Created: Vulkan Example Base" << std::endl;
 }
 VgeBase::~VgeBase() {
   // need to destroy non-RAII object created
