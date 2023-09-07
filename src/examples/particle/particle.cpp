@@ -1181,6 +1181,7 @@ void VgeExample::onUpdateUIOverlay() {
   glm::vec3 p2(ps[1].pos);
   float dist = glm::distance(p1, p2);
   max_dist = std::max(max_dist, dist);
+  min_dist = std::min(min_dist, dist);
   if (!paused) {
     values[values_offset % 1000] = dist;
     values_offset = (values_offset + 1);
@@ -1191,7 +1192,7 @@ void VgeExample::onUpdateUIOverlay() {
               dist, max_dist);
 
   ImGui::PlotLines("dist", values.data(), 1000, values_offset % 1000, nullptr,
-                   15.f, max_dist + 0.1f, ImVec2(0, 200.0f));
+                   min_dist, max_dist + 0.1f, ImVec2(0, 200.0f));
   if (uiOverlay->header("Settings")) {
     if (ImGui::TreeNodeEx("Immediate", ImGuiTreeNodeFlags_DefaultOpen)) {
       uiOverlay->inputFloat("coefficientDeltaTime", &opts.coefficientDeltaTime,
@@ -1210,7 +1211,7 @@ void VgeExample::onUpdateUIOverlay() {
       }
       uiOverlay->sliderInt("numAttractors", &opts.numAttractors, 2, 6);
       uiOverlay->sliderInt("numParticles", &opts.numParticles, 2, 1024 * 16);
-      if (ImGui::TreeNode("colors")) {
+      if (ImGui::TreeNodeEx("colors", ImGuiTreeNodeFlags_DefaultOpen)) {
         for (size_t i = 0; i < opts.numAttractors; i++) {
           std::string caption = "colors" + std::to_string(i);
           uiOverlay->colorPicker(caption.c_str(), opts.colors[i].data());
@@ -1223,9 +1224,14 @@ void VgeExample::onUpdateUIOverlay() {
       uiOverlay->inputFloat("power", &opts.power, 0.01f, "%.3f");
       uiOverlay->inputFloat("soften", &opts.soften, 0.01f, "%.3f");
       uiOverlay->inputInt("tailSize", &opts.tailSize, 1);
-      uiOverlay->radioButton("integrator euler", &opts.integrator, 1);
-      uiOverlay->radioButton("integrator midpoint", &opts.integrator, 2);
-      uiOverlay->radioButton("integrator rk-4", &opts.integrator, 4);
+      if (ImGui::TreeNodeEx("integrator", ImGuiTreeNodeFlags_DefaultOpen)) {
+        uiOverlay->radioButton("euler", &opts.integrator, 1);
+        uiOverlay->radioButton("midpoint", &opts.integrator, 2);
+        uiOverlay->radioButton("rk-4", &opts.integrator, 4);
+        uiOverlay->radioButton("euler-symplectic", &opts.integrator, 5);
+        uiOverlay->radioButton("verlet", &opts.integrator, 6);
+        ImGui::TreePop();
+      }
 
       ImGui::TreePop();
     }

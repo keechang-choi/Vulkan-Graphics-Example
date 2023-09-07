@@ -205,6 +205,7 @@ class VgeExample : public VgeBase {
   Options opts{};
   std::vector<float> values = std::vector<float>(1000, 0.f);
   int values_offset = 0;
-  float max_dist = 0.f;
+  float max_dist = std::numeric_limits<float>::min();
+  float min_dist = std::numeric_limits<float>::max();
 };
 }  // namespace vge

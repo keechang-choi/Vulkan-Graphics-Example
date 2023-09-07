@@ -30,7 +30,7 @@ layout (binding = 2) uniform UBO
 } ubo;
 
 layout (constant_id = 4) const int INTEGRATOR = 0;
-layout (constant_id = 5) const int INTEGRATOR_STEP = 0;
+layout (constant_id = 5) const int INTEGRATE_STEP = 0;
 
 void main() 
 {
@@ -62,6 +62,15 @@ void main()
 			2.0 * particles[index].vk[2].xyz + 
 			particles[index].vk[3].xyz
 		) / 6.0;
+	}else  if(INTEGRATOR == 5){
+		// euler symplecitc method
+		particles[index].vel.xyz = particlesIn[index].vel.xyz + particles[index].vk[0].xyz;
+		particles[index].pos.xyz = particlesIn[index].pos.xyz + ubo.dt * particles[index].vel.xyz;
+	}else  if(INTEGRATOR == 6){
+		// verlet method
+		particles[index].pos.xyz = particles[index].pk[0].xyz;
+		particles[index].vel.xyz = particlesIn[index].vel.xyz + 
+			0.5 * (particles[index].vk[0].xyz + particles[index].vk[1].xyz); 
 	}
 
 
