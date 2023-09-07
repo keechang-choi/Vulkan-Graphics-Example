@@ -323,18 +323,18 @@ void VgeBase::updateUIOverlay() {
   ImGui::NewFrame();
   // demo for test
   ImGui::ShowDemoWindow();
-
   ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0);
   ImGui::SetNextWindowPos(
       ImVec2(10 * uiOverlay->getScale(), 10 * uiOverlay->getScale()));
   ImGui::Begin("Vulkan Example", nullptr,
-               ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoResize |
-                   ImGuiWindowFlags_NoMove);
+               0 /*ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoResize |
+                   ImGuiWindowFlags_NoMove*/);
   ImGui::TextUnformatted(title.c_str());
   ImGui::TextUnformatted(physicalDevice.getProperties().deviceName);
   ImGui::Text("%.2f ms/frame (%.1d fps)", (1000.0f / lastFPS), lastFPS);
 
-  ImGui::PushItemWidth(110.0f * uiOverlay->getScale());
+  // ImGui::PushItemWidth(110.0f * uiOverlay->getScale());
+  ImGui::PushItemWidth(ImGui::GetFontSize() * -12);
   onUpdateUIOverlay();
   ImGui::PopItemWidth();
 

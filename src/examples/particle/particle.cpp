@@ -1175,6 +1175,20 @@ void VgeExample::updateTailSSBO() {
   }
 }
 void VgeExample::onUpdateUIOverlay() {
+  const Particle* ps = static_cast<Particle*>(
+      compute.storageBuffers[currentFrameIndex]->getMappedData());
+  glm::vec3 p1(ps[0].pos);
+  glm::vec3 p2(ps[1].pos);
+  float dist = glm::distance(p1, p2);
+  static float values[1000] = {};
+  static int values_offset = 0;
+  values[values_offset % 1000] = dist;
+  values_offset = (values_offset + 1);
+  std::string t = std::to_string(values_offset) + ": " + std::to_string(dist);
+  ImGui::Text(t.c_str());
+
+  ImGui::PlotLines("dist", values, 1000, values_offset % 1000, nullptr, 15.f,
+                   20.f, ImVec2(0, 80.0f));
   if (uiOverlay->header("Settings")) {
     if (ImGui::TreeNodeEx("Immediate", ImGuiTreeNodeFlags_DefaultOpen)) {
       uiOverlay->inputFloat("coefficientDeltaTime", &opts.coefficientDeltaTime,
@@ -1185,6 +1199,7 @@ void VgeExample::onUpdateUIOverlay() {
     }
     if (ImGui::TreeNodeEx("Initializers", ImGuiTreeNodeFlags_DefaultOpen)) {
       if (uiOverlay->button("Restart")) {
+        values_offset = 0;
         restart = true;
       }
       uiOverlay->sliderInt("numAttractors", &opts.numAttractors, 2, 6);
