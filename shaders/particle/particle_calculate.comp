@@ -35,22 +35,24 @@ const int SHARED_DATA_SIZE = 256;
 layout (constant_id = 1) const float GRAVITY = 0.002;
 layout (constant_id = 2) const float POWER = 0.75;
 layout (constant_id = 3) const float SOFTEN = 0.0075;
-layout (constant_id = 4) const int RKSTEP = 0;
+layout (constant_id = 4) const int INTEGRATOR = 0;
+layout (constant_id = 5) const int INTEGRATOR_STEP = 0;
+
 
 // Share data between computer shader invocations to speed up caluclations
 shared vec4 sharedData[SHARED_DATA_SIZE];
 
 void RkStepInput(in Particle particle, out vec4 outPos, out vec4 outVel){
-	if (RKSTEP == 1){
+	if (INTEGRATOR_STEP == 1){
 		outPos = particle.pos;
 		outVel = particle.vel;
-	}else if (RKSTEP == 2){
+	}else if (INTEGRATOR_STEP == 2){
 		outPos = particle.pos + 0.5 * particle.pk[0];
 		outVel = particle.vel + 0.5 * particle.vk[0];
-	}else if (RKSTEP == 3){
+	}else if (INTEGRATOR_STEP == 3){
 		outPos = particle.pos + 0.5 * particle.pk[1];
 		outVel = particle.vel + 0.5 * particle.vk[1];
-	}else if (RKSTEP == 4){
+	}else if (INTEGRATOR_STEP == 4){
 		outPos = particle.pos + particle.pk[2];
 		outVel = particle.vel + particle.vk[2];
 	}
@@ -100,7 +102,7 @@ void main()
 	}
 
 	// RK step output
-	particles[index].pk[RKSTEP-1].xyz = ubo.dt * velocity.xyz; 
-	particles[index].vk[RKSTEP-1].xyz = ubo.dt * acceleration.xyz;
+	particles[index].pk[INTEGRATOR_STEP-1].xyz = ubo.dt * velocity.xyz; 
+	particles[index].vk[INTEGRATOR_STEP-1].xyz = ubo.dt * acceleration.xyz;
 
 }

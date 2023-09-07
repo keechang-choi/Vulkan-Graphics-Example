@@ -63,9 +63,10 @@ class UIOverlay {
   bool header(const char* caption);
   bool checkBox(const char* caption, bool* value);
   bool checkBox(const char* caption, int32_t* value);
-  bool radioButton(const char* caption, bool value);
+  bool radioButton(const char* caption, int32_t* v, int32_t button);
   bool inputFloat(const char* caption, float* value, float step,
                   const char* format);
+  bool inputInt(const char* caption, int32_t* value, int32_t step);
   bool sliderFloat(const char* caption, float* value, float min, float max);
   bool sliderInt(const char* caption, int32_t* value, int32_t min, int32_t max);
   bool comboBox(const char* caption, int32_t* itemindex,

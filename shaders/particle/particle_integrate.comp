@@ -29,7 +29,8 @@ layout (binding = 2) uniform UBO
 	int particleCount;
 } ubo;
 
-layout (constant_id = 4) const int RKSTEP = 0;
+layout (constant_id = 4) const int INTEGRATOR = 0;
+layout (constant_id = 5) const int INTEGRATOR_STEP = 0;
 
 void main() 
 {
@@ -38,29 +39,29 @@ void main()
 	if (index >= ubo.particleCount) 
 		return;	
 
-	if (RKSTEP == 1){
+	if (INTEGRATOR == 1){
 		// euler method
 		particles[index].pos.xyz = particlesIn[index].pos.xyz + particles[index].pk[0].xyz;
 		particles[index].vel.xyz = particlesIn[index].vel.xyz + particles[index].vk[0].xyz;
-	} else if(RKSTEP == 2){
+	} else if(INTEGRATOR == 2){
 		// midpoint method
 		particles[index].pos.xyz = particlesIn[index].pos.xyz + particles[index].pk[1].xyz;
 		particles[index].vel.xyz = particlesIn[index].vel.xyz + particles[index].vk[1].xyz;
-	} else if(RKSTEP == 4){
+	} else if(INTEGRATOR == 4){
 		// RK4 integrate
-	particles[index].pos.xyz = particlesIn[index].pos.xyz + (
-		particles[index].pk[0].xyz + 
-		2.0 * particles[index].pk[1].xyz + 
-		2.0 * particles[index].pk[2].xyz + 
-		particles[index].pk[3].xyz
-	) / 6.0;
+		particles[index].pos.xyz = particlesIn[index].pos.xyz + (
+			particles[index].pk[0].xyz + 
+			2.0 * particles[index].pk[1].xyz + 
+			2.0 * particles[index].pk[2].xyz + 
+			particles[index].pk[3].xyz
+		) / 6.0;
 
-	particles[index].vel.xyz = particlesIn[index].vel.xyz + (
-		particles[index].vk[0].xyz + 
-		2.0 * particles[index].vk[1].xyz + 
-		2.0 * particles[index].vk[2].xyz + 
-		particles[index].vk[3].xyz
-	) / 6.0;
+		particles[index].vel.xyz = particlesIn[index].vel.xyz + (
+			particles[index].vk[0].xyz + 
+			2.0 * particles[index].vk[1].xyz + 
+			2.0 * particles[index].vk[2].xyz + 
+			particles[index].vk[3].xyz
+		) / 6.0;
 	}
 
 

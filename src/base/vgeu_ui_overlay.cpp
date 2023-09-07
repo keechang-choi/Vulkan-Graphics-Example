@@ -141,4 +141,19 @@ bool UIOverlay::inputFloat(const char* caption, float* value, float step,
   return res;
 }
 
+bool UIOverlay::inputInt(const char* caption, int32_t* value, int32_t step) {
+  bool res = ImGui::InputInt(caption, value, step, step * 10.0f);
+  if (res) {
+    updated = true;
+  };
+  return res;
+}
+
+bool UIOverlay::radioButton(const char* caption, int32_t* v, int32_t button) {
+  bool res = ImGui::RadioButton(caption, v, button);
+  if (res) {
+    updated = true;
+  };
+  return res;
+}
 }  // namespace vgeu

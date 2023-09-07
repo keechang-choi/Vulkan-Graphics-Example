@@ -28,6 +28,23 @@ glm::vec3 unpackColor(float f) {
   // each field in 0.0 ~ 255.0
   return color;
 }
+uint32_t mapToIntegrateSteps(uint32_t integrator) {
+  uint32_t numSteps = 1u;
+  switch (integrator) {
+    case 1:
+    case 2:
+    case 4:
+      numSteps = integrator;
+      break;
+    case 5:
+    case 6:
+      numSteps = integrator - 4u;
+      break;
+    default:
+      assert(false && "failed: unsupported integrator type");
+  }
+  return numSteps;
+}
 }  // namespace
 namespace vge {
 VgeExample::VgeExample() : VgeBase() { title = "Particle Example"; }
@@ -249,8 +266,9 @@ void VgeExample::prepareCompute() {
     specializationData.gravity = gravity;
     specializationData.power = power;
     specializationData.soften = soften;
-    // TODO: for 1~4
-    specializationData.rkStep = integrateStep;
+    // TODO: for 1,2,4-> rk step, 5,6-> symplectic
+    specializationData.integrator = integrator;
+    specializationData.integrateStep = 0u;
 
     std::vector<vk::SpecializationMapEntry> specializationMapEntries;
     specializationMapEntries.emplace_back(
@@ -262,10 +280,12 @@ void VgeExample::prepareCompute() {
     specializationMapEntries.emplace_back(
         3u, offsetof(SpecializationData, soften), sizeof(float));
     specializationMapEntries.emplace_back(
-        4u, offsetof(SpecializationData, rkStep), sizeof(uint32_t));
+        4u, offsetof(SpecializationData, integrator), sizeof(uint32_t));
+    specializationMapEntries.emplace_back(
+        5u, offsetof(SpecializationData, integrateStep), sizeof(uint32_t));
 
-    for (uint32_t i = 1; i <= integrateStep; i++) {
-      specializationData.rkStep = i;
+    for (uint32_t i = 1; i <= ::mapToIntegrateSteps(integrator); i++) {
+      specializationData.integrateStep = i;
       // NOTE: template argument deduction not work with implicit conversion
       vk::SpecializationInfo specializationInfo(
           specializationMapEntries,
@@ -943,7 +963,7 @@ void VgeExample::buildComputeCommandBuffers() {
         nullptr, bufferBarrier, nullptr);
   }
 
-  for (size_t i = 0; i < integrateStep; i++) {
+  for (size_t i = 0; i < ::mapToIntegrateSteps(integrator); i++) {
     // 1st pass
     compute.cmdBuffers[currentFrameIndex].bindPipeline(
         vk::PipelineBindPoint::eCompute, *compute.pipelineCalculate[i]);
@@ -1084,7 +1104,12 @@ const std::vector<size_t>& VgeExample::findInstances(const std::string& name) {
 
 void VgeExample::setupCommandLineParser(CLI::App& app) {
   VgeBase::setupCommandLineParser(app);
-  app.add_option("--intStep, --is", integrateStep, "Integrate Step 1, 2, 4")
+  app.add_option("--integrator, -i", integrator,
+                 "Integrator Type 1 euler, "
+                 "2 midpoint, "
+                 "4 rk-4, "
+                 "5 symplectic euler, "
+                 "6 verlet")
       ->capture_default_str();
   app.add_option("--numParticles, --np", numParticles, "number of particles")
       ->capture_default_str();
@@ -1109,7 +1134,7 @@ void VgeExample::updateTailSSBO() {
   {
     const Particle* particles = static_cast<Particle*>(
         compute.storageBuffers[currentFrameIndex]->getMappedData());
-    if (tailTimer > tailSampleTime || tailTimer < 0.f) {
+    if (tailTimer > opts.tailSampleTime || tailTimer < 0.f) {
       for (size_t i = 0; i < numParticles; i++) {
         glm::vec4 packedTailElt = particles[i].pos;
         packedTailElt.w = particles[i].vel.w;
@@ -1150,28 +1175,65 @@ void VgeExample::updateTailSSBO() {
   }
 }
 void VgeExample::onUpdateUIOverlay() {
-  if (uiOverlay->button("Restart")) {
-    restart = true;
-  }
   if (uiOverlay->header("Settings")) {
-    uiOverlay->inputFloat("coefficientDeltaTime", &opts.coefficientDeltaTime,
-                          0.001, "%.3f");
-    uiOverlay->sliderInt("numAttractors", &opts.numAttractors, 2, 6);
-    uiOverlay->sliderInt("numParticles", &opts.numParticles, 2, 1024 * 16);
-    for (size_t i = 0; i < opts.numAttractors; i++) {
-      std::string caption = "colors" + std::to_string(i);
-      uiOverlay->colorPicker(caption.c_str(), opts.colors[i].data());
+    if (ImGui::TreeNodeEx("Immediate", ImGuiTreeNodeFlags_DefaultOpen)) {
+      uiOverlay->inputFloat("coefficientDeltaTime", &opts.coefficientDeltaTime,
+                            0.001f, "%.3f");
+      uiOverlay->inputFloat("tailSampleTime", &opts.tailSampleTime, 0.01f,
+                            "%.3f");
+      ImGui::TreePop();
+    }
+    if (ImGui::TreeNodeEx("Initializers", ImGuiTreeNodeFlags_DefaultOpen)) {
+      if (uiOverlay->button("Restart")) {
+        restart = true;
+      }
+      uiOverlay->sliderInt("numAttractors", &opts.numAttractors, 2, 6);
+      uiOverlay->sliderInt("numParticles", &opts.numParticles, 2, 1024 * 16);
+      if (ImGui::TreeNode("colors")) {
+        for (size_t i = 0; i < opts.numAttractors; i++) {
+          std::string caption = "colors" + std::to_string(i);
+          uiOverlay->colorPicker(caption.c_str(), opts.colors[i].data());
+        }
+        ImGui::TreePop();
+      }
+      uiOverlay->inputFloat("rotationVelocity", &opts.rotationVelocity, 0.01f,
+                            "%.3f");
+      uiOverlay->inputFloat("gravity", &opts.gravity, 0.001f, "%.3f");
+      uiOverlay->inputFloat("power", &opts.power, 0.01f, "%.3f");
+      uiOverlay->inputFloat("soften", &opts.soften, 0.01f, "%.3f");
+      uiOverlay->inputInt("tailSize", &opts.tailSize, 1);
+      uiOverlay->radioButton("integrator euler", &opts.integrator, 1);
+      uiOverlay->radioButton("integrator midpoint", &opts.integrator, 2);
+      uiOverlay->radioButton("integrator rk-4", &opts.integrator, 4);
+
+      ImGui::TreePop();
     }
   }
 }
 void VgeExample::setOptions(const std::optional<Options>& opts) {
   if (opts.has_value()) {
     this->opts = opts.value();
+    // overwrite cli args for restart run
     numAttractors = static_cast<uint32_t>(this->opts.numAttractors);
     numParticles = static_cast<uint32_t>(this->opts.numParticles);
+    rotationVelocity = this->opts.rotationVelocity;
+    gravity = this->opts.gravity;
+    power = this->opts.power;
+    soften = this->opts.soften;
+    tailSampleTime = this->opts.tailSampleTime;
+    tailSize = static_cast<uint32_t>(this->opts.tailSize);
+    integrator = static_cast<uint32_t>(this->opts.integrator);
   } else {
+    // save cli args for initial run
     this->opts.numAttractors = static_cast<int32_t>(numAttractors);
     this->opts.numParticles = static_cast<int32_t>(numParticles);
+    this->opts.rotationVelocity = rotationVelocity;
+    this->opts.gravity = gravity;
+    this->opts.power = power;
+    this->opts.soften = soften;
+    this->opts.tailSampleTime = tailSampleTime;
+    this->opts.tailSize = static_cast<int32_t>(tailSize);
+    this->opts.integrator = static_cast<int32_t>(integrator);
   }
 }
 

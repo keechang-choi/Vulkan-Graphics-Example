@@ -49,7 +49,8 @@ struct SpecializationData {
   float gravity;
   float power;
   float soften;
-  uint32_t rkStep;
+  uint32_t integrator;
+  uint32_t integrateStep;
 };
 
 struct Options {
@@ -63,6 +64,13 @@ struct Options {
       {1.f / 255.f, 75.f / 255.f, 255.f / 255.f, 1.f},
       {246.f / 255.f, 7.f / 255.f, 9.f / 255.f, 1.f}};
   float coefficientDeltaTime = 0.05f;
+  float rotationVelocity = 50.0f;
+  float gravity = 0.02f;
+  float power = 1.f;
+  float soften = 0.1f;
+  int32_t tailSize = 300;
+  float tailSampleTime = 0.1;
+  int32_t integrator = 1;
 };
 
 class VgeExample : public VgeBase {
@@ -166,7 +174,7 @@ class VgeExample : public VgeBase {
   float animationLastTime = 0.f;
   uint32_t numParticles = 1024u * 4u * 6u;
   uint32_t numAttractors = 6u;
-  uint32_t integrateStep = 1;
+  uint32_t integrator = 1u;
   float rotationVelocity = 50.f;
   float gravity = 0.02f;
   float power = 1.0f;
