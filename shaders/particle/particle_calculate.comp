@@ -117,10 +117,14 @@ void main()
 
 	if(INTEGRATOR == 6){
 		// pk1 not used.
-		particles[index].pk[INTEGRATE_STEP-1].xyz = position.xyz + 
-			ubo.dt * velocity.xyz + 
-			0.5 * ubo.dt * ubo.dt * acceleration.xyz; 
-		particles[index].vk[INTEGRATE_STEP-1].xyz = velocity.xyz + 0.5 * ubo.dt * acceleration.xyz;
+		if(INTEGRATE_STEP == 1){
+			particles[index].pk[INTEGRATE_STEP-1].xyz = position.xyz + 
+				ubo.dt * velocity.xyz + 
+				0.5 * ubo.dt * ubo.dt * acceleration.xyz; 
+			particles[index].vk[INTEGRATE_STEP-1].xyz = acceleration.xyz;
+		}else if(INTEGRATE_STEP == 2){
+			particles[index].vk[INTEGRATE_STEP-1].xyz = acceleration.xyz;
+		}
 	}else{
 		// RK step output
 		particles[index].pk[INTEGRATE_STEP-1].xyz = ubo.dt * velocity.xyz; 

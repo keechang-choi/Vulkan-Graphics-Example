@@ -51,7 +51,7 @@ VgeExample::VgeExample() : VgeBase() { title = "Particle Example"; }
 VgeExample::~VgeExample() {}
 
 void VgeExample::initVulkan() {
-  cameraController.moveSpeed = 10.f;
+  cameraController.moveSpeed = opts.moveSpeed;
   // camera setup
   camera.setViewTarget(glm::vec3{0.f, -20.f, -.1f}, glm::vec3{0.f, 0.f, 0.f});
   camera.setPerspectiveProjection(
@@ -910,7 +910,7 @@ void VgeExample::buildCommandBuffers() {
 
   // tail
   {
-    drawCmdBuffers[currentFrameIndex].setLineWidth(1.f);
+    drawCmdBuffers[currentFrameIndex].setLineWidth(opts.lineWidth);
     drawCmdBuffers[currentFrameIndex].bindPipeline(
         vk::PipelineBindPoint::eGraphics, *tailPipeline);
     vk::DeviceSize offset(0);
@@ -1188,8 +1188,8 @@ void VgeExample::onUpdateUIOverlay() {
   }
   // std::string t = std::to_string(values_offset) + ": " +
   // std::to_string(dist);
-  ImGui::Text("frameCount %d => distance %.4f \n max: %.4f", values_offset,
-              dist, max_dist);
+  ImGui::Text("frameCount %d => distance %.4f \n max: %.4f, min: %.4f",
+              values_offset, dist, max_dist, min_dist);
 
   ImGui::PlotLines("dist", values.data(), 1000, values_offset % 1000, nullptr,
                    min_dist, max_dist + 0.1f, ImVec2(0, 200.0f));
@@ -1202,6 +1202,7 @@ void VgeExample::onUpdateUIOverlay() {
       if (uiOverlay->inputFloat("moveSpeed", &opts.moveSpeed, 0.01f, "%.3f")) {
         cameraController.moveSpeed = this->opts.moveSpeed;
       }
+      uiOverlay->inputFloat("lineWidth", &opts.lineWidth, 0.1f, "%.3f");
       ImGui::TreePop();
     }
     if (ImGui::TreeNodeEx("Initializers", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -1222,7 +1223,7 @@ void VgeExample::onUpdateUIOverlay() {
                             "%.3f");
       uiOverlay->inputFloat("gravity", &opts.gravity, 0.001f, "%.3f");
       uiOverlay->inputFloat("power", &opts.power, 0.01f, "%.3f");
-      uiOverlay->inputFloat("soften", &opts.soften, 0.01f, "%.3f");
+      uiOverlay->inputFloat("soften", &opts.soften, 0.0001f, "%.4f");
       uiOverlay->inputInt("tailSize", &opts.tailSize, 1);
       if (ImGui::TreeNodeEx("integrator", ImGuiTreeNodeFlags_DefaultOpen)) {
         uiOverlay->radioButton("euler", &opts.integrator, 1);

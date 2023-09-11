@@ -67,11 +67,12 @@ struct Options {
   float rotationVelocity = 50.0f;
   float gravity = 0.02f;
   float power = 1.f;
-  float soften = 0.1f;
+  float soften = 0.001f;
   int32_t tailSize = 300;
   float tailSampleTime = 0.1;
   int32_t integrator = 1;
   float moveSpeed = 10.f;
+  float lineWidth = 1.0f;
 };
 
 class VgeExample : public VgeBase {
@@ -179,7 +180,7 @@ class VgeExample : public VgeBase {
   float rotationVelocity = 50.f;
   float gravity = 0.02f;
   float power = 1.0f;
-  float soften = 0.1;
+  float soften = 0.001;
 
   // vertex buffer ->
   // TODO: to use this data for vertex buffer,
