@@ -793,6 +793,32 @@ void VgeExample::draw() {
 
   device.resetFences(*waitFences[currentFrameIndex]);
 
+  // NOTE: temporary reading ssbo, need fence for synch
+  {
+    const Particle* ps = static_cast<Particle*>(
+        compute.storageBuffers[currentFrameIndex]->getMappedData());
+    glm::vec3 p1(ps[0].pos);
+    glm::vec3 p2(ps[1].pos);
+    dist = glm::distance(p1, p2);
+    max_dist = std::max(max_dist, dist);
+    min_dist = std::min(min_dist, dist);
+
+    glm::vec3 v1(ps[0].vel);
+    glm::vec3 v2(ps[1].vel);
+    float m1 = ps[0].pos.w;
+    float m2 = ps[1].pos.w;
+    energy = (0.5 * (m1 * glm::dot(v1, v1) + m2 * glm::dot(v2, v2))) +
+             (-1 * gravity * m1 * m2 / dist);
+    max_energy = std::max(max_energy, energy);
+    min_energy = std::min(min_energy, energy);
+
+    if (!paused) {
+      values[values_offset % values.size()] = dist;
+      energyValues[values_offset % energyValues.size()] = energy;
+      values_offset = (values_offset + 1);
+    }
+  }
+
   // calculate tail
   updateTailSSBO();
 
@@ -1176,29 +1202,25 @@ void VgeExample::updateTailSSBO() {
   }
 }
 void VgeExample::onUpdateUIOverlay() {
-  const Particle* ps = static_cast<Particle*>(
-      compute.storageBuffers[currentFrameIndex]->getMappedData());
-  glm::vec3 p1(ps[0].pos);
-  glm::vec3 p2(ps[1].pos);
-  float dist = glm::distance(p1, p2);
-  max_dist = std::max(max_dist, dist);
-  min_dist = std::min(min_dist, dist);
-  if (!paused) {
-    values[values_offset % 1000] = dist;
-    values_offset = (values_offset + 1);
-  }
   // std::string t = std::to_string(values_offset) + ": " +
   // std::to_string(dist);
-  ImGui::Text("frameCount %d => distance %.4f \n max: %.4f, min: %.4f",
+  ImGui::Text("frameCount %d => distance %.6f \n max: %.6f, min: %.6f",
               values_offset, dist, max_dist, min_dist);
+  ImGui::PlotLines("dist", values.data(), values.size(),
+                   values_offset % values.size(), nullptr, min_dist, max_dist,
+                   ImVec2(0, 200.0f));
 
-  ImGui::PlotLines("dist", values.data(), 1000, values_offset % 1000, nullptr,
-                   min_dist, max_dist + 0.1f, ImVec2(0, 200.0f));
+  ImGui::Text("frameCount %d => energy %.8e \n max: %.8e, min: %.8e",
+              values_offset, energy, max_energy, min_energy);
+  ImGui::PlotLines("energy", energyValues.data(), energyValues.size(),
+                   values_offset % energyValues.size(), nullptr, min_energy,
+                   max_energy, ImVec2(0, 200.0f));
+
   if (uiOverlay->header("Settings")) {
     if (ImGui::TreeNodeEx("Immediate", ImGuiTreeNodeFlags_DefaultOpen)) {
       uiOverlay->inputFloat("coefficientDeltaTime", &opts.coefficientDeltaTime,
                             0.001f, "%.3f");
-      uiOverlay->inputFloat("tailSampleTime", &opts.tailSampleTime, 0.01f,
+      uiOverlay->inputFloat("tailSampleTime", &opts.tailSampleTime, 0.001f,
                             "%.3f");
       if (uiOverlay->inputFloat("moveSpeed", &opts.moveSpeed, 0.01f, "%.3f")) {
         cameraController.moveSpeed = this->opts.moveSpeed;
@@ -1220,18 +1242,23 @@ void VgeExample::onUpdateUIOverlay() {
         }
         ImGui::TreePop();
       }
-      uiOverlay->inputFloat("rotationVelocity", &opts.rotationVelocity, 0.01f,
-                            "%.3f");
+      uiOverlay->inputFloat("rotationVelocity", &opts.rotationVelocity,
+                            0.000001f, "%.6f");
       uiOverlay->inputFloat("gravity", &opts.gravity, 0.001f, "%.3f");
       uiOverlay->inputFloat("power", &opts.power, 0.01f, "%.3f");
       uiOverlay->inputFloat("soften", &opts.soften, 0.0001f, "%.4f");
       uiOverlay->inputInt("tailSize", &opts.tailSize, 1);
       if (ImGui::TreeNodeEx("integrator", ImGuiTreeNodeFlags_DefaultOpen)) {
         uiOverlay->radioButton("euler", &opts.integrator, 1);
-        uiOverlay->radioButton("midpoint", &opts.integrator, 2);
-        uiOverlay->radioButton("rk-4", &opts.integrator, 4);
+        ImGui::SameLine(150.0);
         uiOverlay->radioButton("euler-symplectic", &opts.integrator, 5);
+
+        uiOverlay->radioButton("midpoint", &opts.integrator, 2);
+        ImGui::SameLine(150.0);
         uiOverlay->radioButton("verlet", &opts.integrator, 6);
+
+        uiOverlay->radioButton("rk-4", &opts.integrator, 4);
+        ImGui::SameLine(150.0);
         uiOverlay->radioButton("4th-symplectic", &opts.integrator, 8);
         ImGui::TreePop();
       }

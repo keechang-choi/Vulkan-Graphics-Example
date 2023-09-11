@@ -204,9 +204,14 @@ class VgeExample : public VgeBase {
   int tailFrontIndex = -1;
 
   Options opts{};
-  std::vector<float> values = std::vector<float>(1000, 0.f);
   int values_offset = 0;
-  float max_dist = std::numeric_limits<float>::min();
+  float dist = 0.f;
+  std::vector<float> values = std::vector<float>(1000, dist);
+  float max_dist = -std::numeric_limits<float>::max();
   float min_dist = std::numeric_limits<float>::max();
+  float energy = -27e7f;
+  float max_energy = -std::numeric_limits<float>::max();
+  float min_energy = std::numeric_limits<float>::max();
+  std::vector<float> energyValues = std::vector<float>(1000, energy);
 };
 }  // namespace vge
