@@ -38,6 +38,7 @@ uint32_t mapToIntegrateSteps(uint32_t integrator) {
       break;
     case 5:
     case 6:
+    case 8:
       numSteps = integrator - 4u;
       break;
     default:
@@ -1231,6 +1232,7 @@ void VgeExample::onUpdateUIOverlay() {
         uiOverlay->radioButton("rk-4", &opts.integrator, 4);
         uiOverlay->radioButton("euler-symplectic", &opts.integrator, 5);
         uiOverlay->radioButton("verlet", &opts.integrator, 6);
+        uiOverlay->radioButton("4th-symplectic", &opts.integrator, 8);
         ImGui::TreePop();
       }
 

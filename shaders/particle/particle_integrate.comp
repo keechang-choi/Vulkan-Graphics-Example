@@ -68,10 +68,11 @@ void main()
 		particles[index].pos.xyz = particlesIn[index].pos.xyz + ubo.dt * particles[index].vel.xyz;
 	}else  if(INTEGRATOR == 6){
 		// verlet method
-		particles[index].pos.xyz = particles[index].pk[0].xyz;
-		particles[index].vel.xyz = particlesIn[index].vel.xyz + 
-			0.5 * ubo.dt * (particles[index].vk[0].xyz + particles[index].vk[1].xyz); 
+		particles[index].pos.xyz = particles[index].pk[1].xyz;
+		particles[index].vel.xyz = particles[index].vk[1].xyz; 
+	}else if(INTEGRATOR == 8){
+		// ruth or yoshida, 4th-order symplectic
+		particles[index].pos.xyz = particles[index].pk[3].xyz;
+		particles[index].vel.xyz = particles[index].vk[3].xyz;
 	}
-
-
 }

@@ -42,6 +42,14 @@ layout (constant_id = 5) const int INTEGRATE_STEP = 0;
 // Share data between computer shader invocations to speed up caluclations
 shared vec4 sharedData[SHARED_DATA_SIZE];
 
+// dummy 0.0 at last for c
+const float o2c[3] = float[](0.0, 1.0, 0.0);
+const float o2d[2] = float[](0.5, 0.5);
+
+const float o4c[5] = float[](0.67560359597, -0.17560359597, -0.17560359597, 0.67560359597, 0.0);
+const float o4d[4] = float[](1.35120719196, -1.70241438392, 1.35120719196, 0.0);
+
+
 void stepInput(in uint index, out vec4 outPos, out vec4 outVel){
 	if (INTEGRATOR <= 4){
 		if (INTEGRATE_STEP == 1){
@@ -66,8 +74,21 @@ void stepInput(in uint index, out vec4 outPos, out vec4 outVel){
 			outVel = particlesIn[index].vel;
 		}else if (INTEGRATE_STEP == 2){
 			outPos = particles[index].pk[0];
-			// not used
 			outVel = particles[index].vk[0];
+		}
+	} else if(INTEGRATOR == 8){
+		if (INTEGRATE_STEP == 1){
+			outPos = particlesIn[index].pos + o4c[0] * ubo.dt * particlesIn[index].vel;
+			outVel = particlesIn[index].vel;
+		}else if (INTEGRATE_STEP == 2){
+			outPos = particles[index].pk[0];
+			outVel = particles[index].vk[0];
+		}else if (INTEGRATE_STEP == 3){
+			outPos = particles[index].pk[1];
+			outVel = particles[index].vk[1];
+		}else if (INTEGRATE_STEP == 4){
+			outPos = particles[index].pk[2];
+			outVel = particles[index].vk[2];
 		}
 	}
 	outPos.w = particles[index].pos.w;
@@ -116,15 +137,11 @@ void main()
 	}
 
 	if(INTEGRATOR == 6){
-		// pk1 not used.
-		if(INTEGRATE_STEP == 1){
-			particles[index].pk[INTEGRATE_STEP-1].xyz = position.xyz + 
-				ubo.dt * velocity.xyz + 
-				0.5 * ubo.dt * ubo.dt * acceleration.xyz; 
-			particles[index].vk[INTEGRATE_STEP-1].xyz = acceleration.xyz;
-		}else if(INTEGRATE_STEP == 2){
-			particles[index].vk[INTEGRATE_STEP-1].xyz = acceleration.xyz;
-		}
+		particles[index].vk[INTEGRATE_STEP-1].xyz = velocity.xyz + o2d[INTEGRATE_STEP-1] * acceleration.xyz * ubo.dt;
+		particles[index].pk[INTEGRATE_STEP-1].xyz = position.xyz + o2c[INTEGRATE_STEP] * particles[index].vk[INTEGRATE_STEP-1].xyz * ubo.dt; 
+	}else if(INTEGRATOR == 8){
+		particles[index].vk[INTEGRATE_STEP-1].xyz = velocity.xyz + o4d[INTEGRATE_STEP-1] * acceleration.xyz * ubo.dt;
+		particles[index].pk[INTEGRATE_STEP-1].xyz = position.xyz + o4c[INTEGRATE_STEP] * particles[index].vk[INTEGRATE_STEP-1].xyz * ubo.dt; 
 	}else{
 		// RK step output
 		particles[index].pk[INTEGRATE_STEP-1].xyz = ubo.dt * velocity.xyz; 
