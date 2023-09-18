@@ -7,6 +7,8 @@ struct Particle
 	vec4 vel;
 	vec4 pk[4];
 	vec4 vk[4];
+	int attractionIndex[4];
+	vec4 attractionWeight;
 };
 
 // Binding 0 : Position storage buffer prev frame

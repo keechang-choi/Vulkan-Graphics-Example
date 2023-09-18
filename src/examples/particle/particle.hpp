@@ -42,6 +42,8 @@ struct Particle {
   glm::vec4 vel;
   glm::vec4 pk[4];
   glm::vec4 vk[4];
+  int32_t attractionIndex[4];
+  glm::vec4 attractionWeight;
 };
 
 struct SpecializationData {
@@ -73,6 +75,7 @@ struct Options {
   int32_t integrator = 1;
   float moveSpeed = 10.f;
   float lineWidth = 1.0f;
+  int32_t attractionType = 0;
 };
 
 class VgeExample : public VgeBase {
@@ -213,5 +216,7 @@ class VgeExample : public VgeBase {
   float max_energy = -std::numeric_limits<float>::max();
   float min_energy = std::numeric_limits<float>::max();
   std::vector<float> energyValues = std::vector<float>(1000, energy);
+
+  uint32_t attractionType = 0u;
 };
 }  // namespace vge

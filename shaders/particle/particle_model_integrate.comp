@@ -1,0 +1,49 @@
+
+#version 450
+
+struct Particle
+{
+	vec4 pos;
+	vec4 vel;
+	vec4 pk[4];
+	vec4 vk[4];
+	int attractionIndex[4];
+	vec4 attractionWeight;
+};
+
+// Binding 0 : Position storage buffer prev frame
+layout(std140, binding = 0) readonly buffer SSBOIn
+{
+   Particle particlesIn[ ];
+};
+
+// Binding 1 : Position storage buffer
+layout(std140, binding = 1) buffer SSBO
+{
+   Particle particles[ ];
+};
+
+layout (local_size_x = 256) in;
+
+layout (binding = 2) uniform UBO 
+{
+	float dt;
+	int particleCount;
+} ubo;
+
+layout (constant_id = 4) const int INTEGRATOR = 0;
+layout (constant_id = 5) const int INTEGRATE_STEP = 0;
+
+void main() 
+{
+	// Current SSBO index
+	uint index = gl_GlobalInvocationID.x;
+	if (index >= ubo.particleCount) 
+		return;	
+
+	
+	// euler symplecitc method
+	particles[index].vel.xyz = particlesIn[index].vel.xyz + particles[index].vk[0].xyz;
+	particles[index].pos.xyz = particlesIn[index].pos.xyz + ubo.dt * particles[index].vel.xyz;
+
+}

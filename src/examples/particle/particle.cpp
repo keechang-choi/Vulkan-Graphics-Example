@@ -250,9 +250,15 @@ void VgeExample::prepareCompute() {
   }
 
   // create pipelines
+  std::string shaderName;
+  if (attractionType == 0) {
+    shaderName = "particle";
+  } else {
+    shaderName = "particle_model";
+  }
   {
-    auto compCalculateCode = vgeu::readFile(
-        getShadersPath() + "/particle/particle_calculate.comp.spv");
+    auto compCalculateCode = vgeu::readFile(getShadersPath() + "/particle/" +
+                                            shaderName + "_calculate.comp.spv");
     vk::raii::ShaderModule compCacluateShaderModule =
         vgeu::createShaderModule(device, compCalculateCode);
 
@@ -304,8 +310,8 @@ void VgeExample::prepareCompute() {
                                              computePipelineCI);
     }
     // 2nd pass
-    auto compIntegrateCode = vgeu::readFile(
-        getShadersPath() + "/particle/particle_integrate.comp.spv");
+    auto compIntegrateCode = vgeu::readFile(getShadersPath() + "/particle/" +
+                                            shaderName + "_integrate.comp.spv");
     vk::raii::ShaderModule compIntegrateShaderModule =
         vgeu::createShaderModule(device, compIntegrateCode);
     vk::SpecializationInfo specializationInfo(
@@ -1202,20 +1208,21 @@ void VgeExample::updateTailSSBO() {
   }
 }
 void VgeExample::onUpdateUIOverlay() {
-  // std::string t = std::to_string(values_offset) + ": " +
-  // std::to_string(dist);
-  ImGui::Text("frameCount %d => distance %.6f \n max: %.6f, min: %.6f",
-              values_offset, dist, max_dist, min_dist);
-  ImGui::PlotLines("dist", values.data(), values.size(),
-                   values_offset % values.size(), nullptr, min_dist, max_dist,
-                   ImVec2(0, 200.0f));
+  if (uiOverlay->header("Plot")) {
+    // std::string t = std::to_string(values_offset) + ": " +
+    // std::to_string(dist);
+    ImGui::Text("frameCount %d => distance %.6f \n max: %.6f, min: %.6f",
+                values_offset, dist, max_dist, min_dist);
+    ImGui::PlotLines("dist", values.data(), values.size(),
+                     values_offset % values.size(), nullptr, min_dist, max_dist,
+                     ImVec2(0, 200.0f));
 
-  ImGui::Text("frameCount %d => energy %.8e \n max: %.8e, min: %.8e",
-              values_offset, energy, max_energy, min_energy);
-  ImGui::PlotLines("energy", energyValues.data(), energyValues.size(),
-                   values_offset % energyValues.size(), nullptr, min_energy,
-                   max_energy, ImVec2(0, 200.0f));
-
+    ImGui::Text("frameCount %d => energy %.8e \n max: %.8e, min: %.8e",
+                values_offset, energy, max_energy, min_energy);
+    ImGui::PlotLines("energy", energyValues.data(), energyValues.size(),
+                     values_offset % energyValues.size(), nullptr, min_energy,
+                     max_energy, ImVec2(0, 200.0f));
+  }
   if (uiOverlay->header("Settings")) {
     if (ImGui::TreeNodeEx("Immediate", ImGuiTreeNodeFlags_DefaultOpen)) {
       uiOverlay->inputFloat("coefficientDeltaTime", &opts.coefficientDeltaTime,
@@ -1233,6 +1240,11 @@ void VgeExample::onUpdateUIOverlay() {
         values_offset = 0;
         restart = true;
       }
+      // attraction type
+      uiOverlay->radioButton("gravitational attraction", &opts.attractionType,
+                             0);
+      uiOverlay->radioButton("model attraction", &opts.attractionType, 1);
+
       uiOverlay->sliderInt("numAttractors", &opts.numAttractors, 2, 6);
       uiOverlay->sliderInt("numParticles", &opts.numParticles, 2, 1024 * 16);
       if (ImGui::TreeNodeEx("colors", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -1281,6 +1293,7 @@ void VgeExample::setOptions(const std::optional<Options>& opts) {
     tailSize = static_cast<uint32_t>(this->opts.tailSize);
     integrator = static_cast<uint32_t>(this->opts.integrator);
     cameraController.moveSpeed = this->opts.moveSpeed;
+    attractionType = static_cast<uint32_t>(this->opts.attractionType);
   } else {
     // save cli args for initial run
     this->opts.numAttractors = static_cast<int32_t>(numAttractors);

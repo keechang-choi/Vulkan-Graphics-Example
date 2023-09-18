@@ -1,0 +1,65 @@
+
+#version 450
+
+struct Particle
+{
+	vec4 pos;
+	vec4 vel;
+	vec4 pk[4];
+	vec4 vk[4];
+	int attractionIndex[4];
+	vec4 attractionWeight;
+};
+
+// Binding 0 : Position storage buffer prev frame
+layout(std140, binding = 0) readonly buffer SSBOIn
+{
+   Particle particlesIn[ ];
+};
+
+// Binding 1 : Position storage buffer
+layout(std140, binding = 1) buffer SSBO
+{
+   Particle particles[ ];
+};
+
+layout (local_size_x = 256) in;
+
+layout (binding = 2) uniform UBO 
+{
+	float dt;
+	int particleCount;
+} ubo;
+
+//layout (constant_id = 0) const int SHARED_DATA_SIZE = 512;
+// TODO: check being greater than local group size intended for calculation and approximation.
+const int SHARED_DATA_SIZE = 256;
+layout (constant_id = 1) const float GRAVITY = 0.002;
+layout (constant_id = 2) const float POWER = 0.75;
+layout (constant_id = 3) const float SOFTEN = 0.0075;
+layout (constant_id = 4) const int INTEGRATOR = 0;
+layout (constant_id = 5) const int INTEGRATE_STEP = 0;
+
+
+// Share data between computer shader invocations to speed up caluclations
+shared vec4 sharedData[SHARED_DATA_SIZE];
+
+
+void main() 
+{
+	// Current SSBO index
+	uint index = gl_GlobalInvocationID.x;
+	// should not return early for barrier
+	// if (index >= ubo.particleCount) 
+	// 	return;	
+
+	vec4 position = particlesIn[index].pos; 
+	vec4 velocity = particlesIn[index].vel;; 
+	vec4 acceleration = vec4(0.0);
+
+	acceleration = vec4(GRAVITY * normalize(-position.xyz), 0.0);
+	
+	particles[index].pk[INTEGRATE_STEP-1].xyz = ubo.dt * velocity.xyz; 
+	particles[index].vk[INTEGRATE_STEP-1].xyz = ubo.dt * acceleration.xyz;
+
+}
