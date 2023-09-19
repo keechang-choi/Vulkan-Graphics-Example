@@ -42,7 +42,7 @@ struct Particle {
   glm::vec4 vel;
   glm::vec4 pk[4];
   glm::vec4 vk[4];
-  int32_t attractionIndex[4];
+  glm::vec4 attractionIndex;
   glm::vec4 attractionWeight;
 };
 
