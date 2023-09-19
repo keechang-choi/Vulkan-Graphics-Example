@@ -42,8 +42,7 @@ void main()
 		return;	
 
 	
-	// euler symplecitc method
+	// euler method
+	particles[index].pos.xyz = particlesIn[index].pos.xyz + particles[index].pk[0].xyz;
 	particles[index].vel.xyz = particlesIn[index].vel.xyz + particles[index].vk[0].xyz;
-	particles[index].pos.xyz = particlesIn[index].pos.xyz + ubo.dt * particles[index].vel.xyz;
-
 }

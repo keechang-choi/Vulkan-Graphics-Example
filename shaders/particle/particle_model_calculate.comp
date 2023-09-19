@@ -57,7 +57,10 @@ void main()
 	vec4 velocity = particlesIn[index].vel;; 
 	vec4 acceleration = vec4(0.0);
 
-	acceleration = vec4(GRAVITY * normalize(-position.xyz), 0.0);
+
+	acceleration.xyz = GRAVITY * normalize(-position.xyz) - 
+		SOFTEN * normalize(velocity.xyz) * pow(dot(velocity.xyz, velocity.xyz), POWER);
+
 	
 	particles[index].pk[0].xyz = ubo.dt * velocity.xyz; 
 	particles[index].vk[0].xyz = ubo.dt * acceleration.xyz;
