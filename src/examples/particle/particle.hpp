@@ -163,6 +163,7 @@ class VgeExample : public VgeBase {
     vk::raii::Pipeline pipelineModelCalculate = nullptr;
     vk::raii::Pipeline pipelineModelIntegrate = nullptr;
     struct computeUbo {
+      glm::vec4 clickData;
       float dt;
       uint32_t particleCount;
     } ubo;

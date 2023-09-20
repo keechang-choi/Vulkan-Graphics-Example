@@ -27,6 +27,7 @@ layout (local_size_x = 256) in;
 
 layout (binding = 2) uniform UBO 
 {
+	vec4 clickData;
 	float dt;
 	int particleCount;
 } ubo;

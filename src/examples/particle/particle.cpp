@@ -46,6 +46,21 @@ uint32_t mapToIntegrateSteps(uint32_t integrator) {
   }
   return numSteps;
 }
+
+std::optional<glm::vec3> rayPlaneIntersection(glm::vec3 rayStart,
+                                              glm::vec3 rayDir,
+                                              glm::vec3 planeNormal,
+                                              glm::vec3 planePoint) {
+  float denom = glm::dot(rayDir, planeNormal);
+  if (std::abs(denom) < 1e-3f) {
+    return std::nullopt;
+  }
+  float t = glm::dot((planePoint - rayStart), planeNormal) / denom;
+  if (t >= 0) {
+    return rayStart + rayDir * t;
+  }
+  return std::nullopt;
+}
 }  // namespace
 namespace vge {
 VgeExample::VgeExample() : VgeBase() { title = "Particle Example"; }
@@ -54,7 +69,7 @@ VgeExample::~VgeExample() {}
 void VgeExample::initVulkan() {
   cameraController.moveSpeed = opts.moveSpeed;
   // camera setup
-  camera.setViewTarget(glm::vec3{0.f, -20.f, -.1f}, glm::vec3{0.f, 0.f, 0.f});
+  camera.setViewTarget(glm::vec3{0.f, -20.f, -.01f}, glm::vec3{0.f, 0.f, 0.f});
   camera.setPerspectiveProjection(
       glm::radians(60.f),
       static_cast<float>(width) / (static_cast<float>(height)), 0.1f, 256.f);
@@ -1075,6 +1090,42 @@ void VgeExample::updateComputeUbo() {
   compute.ubo.dt = paused ? 0.0f : frameTimer * opts.coefficientDeltaTime;
   std::memcpy(compute.uniformBuffers[currentFrameIndex]->getMappedData(),
               &compute.ubo, sizeof(compute.ubo));
+  glm::vec2 normalizedMousePos{
+      2.f * mouseData.mousePos.x / static_cast<float>(width) - 1.f,
+      2.f * mouseData.mousePos.y / static_cast<float>(height) - 1.f};
+
+  glm::vec4 rayStart = camera.getInverseView() *
+                       glm::inverse(camera.getProjection()) *
+                       glm::vec4(normalizedMousePos, 0.f, 1.f);
+  rayStart /= rayStart.w;
+  glm::vec4 rayEnd = camera.getInverseView() *
+                     glm::inverse(camera.getProjection()) *
+                     glm::vec4(normalizedMousePos, 0.1f, 1.f);
+  rayEnd /= rayEnd.w;
+
+  glm::vec3 rayDir(glm::normalize(rayEnd - rayStart));
+
+  glm::vec3 planeNormal{camera.getView()[0][2], camera.getView()[1][2],
+                        camera.getView()[2][2]};
+  std::optional<glm::vec3> intersectionPt =
+      ::rayPlaneIntersection(rayStart, rayDir, planeNormal, glm::vec3{0.f});
+
+  glm::vec4 clickPos{0.f};
+  if (intersectionPt.has_value()) {
+    clickPos = glm::vec4(intersectionPt.value(), 0.f);
+  }
+
+  if (mouseData.left) {
+    clickPos.w = 1.f;
+  } else if (mouseData.right) {
+    clickPos.w = 2.f;
+  } else if (mouseData.middle) {
+    clickPos.w = 3.f;
+  } else {
+    clickPos.w = 0.f;
+  }
+
+  compute.ubo.clickData = clickPos;
 }
 
 void VgeExample::updateDynamicUbo() {
@@ -1214,6 +1265,9 @@ void VgeExample::onUpdateUIOverlay() {
     ImGui::Text("Mouse Right: %s", mouseData.right ? "true" : "false");
     ImGui::Text("Mouse Pos: (%f, %f)", mouseData.mousePos.x,
                 mouseData.mousePos.y);
+    ImGui::Text("Click Data: (%f, %f, %f, %f)", compute.ubo.clickData.x,
+                compute.ubo.clickData.y, compute.ubo.clickData.z,
+                compute.ubo.clickData.w);
   }
   if (uiOverlay->header("Plot")) {
     // std::string t = std::to_string(values_offset) + ": " +

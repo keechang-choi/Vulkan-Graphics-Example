@@ -27,6 +27,7 @@ layout (local_size_x = 256) in;
 
 layout (binding = 2) uniform UBO 
 {
+	vec4 clickData;
 	float dt;
 	int particleCount;
 } ubo;
@@ -57,8 +58,15 @@ void main()
 	vec4 velocity = particlesIn[index].vel;; 
 	vec4 acceleration = vec4(0.0);
 
-
-	acceleration.xyz = GRAVITY * normalize(-position.xyz) - 
+	vec3 targetPos = vec3(0.0, 0.0, 0.0);
+	float dirSign = 1.0;
+	if(ubo.clickData.w == 1.0){
+		targetPos = ubo.clickData.xyz;
+	}else if(ubo.clickData.w == 2.0){
+		targetPos = ubo.clickData.xyz;
+		dirSign = -1.0;
+	}
+	acceleration.xyz = GRAVITY * dirSign * normalize(targetPos-position.xyz) - 
 		SOFTEN * normalize(velocity.xyz) * pow(dot(velocity.xyz, velocity.xyz), POWER);
 
 	
