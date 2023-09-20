@@ -21,6 +21,8 @@ void VgeuWindow::initWindow() {
   glfwSetWindowUserPointer(window, this);
   glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
   glfwSetKeyCallback(window, keyCallback);
+  glfwSetMouseButtonCallback(window, mouseButtonCallback);
+  glfwSetCursorPosCallback(window, mousePositionCallback);
 }
 
 void VgeuWindow::framebufferResizeCallback(GLFWwindow* window, int width,
@@ -46,6 +48,27 @@ void VgeuWindow::createWindowSurface(VkInstance instance,
       VK_SUCCESS) {
     throw std::runtime_error("failed to create window surface");
   }
+}
+
+void VgeuWindow::mouseButtonCallback(GLFWwindow* window, int button, int action,
+                                     int mods) {
+  auto vgeuWindow =
+      reinterpret_cast<VgeuWindow*>(glfwGetWindowUserPointer(window));
+  if (button == GLFW_MOUSE_BUTTON_LEFT) {
+    vgeuWindow->mouseData.left = (action == GLFW_PRESS);
+  } else if (button == GLFW_MOUSE_BUTTON_MIDDLE) {
+    vgeuWindow->mouseData.middle = (action == GLFW_PRESS);
+  } else if (button == GLFW_MOUSE_BUTTON_RIGHT) {
+    vgeuWindow->mouseData.right = (action == GLFW_PRESS);
+  }
+}
+
+void VgeuWindow::mousePositionCallback(GLFWwindow* window, double xpos,
+                                       double ypos) {
+  auto vgeuWindow =
+      reinterpret_cast<VgeuWindow*>(glfwGetWindowUserPointer(window));
+  vgeuWindow->mouseData.mousePos.x = static_cast<float>(xpos);
+  vgeuWindow->mouseData.mousePos.y = static_cast<float>(ypos);
 }
 
 }  // namespace vgeu

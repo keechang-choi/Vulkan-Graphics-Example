@@ -71,6 +71,7 @@ class VgeBase {
   vgeu::VgeuCamera camera;
   vgeu::KeyBoardMovementController cameraController{};
   bool restart = false;
+  vgeu::MouseData mouseData;
 
   struct Settings {
 #ifdef NDEBUG

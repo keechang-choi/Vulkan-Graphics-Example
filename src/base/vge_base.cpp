@@ -160,6 +160,7 @@ void VgeBase::renderLoop() {
       viewUpdated = false;
       viewChanged();
     }
+    mouseData = vgeuWindow->getMouseInputs();
 
     // UI overlay update
     updateUIOverlay();

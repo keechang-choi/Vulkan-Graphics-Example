@@ -1208,6 +1208,13 @@ void VgeExample::updateTailSSBO() {
   }
 }
 void VgeExample::onUpdateUIOverlay() {
+  if (uiOverlay->header("Inputs")) {
+    ImGui::Text("Mouse Left: %s", mouseData.left ? "true" : "false");
+    ImGui::Text("Mouse Middle: %s", mouseData.middle ? "true" : "false");
+    ImGui::Text("Mouse Right: %s", mouseData.right ? "true" : "false");
+    ImGui::Text("Mouse Pos: (%f, %f)", mouseData.mousePos.x,
+                mouseData.mousePos.y);
+  }
   if (uiOverlay->header("Plot")) {
     // std::string t = std::to_string(values_offset) + ": " +
     // std::to_string(dist);

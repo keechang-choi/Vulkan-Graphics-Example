@@ -158,6 +158,10 @@ class VgeExample : public VgeBase {
     vk::raii::PipelineLayout pipelineLayout = nullptr;
     std::vector<vk::raii::Pipeline> pipelineCalculate;
     vk::raii::Pipeline pipelineIntegrate = nullptr;
+
+    vk::raii::Pipeline pipelineModelAnimate = nullptr;
+    vk::raii::Pipeline pipelineModelCalculate = nullptr;
+    vk::raii::Pipeline pipelineModelIntegrate = nullptr;
     struct computeUbo {
       float dt;
       uint32_t particleCount;
