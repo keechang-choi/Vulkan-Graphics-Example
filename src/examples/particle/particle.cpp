@@ -445,7 +445,7 @@ void VgeExample::createStorageBuffers() {
       if (j == 0) {
         position = attractors[i] * 1.5f;
         velocity = glm::vec3{0.f};
-        mass = 90000.0f;
+        mass = attractionType == 0 ? 90000.0f : 100.f;
       } else {
         position = attractors[i] + glm::vec3{
                                        normalDist(rndEngine),
