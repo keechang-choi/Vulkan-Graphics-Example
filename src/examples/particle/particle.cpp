@@ -187,15 +187,16 @@ void VgeExample::prepareCompute() {
 
     // set 1 dynamic ubo
     {
-      vk::DescriptorSetLayoutBinding layoutBinding(
-          0, vk::DescriptorType::eUniformBufferDynamic, 1,
-          vk::ShaderStageFlagBits::eVertex);
-      vk::DescriptorSetLayoutCreateInfo layoutCI({}, 1, &layoutBinding);
+      std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
+      layoutBindings.emplace_back(0 /*binding*/,
+                                  vk::DescriptorType::eUniformBufferDynamic, 1,
+                                  vk::ShaderStageFlagBits::eCompute);
+      vk::DescriptorSetLayoutCreateInfo layoutCI({}, layoutBindings);
       dynamicUboDescriptorSetLayout =
           vk::raii::DescriptorSetLayout(device, layoutCI);
       setLayouts.push_back(*dynamicUboDescriptorSetLayout);
     }
-
+    // TOOD: add set2 for model vertices buffer ssbo and skins
     // create pipelineLayout
     vk::PipelineLayoutCreateInfo pipelineLayoutCI({}, setLayouts);
     compute.pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutCI);
@@ -418,6 +419,8 @@ void VgeExample::loadAssets() {
   fox = std::make_shared<vgeu::glTF::Model>(
       device, globalAllocator->getAllocator(), queue, commandPool,
       MAX_CONCURRENT_FRAMES);
+  // TODO: additional flag structure update
+  fox->additionalBufferUsageFlags = vk::BufferUsageFlagBits::eStorageBuffer;
   fox->loadFromFile(getAssetsPath() + "/models/fox-normal/fox-normal.gltf",
                     glTFLoadingFlags);
 
@@ -434,6 +437,21 @@ void VgeExample::loadAssets() {
     modelInstance.model = fox;
     modelInstance.name = "fox1-1";
     modelInstance.animationIndex = 2;
+    addModelInstance(modelInstance);
+  }
+
+  std::shared_ptr<vgeu::glTF::Model> apple;
+  apple = std::make_shared<vgeu::glTF::Model>(
+      device, globalAllocator->getAllocator(), queue, commandPool,
+      MAX_CONCURRENT_FRAMES);
+  apple->additionalBufferUsageFlags = vk::BufferUsageFlagBits::eStorageBuffer;
+  apple->loadFromFile(getAssetsPath() + "/models/apple/food_apple_01_4k.gltf",
+                      glTFLoadingFlags);
+
+  {
+    ModelInstance modelInstance{};
+    modelInstance.model = apple;
+    modelInstance.name = "apple1";
     addModelInstance(modelInstance);
   }
 }
