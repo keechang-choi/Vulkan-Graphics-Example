@@ -282,6 +282,8 @@ class Model {
       float scale = 1.0f);
 
   void bindBuffers(const vk::raii::CommandBuffer& cmdBuffer);
+  void bindSSBO(const vk::raii::CommandBuffer& cmdBuffer,
+                vk::PipelineLayout pipelineLayout, uint32_t bindSet);
 
   // NOTE: nullable pipelinelayout
   void drawNode(const uint32_t frameIndex, const Node* node,
@@ -306,6 +308,8 @@ class Model {
   // TODO: all models should share those values, better to move it out of model
   vk::raii::DescriptorSetLayout descriptorSetLayoutImage = nullptr;
   vk::raii::DescriptorSetLayout descriptorSetLayoutUbo = nullptr;
+  vk::raii::DescriptorSetLayout descriptorSetLayoutVertex = nullptr;
+
   // TODO: check instead usageFlags, for raytracing related
   vk::MemoryPropertyFlags memoryPropertyFlags{};
   // NOTE: <unresolved overloaded function type> for () constructor,
@@ -349,6 +353,9 @@ class Model {
   vk::raii::DescriptorPool descriptorPool = nullptr;
   std::unique_ptr<VgeuBuffer> vertexBuffer;
   std::unique_ptr<VgeuBuffer> indexBuffer;
+
+  // NOTE: descriptorSet for animation in compute shader
+  vk::raii::DescriptorSet descriptorSetVertex = nullptr;
 
   // NOTE: takes ownership since thoese are root nodes of each tree.
   // unique_ptr

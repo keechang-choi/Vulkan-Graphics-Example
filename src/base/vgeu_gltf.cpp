@@ -443,22 +443,25 @@ void Model::loadFromFile(std::string filename,
                              imageCount);
     }
   }
+  poolSizes.emplace_back(vk::DescriptorType::eStorageBuffer, 1);
   // NOTE: mesh and material own descriptorSet (not sets).
   // -> maxSets: unoCount for each mesh, imageCount for each material
   // one DescriptorSet of material may contain two textures (as binding).
   vk::DescriptorPoolCreateInfo descriptorPoolCI(
       vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-      uboCount * framesInFlight + imageCount, poolSizes);
+      uboCount * framesInFlight /*mesh ubo*/ + imageCount /*material*/ +
+          1 /*vertex*/,
+      poolSizes);
   descriptorPool = vk::raii::DescriptorPool(device, descriptorPoolCI);
 
   // Descriptors for per-node uniform buffers
   {
     // Layout is global, so only create if it hasn't already been created before
     if (!*descriptorSetLayoutUbo) {
-      vk::DescriptorSetLayoutBinding setlayoutBinding(
+      vk::DescriptorSetLayoutBinding setLayoutBinding(
           0, vk::DescriptorType::eUniformBuffer, 1,
           vk::ShaderStageFlagBits::eVertex);
-      vk::DescriptorSetLayoutCreateInfo setLayoutCI({}, 1, &setlayoutBinding);
+      vk::DescriptorSetLayoutCreateInfo setLayoutCI({}, 1, &setLayoutBinding);
       descriptorSetLayoutUbo =
           vk::raii::DescriptorSetLayout(device, setLayoutCI);
     }
@@ -499,6 +502,27 @@ void Model::loadFromFile(std::string filename,
                                      descriptorBindingFlags);
       }
     }
+  }
+
+  // DescriptorSets for animation in compute shader
+  if (additionalBufferUsageFlags & vk::BufferUsageFlagBits::eStorageBuffer) {
+    std::vector<vk::DescriptorSetLayoutBinding> setLayoutBindings{};
+    setLayoutBindings.emplace_back(0 /*binding*/,
+                                   vk::DescriptorType::eStorageBuffer, 1,
+                                   vk::ShaderStageFlagBits::eCompute);
+    vk::DescriptorSetLayoutCreateInfo setLayoutCI({}, setLayoutBindings);
+    descriptorSetLayoutVertex =
+        vk::raii::DescriptorSetLayout(device, setLayoutCI);
+    // allocate and write
+    vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
+                                            *descriptorSetLayoutVertex);
+    descriptorSetVertex =
+        std::move(vk::raii::DescriptorSets(device, allocInfo).front());
+    vk::DescriptorBufferInfo descriptorInfo = vertexBuffer->descriptorInfo();
+    vk::WriteDescriptorSet writeDescriptorSet(
+        *descriptorSetVertex, 0, 0, vk::DescriptorType::eStorageBuffer, nullptr,
+        descriptorInfo);
+    device.updateDescriptorSets(writeDescriptorSet, nullptr);
   }
 }
 
@@ -616,7 +640,8 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
     newNode->matrix = glm::make_mat4x4(gltfNode.matrix.data());
     if (globalscale != 1.0f) {
       // NOTE: scaling would be done outside of model.
-      // newNode->matrix = glm::scale(newNode->matrix, glm::vec3(globalscale));
+      // newNode->matrix = glm::scale(newNode->matrix,
+      // glm::vec3(globalscale));
     }
   };
 
@@ -1146,7 +1171,7 @@ void Model::prepareNodeDescriptor(
     vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
                                             *descriptorSetLayout);
     for (size_t i = 0; i < framesInFlight; i++) {
-      // NTOE: descriptorSets initialized here
+      // NOTE: descriptorSets initialized here
       node->mesh->descriptorSets.push_back(
           std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
       vk::DescriptorBufferInfo descriptorInfo =
@@ -1506,5 +1531,10 @@ void Model::updateAnimation(const uint32_t frameIndex, const int Animationindex,
   }
 }
 
+void Model::bindSSBO(const vk::raii::CommandBuffer& cmdBuffer,
+                     vk::PipelineLayout pipelineLayout, uint32_t bindSet) {
+  cmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, pipelineLayout,
+                               bindSet /*sets*/, *descriptorSetVertex, nullptr);
+}
 }  // namespace glTF
 }  // namespace vgeu

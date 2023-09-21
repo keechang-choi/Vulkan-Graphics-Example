@@ -184,8 +184,12 @@ void VgeExample::prepareCompute() {
           vk::raii::DescriptorSetLayout(device, layoutCI);
       setLayouts.push_back(*compute.descriptorSetLayout);
     }
+    // TOOD: add set1 for model vertices buffer ssbo and skins
+    // set 1
+    setLayouts.push_back(*modelInstances[0].model->descriptorSetLayoutVertex);
 
-    // set 1 dynamic ubo
+    // TODO: remove after skin ssbo implemented
+    // set 2 dynamic ubo
     {
       std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
       layoutBindings.emplace_back(0 /*binding*/,
@@ -196,7 +200,7 @@ void VgeExample::prepareCompute() {
           vk::raii::DescriptorSetLayout(device, layoutCI);
       setLayouts.push_back(*dynamicUboDescriptorSetLayout);
     }
-    // TOOD: add set2 for model vertices buffer ssbo and skins
+
     // create pipelineLayout
     vk::PipelineLayoutCreateInfo pipelineLayoutCI({}, setLayouts);
     compute.pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutCI);
@@ -1078,9 +1082,12 @@ void VgeExample::buildComputeCommandBuffers() {
     } else {
       compute.cmdBuffers[currentFrameIndex].bindPipeline(
           vk::PipelineBindPoint::eCompute, *compute.pipelineModelCalculate);
+      // bind SSBO for particle attraction
+      modelInstances[findInstances("apple1")[0]].model->bindSSBO(
+          compute.cmdBuffers[currentFrameIndex], *compute.pipelineLayout, 1);
     }
     compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
-        vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 0,
+        vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 0 /*set*/,
         *compute.descriptorSets[currentFrameIndex], nullptr);
     // NOTE: number of local work group should cover all vertices
     // TODO: +1 makes program stop.

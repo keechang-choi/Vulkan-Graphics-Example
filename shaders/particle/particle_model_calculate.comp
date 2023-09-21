@@ -1,6 +1,16 @@
 
 #version 450
 
+struct Vertex{
+	vec3 pos; // w as skinIndex
+	vec3 normal; // w not used
+	vec4 color;  
+	vec4 joint0;
+	vec4 weight0;
+	vec4 tangent;
+	vec2 uv;
+};
+
 struct Particle
 {
 	vec4 pos;
@@ -12,25 +22,29 @@ struct Particle
 };
 
 // Binding 0 : Position storage buffer prev frame
-layout(std140, binding = 0) readonly buffer SSBOIn
+layout(std140, set = 0, binding = 0) readonly buffer SSBOIn
 {
    Particle particlesIn[ ];
 };
 
 // Binding 1 : Position storage buffer
-layout(std140, binding = 1) buffer SSBO
+layout(std140, set = 0, binding = 1) buffer SSBO
 {
    Particle particles[ ];
 };
 
 layout (local_size_x = 256) in;
 
-layout (binding = 2) uniform UBO 
+layout (set = 0, binding = 2) uniform UBO 
 {
 	vec4 clickData;
 	float dt;
 	int particleCount;
 } ubo;
+
+layout (std430, set = 1, binding = 0) readonly buffer VertexSSBO{
+	Vertex vertices[ ];
+};
 
 //layout (constant_id = 0) const int SHARED_DATA_SIZE = 512;
 // TODO: check being greater than local group size intended for calculation and approximation.
@@ -58,7 +72,9 @@ void main()
 	vec4 velocity = particlesIn[index].vel;; 
 	vec4 acceleration = vec4(0.0);
 
-	vec3 targetPos = vec3(0.0, 0.0, 0.0);
+	// vec3 targetPos = vec3(0.0, 0.0, 0.0);
+	uint modIndex = uint(mod(index, 4019));
+	vec3 targetPos = vertices[modIndex].pos;
 	float dirSign = 1.0;
 	if(ubo.clickData.w == 1.0){
 		targetPos = ubo.clickData.xyz;
@@ -66,7 +82,8 @@ void main()
 		targetPos = ubo.clickData.xyz;
 		dirSign = -1.0;
 	}
-	acceleration.xyz = GRAVITY * dirSign * normalize(targetPos-position.xyz) - 
+	vec3 r = targetPos-position.xyz;
+	acceleration.xyz = GRAVITY * dirSign * normalize(r) * pow(dot(r, r), 1.0) - 
 		SOFTEN * normalize(velocity.xyz) * pow(dot(velocity.xyz, velocity.xyz), POWER);
 
 	
