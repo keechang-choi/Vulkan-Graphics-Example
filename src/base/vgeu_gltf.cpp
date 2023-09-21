@@ -443,14 +443,14 @@ void Model::loadFromFile(std::string filename,
                              imageCount);
     }
   }
-  poolSizes.emplace_back(vk::DescriptorType::eStorageBuffer, 1);
+  poolSizes.emplace_back(vk::DescriptorType::eStorageBuffer, 2);
   // NOTE: mesh and material own descriptorSet (not sets).
   // -> maxSets: unoCount for each mesh, imageCount for each material
   // one DescriptorSet of material may contain two textures (as binding).
   vk::DescriptorPoolCreateInfo descriptorPoolCI(
       vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
       uboCount * framesInFlight /*mesh ubo*/ + imageCount /*material*/ +
-          1 /*vertex*/,
+          2 /*vertex*/,
       poolSizes);
   descriptorPool = vk::raii::DescriptorPool(device, descriptorPoolCI);
 
@@ -510,6 +510,9 @@ void Model::loadFromFile(std::string filename,
     setLayoutBindings.emplace_back(0 /*binding*/,
                                    vk::DescriptorType::eStorageBuffer, 1,
                                    vk::ShaderStageFlagBits::eCompute);
+    setLayoutBindings.emplace_back(1 /*binding*/,
+                                   vk::DescriptorType::eStorageBuffer, 1,
+                                   vk::ShaderStageFlagBits::eCompute);
     vk::DescriptorSetLayoutCreateInfo setLayoutCI({}, setLayoutBindings);
     descriptorSetLayoutVertex =
         vk::raii::DescriptorSetLayout(device, setLayoutCI);
@@ -518,11 +521,18 @@ void Model::loadFromFile(std::string filename,
                                             *descriptorSetLayoutVertex);
     descriptorSetVertex =
         std::move(vk::raii::DescriptorSets(device, allocInfo).front());
-    vk::DescriptorBufferInfo descriptorInfo = vertexBuffer->descriptorInfo();
-    vk::WriteDescriptorSet writeDescriptorSet(
-        *descriptorSetVertex, 0, 0, vk::DescriptorType::eStorageBuffer, nullptr,
-        descriptorInfo);
-    device.updateDescriptorSets(writeDescriptorSet, nullptr);
+    std::vector<vk::DescriptorBufferInfo> descriptorInfos{};
+    descriptorInfos.push_back(vertexBuffer->descriptorInfo());
+    descriptorInfos.push_back(indexBuffer->descriptorInfo());
+
+    std::vector<vk::WriteDescriptorSet> writeDescriptorSets{};
+    writeDescriptorSets.emplace_back(*descriptorSetVertex, 0, 0,
+                                     vk::DescriptorType::eStorageBuffer,
+                                     nullptr, descriptorInfos[0]);
+    writeDescriptorSets.emplace_back(*descriptorSetVertex, 1, 0,
+                                     vk::DescriptorType::eStorageBuffer,
+                                     nullptr, descriptorInfos[1]);
+    device.updateDescriptorSets(writeDescriptorSets, nullptr);
   }
 }
 

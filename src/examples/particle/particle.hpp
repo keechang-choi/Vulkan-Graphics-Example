@@ -162,10 +162,11 @@ class VgeExample : public VgeBase {
     vk::raii::Pipeline pipelineModelAnimate = nullptr;
     vk::raii::Pipeline pipelineModelCalculate = nullptr;
     vk::raii::Pipeline pipelineModelIntegrate = nullptr;
+    // TOOD: check alignment for std140
     struct computeUbo {
       glm::vec4 clickData;
-      float dt;
-      uint32_t particleCount;
+      alignas(16) float dt;
+      alignas(16) uint32_t particleCount;
     } ubo;
 
   } compute;
