@@ -265,18 +265,7 @@ void VgeExample::prepareCompute() {
   }
 
   // create pipelines
-  std::string shaderName;
-  if (attractionType == 0) {
-    shaderName = "particle";
-  } else {
-    shaderName = "particle_model";
-  }
   {
-    auto compCalculateCode = vgeu::readFile(getShadersPath() + "/particle/" +
-                                            shaderName + "_calculate.comp.spv");
-    vk::raii::ShaderModule compCacluateShaderModule =
-        vgeu::createShaderModule(device, compCalculateCode);
-
     uint32_t maxComputeSharedMemorySize =
         physicalDevice.getProperties().limits.maxComputeSharedMemorySize;
     std::cout << "maxComputeSharedMemorySize: " << maxComputeSharedMemorySize
@@ -305,42 +294,94 @@ void VgeExample::prepareCompute() {
         4u, offsetof(SpecializationData, integrator), sizeof(uint32_t));
     specializationMapEntries.emplace_back(
         5u, offsetof(SpecializationData, integrateStep), sizeof(uint32_t));
+    if (attractionType == 0) {
+      {
+        auto compCalculateCode = vgeu::readFile(
+            getShadersPath() + "/particle/particle_calculate.comp.spv");
+        vk::raii::ShaderModule compCacluateShaderModule =
+            vgeu::createShaderModule(device, compCalculateCode);
 
-    for (uint32_t i = 1; i <= ::mapToIntegrateSteps(integrator); i++) {
-      specializationData.integrateStep = i;
-      // NOTE: template argument deduction not work with implicit conversion
-      vk::SpecializationInfo specializationInfo(
-          specializationMapEntries,
-          vk::ArrayProxyNoTemporaries<const SpecializationData>(
-              specializationData));
-      vk::PipelineShaderStageCreateInfo computeShaderStageCI(
-          vk::PipelineShaderStageCreateFlags{},
-          vk::ShaderStageFlagBits::eCompute, *compCacluateShaderModule, "main",
-          &specializationInfo);
-      vk::ComputePipelineCreateInfo computePipelineCI(vk::PipelineCreateFlags{},
-                                                      computeShaderStageCI,
-                                                      *compute.pipelineLayout);
-      // 1st pass
-      compute.pipelineCalculate.emplace_back(device, pipelineCache,
-                                             computePipelineCI);
+        for (uint32_t i = 1; i <= ::mapToIntegrateSteps(integrator); i++) {
+          specializationData.integrateStep = i;
+          // NOTE: template argument deduction not work with implicit conversion
+          vk::SpecializationInfo specializationInfo(
+              specializationMapEntries,
+              vk::ArrayProxyNoTemporaries<const SpecializationData>(
+                  specializationData));
+          vk::PipelineShaderStageCreateInfo computeShaderStageCI(
+              vk::PipelineShaderStageCreateFlags{},
+              vk::ShaderStageFlagBits::eCompute, *compCacluateShaderModule,
+              "main", &specializationInfo);
+          vk::ComputePipelineCreateInfo computePipelineCI(
+              vk::PipelineCreateFlags{}, computeShaderStageCI,
+              *compute.pipelineLayout);
+          // 1st pass
+          compute.pipelineCalculate.emplace_back(device, pipelineCache,
+                                                 computePipelineCI);
+        }
+      }
+      {
+        // 2nd pass
+        auto compIntegrateCode = vgeu::readFile(
+            getShadersPath() + "/particle/particle_integrate.comp.spv");
+        vk::raii::ShaderModule compIntegrateShaderModule =
+            vgeu::createShaderModule(device, compIntegrateCode);
+        vk::SpecializationInfo specializationInfo(
+            specializationMapEntries,
+            vk::ArrayProxyNoTemporaries<const SpecializationData>(
+                specializationData));
+        vk::PipelineShaderStageCreateInfo computeShaderStageCI(
+            vk::PipelineShaderStageCreateFlags{},
+            vk::ShaderStageFlagBits::eCompute, *compIntegrateShaderModule,
+            "main", &specializationInfo);
+        vk::ComputePipelineCreateInfo computePipelineCI(
+            vk::PipelineCreateFlags{}, computeShaderStageCI,
+            *compute.pipelineLayout);
+        compute.pipelineIntegrate =
+            vk::raii::Pipeline(device, pipelineCache, computePipelineCI);
+      }
+    } else if (attractionType == 1) {
+      {
+        auto compCalculateCode = vgeu::readFile(
+            getShadersPath() + "/particle/particle_model_calculate.comp.spv");
+        vk::raii::ShaderModule compCacluateShaderModule =
+            vgeu::createShaderModule(device, compCalculateCode);
+        vk::SpecializationInfo specializationInfo(
+            specializationMapEntries,
+            vk::ArrayProxyNoTemporaries<const SpecializationData>(
+                specializationData));
+        vk::PipelineShaderStageCreateInfo computeShaderStageCI(
+            vk::PipelineShaderStageCreateFlags{},
+            vk::ShaderStageFlagBits::eCompute, *compCacluateShaderModule,
+            "main", &specializationInfo);
+        vk::ComputePipelineCreateInfo computePipelineCI(
+            vk::PipelineCreateFlags{}, computeShaderStageCI,
+            *compute.pipelineLayout);
+        // 1st pass
+        compute.pipelineModelCalculate =
+            vk::raii::Pipeline(device, pipelineCache, computePipelineCI);
+      }
+      {
+        // 2nd pass
+        auto compIntegrateCode = vgeu::readFile(
+            getShadersPath() + "/particle/particle_model_integrate.comp.spv");
+        vk::raii::ShaderModule compIntegrateShaderModule =
+            vgeu::createShaderModule(device, compIntegrateCode);
+        vk::SpecializationInfo specializationInfo(
+            specializationMapEntries,
+            vk::ArrayProxyNoTemporaries<const SpecializationData>(
+                specializationData));
+        vk::PipelineShaderStageCreateInfo computeShaderStageCI(
+            vk::PipelineShaderStageCreateFlags{},
+            vk::ShaderStageFlagBits::eCompute, *compIntegrateShaderModule,
+            "main", &specializationInfo);
+        vk::ComputePipelineCreateInfo computePipelineCI(
+            vk::PipelineCreateFlags{}, computeShaderStageCI,
+            *compute.pipelineLayout);
+        compute.pipelineModelIntegrate =
+            vk::raii::Pipeline(device, pipelineCache, computePipelineCI);
+      }
     }
-    // 2nd pass
-    auto compIntegrateCode = vgeu::readFile(getShadersPath() + "/particle/" +
-                                            shaderName + "_integrate.comp.spv");
-    vk::raii::ShaderModule compIntegrateShaderModule =
-        vgeu::createShaderModule(device, compIntegrateCode);
-    vk::SpecializationInfo specializationInfo(
-        specializationMapEntries,
-        vk::ArrayProxyNoTemporaries<const SpecializationData>(
-            specializationData));
-    vk::PipelineShaderStageCreateInfo computeShaderStageCI(
-        vk::PipelineShaderStageCreateFlags{}, vk::ShaderStageFlagBits::eCompute,
-        *compIntegrateShaderModule, "main", &specializationInfo);
-    vk::ComputePipelineCreateInfo computePipelineCI(vk::PipelineCreateFlags{},
-                                                    computeShaderStageCI,
-                                                    *compute.pipelineLayout);
-    compute.pipelineIntegrate =
-        vk::raii::Pipeline(device, pipelineCache, computePipelineCI);
   }
   // create commandPool
   {
@@ -1013,8 +1054,13 @@ void VgeExample::buildComputeCommandBuffers() {
 
   for (size_t i = 0; i < ::mapToIntegrateSteps(integrator); i++) {
     // 1st pass
-    compute.cmdBuffers[currentFrameIndex].bindPipeline(
-        vk::PipelineBindPoint::eCompute, *compute.pipelineCalculate[i]);
+    if (attractionType == 0) {
+      compute.cmdBuffers[currentFrameIndex].bindPipeline(
+          vk::PipelineBindPoint::eCompute, *compute.pipelineCalculate[i]);
+    } else {
+      compute.cmdBuffers[currentFrameIndex].bindPipeline(
+          vk::PipelineBindPoint::eCompute, *compute.pipelineModelCalculate);
+    }
     compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
         vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 0,
         *compute.descriptorSets[currentFrameIndex], nullptr);
@@ -1035,8 +1081,13 @@ void VgeExample::buildComputeCommandBuffers() {
         nullptr, bufferBarrier, nullptr);
   }
   // 2nd pass
-  compute.cmdBuffers[currentFrameIndex].bindPipeline(
-      vk::PipelineBindPoint::eCompute, *compute.pipelineIntegrate);
+  if (attractionType == 0) {
+    compute.cmdBuffers[currentFrameIndex].bindPipeline(
+        vk::PipelineBindPoint::eCompute, *compute.pipelineIntegrate);
+  } else {
+    compute.cmdBuffers[currentFrameIndex].bindPipeline(
+        vk::PipelineBindPoint::eCompute, *compute.pipelineModelIntegrate);
+  }
   compute.cmdBuffers[currentFrameIndex].dispatch(numParticles / 256 + 1, 1, 1);
 
   // release barrier
