@@ -323,10 +323,15 @@ void Model::loadFromFile(std::string filename,
           Vertex& vertex = vertices[primitive.firstVertex + i];
           // Pre-transform vertex positions by node-hierarchy
           if (preTransform) {
-            vertex.pos = glm::vec3(localMatrix * glm::vec4(vertex.pos, 1.0f));
-            vertex.normal = glm::normalize(
-                glm::mat3(glm::inverse(glm::transpose(localMatrix))) *
-                vertex.normal);
+            glm::vec4 v(vertex.pos);
+            v.w = 1.f;
+            vertex.pos = localMatrix * v;
+            vertex.pos.w = -1.f;
+            vertex.normal = glm::vec4(
+                glm::normalize(
+                    glm::mat3(glm::inverse(glm::transpose(localMatrix))) *
+                    vertex.normal),
+                0.f);
           }
           // Flip Y-Axis of vertex positions
           if (flipY) {
@@ -769,10 +774,13 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
 
         for (size_t v = 0; v < posAccessor.count; v++) {
           Vertex vert{};
-          vert.pos = glm::vec4(glm::make_vec3(&bufferPos[v * 3]), 1.0f);
-          vert.normal = glm::normalize(
+          // NOTE: put skinIndex at pos.w
+          vert.pos = glm::vec4(glm::make_vec3(&bufferPos[v * 3]),
+                               static_cast<float>(newNode->skinIndex));
+          vert.normal = glm::normalize(glm::vec4(
               glm::vec3(bufferNormals ? glm::make_vec3(&bufferNormals[v * 3])
-                                      : glm::vec3(0.0f)));
+                                      : glm::vec3(0.0f)),
+              0.f));
           vert.uv = bufferTexCoords ? glm::make_vec2(&bufferTexCoords[v * 2])
                                     : glm::vec3(0.0f);
           if (bufferColors) {
@@ -811,9 +819,12 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
             glm::vec3 pos0(vertices[i * 3].pos);
             glm::vec3 pos1(vertices[i * 3 + 1].pos);
             glm::vec3 pos2(vertices[i * 3 + 2].pos);
-            vertices[i * 3].normal = glm::cross(pos1 - pos0, pos2 - pos1);
-            vertices[i * 3 + 1].normal = glm::cross(pos1 - pos0, pos2 - pos1);
-            vertices[i * 3 + 2].normal = glm::cross(pos1 - pos0, pos2 - pos1);
+            vertices[i * 3].normal =
+                glm::vec4(glm::cross(pos1 - pos0, pos2 - pos1), 0.f);
+            vertices[i * 3 + 1].normal =
+                glm::vec4(glm::cross(pos1 - pos0, pos2 - pos1), 0.f);
+            vertices[i * 3 + 2].normal =
+                glm::vec4(glm::cross(pos1 - pos0, pos2 - pos1), 0.f);
           }
         }
       }
@@ -1341,13 +1352,13 @@ vk::VertexInputAttributeDescription Vertex::getInputAttributeDescription(
     uint32_t binding, uint32_t location, VertexComponent component) {
   switch (component) {
     case VertexComponent::kPosition:
-      return vk::VertexInputAttributeDescription(location, binding,
-                                                 vk::Format::eR32G32B32Sfloat,
-                                                 offsetof(Vertex, pos));
+      return vk::VertexInputAttributeDescription(
+          location, binding, vk::Format::eR32G32B32A32Sfloat,
+          offsetof(Vertex, pos));
     case VertexComponent::kNormal:
-      return vk::VertexInputAttributeDescription(location, binding,
-                                                 vk::Format::eR32G32B32Sfloat,
-                                                 offsetof(Vertex, normal));
+      return vk::VertexInputAttributeDescription(
+          location, binding, vk::Format::eR32G32B32A32Sfloat,
+          offsetof(Vertex, normal));
     case VertexComponent::kUV:
       return vk::VertexInputAttributeDescription(
           location, binding, vk::Format::eR32G32Sfloat, offsetof(Vertex, uv));

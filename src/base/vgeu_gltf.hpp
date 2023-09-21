@@ -235,13 +235,16 @@ enum class VertexComponent {
 };
 
 struct Vertex {
-  glm::vec3 pos;
-  glm::vec3 normal;
-  glm::vec2 uv;
+  // NOTE: vec3->vec4 for ssbo usage (last can be used to skinIndex)
+  glm::vec4 pos;
+  // NOTE: vec3->vec4 for ssbo usage
+  glm::vec4 normal;
   glm::vec4 color;
   glm::vec4 joint0;
   glm::vec4 weight0;
   glm::vec4 tangent;
+  // NOTE: moved last for ssbo usage
+  glm::vec2 uv;
 
   // NOTE: thread_local
   static vk::VertexInputBindingDescription& getInputBindingDescription(
