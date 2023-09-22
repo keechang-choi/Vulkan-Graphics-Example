@@ -12,19 +12,19 @@ struct Particle
 };
 
 // Binding 0 : Position storage buffer prev frame
-layout(std140, binding = 0) readonly buffer SSBOIn
+layout(std430, set = 0, binding = 0) readonly buffer SSBOIn
 {
    Particle particlesIn[ ];
 };
 
 // Binding 1 : Position storage buffer
-layout(std140, binding = 1) buffer SSBO
+layout(std430, set = 0, binding = 1) buffer SSBO
 {
    Particle particles[ ];
 };
 
 
-layout (binding = 2) uniform UBO 
+layout (set = 0, binding = 2) uniform UBO 
 {
 	vec4 clickData;
 	float dt;
@@ -41,7 +41,7 @@ layout (constant_id = 1) const int INTEGRATOR = 0;
 layout (constant_id = 2) const int INTEGRATE_STEP = 0;
 
 
-layout (local_size_x_id = 0) in;
+layout (local_size_x_id = 3) in;
 
 
 // Share data between computer shader invocations to speed up caluclations

@@ -53,6 +53,7 @@ struct SpecializationData {
   uint32_t sharedDataSize;
   uint32_t integrator;
   uint32_t integrateStep;
+  uint32_t localSizeX;
 };
 
 struct Options {
@@ -78,6 +79,7 @@ struct Options {
   int32_t attractionType = 0;
   int32_t bindingModel = 2;
   float pointSize[2] = {1.f, 128.f};
+  int32_t desiredSharedDataSize = 256u;
 };
 
 class VgeExample : public VgeBase {
@@ -230,7 +232,7 @@ class VgeExample : public VgeBase {
   std::vector<float> energyValues = std::vector<float>(1000, energy);
 
   uint32_t attractionType = 0u;
-  const uint32_t kDesiredSharedDataSize = 256u;
+  uint32_t desiredSharedDataSize = 256u;
   uint32_t sharedDataSize;
 };
 }  // namespace vge

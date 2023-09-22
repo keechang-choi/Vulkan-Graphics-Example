@@ -289,13 +289,14 @@ void VgeExample::prepareCompute() {
               << std::endl;
 
     sharedDataSize = std::min(
-        kDesiredSharedDataSize,
+        desiredSharedDataSize,
         static_cast<uint32_t>(maxComputeSharedMemorySize / sizeof(glm::vec4)));
     SpecializationData specializationData{};
     specializationData.sharedDataSize = sharedDataSize;
     // TODO: for 1,2,4-> rk step, 5,6-> symplectic
     specializationData.integrator = integrator;
     specializationData.integrateStep = 0u;
+    specializationData.localSizeX = sharedDataSize;
 
     std::vector<vk::SpecializationMapEntry> specializationMapEntries;
     specializationMapEntries.emplace_back(
@@ -304,6 +305,8 @@ void VgeExample::prepareCompute() {
         1u, offsetof(SpecializationData, integrator), sizeof(uint32_t));
     specializationMapEntries.emplace_back(
         2u, offsetof(SpecializationData, integrateStep), sizeof(uint32_t));
+    specializationMapEntries.emplace_back(
+        3u, offsetof(SpecializationData, localSizeX), sizeof(uint32_t));
     if (attractionType == 0) {
       {
         auto compCalculateCode = vgeu::readFile(
@@ -1534,6 +1537,8 @@ void VgeExample::onUpdateUIOverlay() {
         }
         ImGui::TreePop();
       }
+      uiOverlay->inputInt("desiredSharedDataSize", &opts.desiredSharedDataSize,
+                          64);
       uiOverlay->inputFloat("rotationVelocity", &opts.rotationVelocity,
                             0.000001f, "%.6f");
       uiOverlay->inputInt("tailSize", &opts.tailSize, 1);
@@ -1568,6 +1573,8 @@ void VgeExample::setOptions(const std::optional<Options>& opts) {
     integrator = static_cast<uint32_t>(this->opts.integrator);
     cameraController.moveSpeed = this->opts.moveSpeed;
     attractionType = static_cast<uint32_t>(this->opts.attractionType);
+    desiredSharedDataSize =
+        static_cast<uint32_t>(this->opts.desiredSharedDataSize);
   } else {
     // save cli args for initial run
     this->opts.numAttractors = static_cast<int32_t>(numAttractors);
