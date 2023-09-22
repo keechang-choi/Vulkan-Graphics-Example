@@ -275,10 +275,11 @@ void VgeExample::prepareCompute() {
         physicalDevice.getProperties().limits.maxComputeSharedMemorySize;
     std::cout << "maxComputeSharedMemorySize: " << maxComputeSharedMemorySize
               << std::endl;
-    SpecializationData specializationData{};
-    specializationData.sharedDataSize = std::min(
-        256u,
+    sharedDataSize = std::min(
+        kDesiredSharedDataSize,
         static_cast<uint32_t>(maxComputeSharedMemorySize / sizeof(glm::vec4)));
+    SpecializationData specializationData{};
+    specializationData.sharedDataSize = sharedDataSize;
     // TODO: for 1,2,4-> rk step, 5,6-> symplectic
     specializationData.integrator = integrator;
     specializationData.integrateStep = 0u;
@@ -625,7 +626,7 @@ void VgeExample::createStorageBuffers() {
   }
 
   // tail
-  {
+  if (tailSize > 0) {
     tailData.resize(numParticles * tailSize);
     tailBuffers.resize(MAX_CONCURRENT_FRAMES);
     for (size_t i = 0; i < tailBuffers.size(); i++) {
@@ -1002,7 +1003,7 @@ void VgeExample::draw() {
   }
 
   // calculate tail
-  updateTailSSBO();
+  if (tailSize > 0) updateTailSSBO();
 
   prepareFrame();
 
@@ -1118,7 +1119,7 @@ void VgeExample::buildCommandBuffers() {
   }
 
   // tail
-  {
+  if (tailSize > 0) {
     drawCmdBuffers[currentFrameIndex].setLineWidth(opts.lineWidth);
     drawCmdBuffers[currentFrameIndex].bindPipeline(
         vk::PipelineBindPoint::eGraphics, *tailPipeline);
@@ -1196,8 +1197,8 @@ void VgeExample::buildComputeCommandBuffers() {
 
     // NOTE: number of local work group should cover all vertices
     // TODO: +1 makes program stop.
-    compute.cmdBuffers[currentFrameIndex].dispatch(numParticles / 256 + 1, 1,
-                                                   1);
+    compute.cmdBuffers[currentFrameIndex].dispatch(
+        numParticles / sharedDataSize + 1, 1, 1);
 
     // memory barrier
     vk::BufferMemoryBarrier bufferBarrier(
@@ -1218,7 +1219,8 @@ void VgeExample::buildComputeCommandBuffers() {
     compute.cmdBuffers[currentFrameIndex].bindPipeline(
         vk::PipelineBindPoint::eCompute, *compute.pipelineModelIntegrate);
   }
-  compute.cmdBuffers[currentFrameIndex].dispatch(numParticles / 256 + 1, 1, 1);
+  compute.cmdBuffers[currentFrameIndex].dispatch(
+      numParticles / sharedDataSize + 1, 1, 1);
 
   // release barrier
   if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
@@ -1457,7 +1459,7 @@ void VgeExample::onUpdateUIOverlay() {
                 compute.ubo.clickData.y, compute.ubo.clickData.z,
                 compute.ubo.clickData.w);
   }
-  if (uiOverlay->header("Plot")) {
+  if (uiOverlay->header("Plot", false)) {
     // std::string t = std::to_string(values_offset) + ": " +
     // std::to_string(dist);
     ImGui::Text("frameCount %d => distance %.6f \n max: %.6f, min: %.6f",
@@ -1504,7 +1506,8 @@ void VgeExample::onUpdateUIOverlay() {
       uiOverlay->radioButton("model attraction", &opts.attractionType, 1);
 
       uiOverlay->sliderInt("numAttractors", &opts.numAttractors, 2, 6);
-      uiOverlay->sliderInt("numParticles", &opts.numParticles, 2, 1024 * 16);
+      ImGui::DragInt("Drag numParticles", &opts.numParticles,
+                     opts.numAttractors, kMaxNumParticles);
       if (ImGui::TreeNodeEx("colors", ImGuiTreeNodeFlags_DefaultOpen)) {
         for (size_t i = 0; i < opts.numAttractors; i++) {
           std::string caption = "colors" + std::to_string(i);

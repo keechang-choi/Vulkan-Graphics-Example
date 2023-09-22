@@ -190,6 +190,7 @@ class VgeExample : public VgeBase {
   float animationTime = 0.f;
   float animationLastTime = 0.f;
   uint32_t numParticles = 1024u * 4u * 6u;
+  const uint32_t kMaxNumParticles = 1024u * 1024u;
   uint32_t numAttractors = 6u;
   uint32_t integrator = 1u;
   float rotationVelocity = 50.f;
@@ -230,5 +231,7 @@ class VgeExample : public VgeBase {
   std::vector<float> energyValues = std::vector<float>(1000, energy);
 
   uint32_t attractionType = 0u;
+  const uint32_t kDesiredSharedDataSize = 256u;
+  uint32_t sharedDataSize;
 };
 }  // namespace vge

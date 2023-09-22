@@ -94,8 +94,12 @@ void UIOverlay::resize(uint32_t width, uint32_t height) {
   io.DisplaySize = ImVec2((float)(width), (float)(height));
 }
 
-bool UIOverlay::header(const char* caption) {
-  return ImGui::CollapsingHeader(caption, ImGuiTreeNodeFlags_DefaultOpen);
+bool UIOverlay::header(const char* caption, bool open) {
+  ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_DefaultOpen;
+  if (!open) {
+    flags = ImGuiTreeNodeFlags_CollapsingHeader;
+  }
+  return ImGui::CollapsingHeader(caption, flags);
 }
 
 bool UIOverlay::sliderFloat(const char* caption, float* value, float min,

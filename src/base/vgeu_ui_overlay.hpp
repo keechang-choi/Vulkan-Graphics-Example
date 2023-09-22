@@ -60,7 +60,7 @@ class UIOverlay {
   // CHECK: raii paradigm
   // void freeResources();
 
-  bool header(const char* caption);
+  bool header(const char* caption, bool open = true);
   bool checkBox(const char* caption, bool* value);
   bool checkBox(const char* caption, int32_t* value);
   bool radioButton(const char* caption, int32_t* v, int32_t button);

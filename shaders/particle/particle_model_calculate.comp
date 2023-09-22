@@ -61,9 +61,9 @@ layout (set = 2, binding = 0) uniform ModelUbo
 	uint numIndices;
 } modelUbo;
 
-//layout (constant_id = 0) const int SHARED_DATA_SIZE = 512;
+layout (constant_id = 0) const int SHARED_DATA_SIZE = 512;
 // TODO: check being greater than local group size intended for calculation and approximation.
-const int SHARED_DATA_SIZE = 256;
+// const int SHARED_DATA_SIZE = 256;
 layout (constant_id = 1) const int INTEGRATOR = 0;
 layout (constant_id = 2) const int INTEGRATE_STEP = 0;
 
