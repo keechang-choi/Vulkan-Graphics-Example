@@ -165,8 +165,8 @@ class VgeExample : public VgeBase {
     // TOOD: check alignment for std140
     struct computeUbo {
       glm::vec4 clickData;
-      alignas(16) float dt;
-      alignas(16) uint32_t particleCount;
+      float dt;
+      uint32_t particleCount;
     } ubo;
 
   } compute;
