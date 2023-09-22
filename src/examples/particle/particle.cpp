@@ -449,6 +449,20 @@ void VgeExample::loadAssets() {
     modelInstance.name = "apple1";
     addModelInstance(modelInstance);
   }
+
+  std::shared_ptr<vgeu::glTF::Model> bone5;
+  bone5 = std::make_shared<vgeu::glTF::Model>(
+      device, globalAllocator->getAllocator(), queue, commandPool,
+      MAX_CONCURRENT_FRAMES);
+  bone5->additionalBufferUsageFlags = vk::BufferUsageFlagBits::eStorageBuffer;
+  bone5->loadFromFile(getAssetsPath() + "/models/bone5.gltf", glTFLoadingFlags);
+
+  {
+    ModelInstance modelInstance{};
+    modelInstance.model = bone5;
+    modelInstance.name = "bone5";
+    addModelInstance(modelInstance);
+  }
 }
 
 void VgeExample::createStorageBuffers() {
@@ -468,6 +482,7 @@ void VgeExample::createStorageBuffers() {
   std::default_random_engine rndEngine;
   rndEngine.seed(1111);
   std::normal_distribution<float> normalDist(0.0f, 1.0f);
+  std::uniform_real_distribution<float> uniformDist(0.f, 1.f);
 
   // std::vector<float> colors{
   //     //::packColor(2, 20, 200),
@@ -529,6 +544,11 @@ void VgeExample::createStorageBuffers() {
       velocity += rot * rotationVelocity;
       particle.pos = glm::vec4(position, mass);
       particle.vel = glm::vec4(velocity, colorOffset);
+      // mesh attraction uniform distributed region
+      float r1 = uniformDist(rndEngine);
+      float r2 = uniformDist(rndEngine);
+      particle.attractionWeight.x = std::sqrt(r1) * (1.f - r2);
+      particle.attractionWeight.y = std::sqrt(r1) * r2;
     }
   }
 
@@ -687,6 +707,18 @@ void VgeExample::setupDynamicUbo() {
     dynamicUbo[instanceIndex].modelMatrix =
         glm::scale(dynamicUbo[instanceIndex].modelMatrix,
                    glm::vec3{appleScale, -appleScale, appleScale});
+    dynamicUbo[instanceIndex].numVertices =
+        modelInstances[instanceIndex].model->getVertexCount();
+    dynamicUbo[instanceIndex].numIndices =
+        modelInstances[instanceIndex].model->getIndexCount();
+  }
+  {
+    float boneScale = 5.f;
+    size_t instanceIndex = findInstances("bone5")[0];
+    // FlipY manually
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+                   glm::vec3{boneScale, -boneScale, boneScale});
     dynamicUbo[instanceIndex].numVertices =
         modelInstances[instanceIndex].model->getVertexCount();
     dynamicUbo[instanceIndex].numIndices =
@@ -1238,10 +1270,10 @@ void VgeExample::updateDynamicUbo() {
   float rotationVelocity = 10.f;
   {
     size_t instanceIndex = findInstances("fox1")[0];
-    dynamicUbo[instanceIndex].modelMatrix =
-        glm::rotate(glm::mat4{1.f},
-                    glm::radians(rotationVelocity) * animationTimer, up) *
-        dynamicUbo[instanceIndex].modelMatrix;
+    // dynamicUbo[instanceIndex].modelMatrix =
+    //     glm::rotate(glm::mat4{1.f},
+    //                 glm::radians(rotationVelocity) * animationTimer, up) *
+    //     dynamicUbo[instanceIndex].modelMatrix;
   }
   {
     size_t instanceIndex = findInstances("fox1-1")[0];

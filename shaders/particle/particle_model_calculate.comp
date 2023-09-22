@@ -45,10 +45,11 @@ layout (set = 0, binding = 2) uniform UBO
 	float soften;
 } ubo;
 
-layout (std140, set = 1, binding = 0) readonly buffer VertexSSBO{
+layout (std430, set = 1, binding = 0) readonly buffer VertexSSBO{
 	Vertex vertices[ ];
 };
-layout (std140, set = 1, binding = 1) readonly buffer IndexSSBO{
+// NOTE: std140 alignment rounded up to size of vec4
+layout (std430, set = 1, binding = 1) readonly buffer IndexSSBO{
 	uint indices[ ];
 };
 
@@ -97,7 +98,8 @@ void main()
 		vec3 p1 = vertices[indices[modIndex*3+1]].pos.xyz;
 		vec3 p2 = vertices[indices[modIndex*3+2]].pos.xyz;
 		// center of triangle
-		targetPos = (p0 + p1 + p2) / 3.0;
+		vec4 attractionWeight = particlesIn[index].attractionWeight;
+		targetPos = p0 + attractionWeight.x * (p1-p0) + attractionWeight.y * (p2-p0);
 	}
 	targetPos = (modelUbo.modelMatrix * vec4(targetPos, 1.0)).xyz;
 	float dirSign = 1.0;
