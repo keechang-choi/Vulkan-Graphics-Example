@@ -450,13 +450,38 @@ void VgeExample::loadAssets() {
     addModelInstance(modelInstance);
   }
 
+  std::shared_ptr<vgeu::glTF::Model> bone1;
+  bone1 = std::make_shared<vgeu::glTF::Model>(
+      device, globalAllocator->getAllocator(), queue, commandPool,
+      MAX_CONCURRENT_FRAMES);
+  bone1->additionalBufferUsageFlags = vk::BufferUsageFlagBits::eStorageBuffer;
+  bone1->loadFromFile(getAssetsPath() + "/models/bone.gltf", glTFLoadingFlags);
+  {
+    ModelInstance modelInstance{};
+    modelInstance.model = bone1;
+    modelInstance.name = "bone1";
+    addModelInstance(modelInstance);
+  }
+
+  std::shared_ptr<vgeu::glTF::Model> bone4;
+  bone4 = std::make_shared<vgeu::glTF::Model>(
+      device, globalAllocator->getAllocator(), queue, commandPool,
+      MAX_CONCURRENT_FRAMES);
+  bone4->additionalBufferUsageFlags = vk::BufferUsageFlagBits::eStorageBuffer;
+  bone4->loadFromFile(getAssetsPath() + "/models/bone4.gltf", glTFLoadingFlags);
+  {
+    ModelInstance modelInstance{};
+    modelInstance.model = bone4;
+    modelInstance.name = "bone4";
+    addModelInstance(modelInstance);
+  }
+
   std::shared_ptr<vgeu::glTF::Model> bone5;
   bone5 = std::make_shared<vgeu::glTF::Model>(
       device, globalAllocator->getAllocator(), queue, commandPool,
       MAX_CONCURRENT_FRAMES);
   bone5->additionalBufferUsageFlags = vk::BufferUsageFlagBits::eStorageBuffer;
   bone5->loadFromFile(getAssetsPath() + "/models/bone5.gltf", glTFLoadingFlags);
-
   {
     ModelInstance modelInstance{};
     modelInstance.model = bone5;
@@ -667,6 +692,8 @@ void VgeExample::createVertexSCI() {
 void VgeExample::setupDynamicUbo() {
   const float foxScale = 0.1f;
   glm::vec3 up{0.f, -1.f, 0.f};
+  glm::vec3 right{1.f, 0.f, 0.f};
+  glm::vec3 forward{0.f, 0.f, 1.f};
   dynamicUbo.resize(modelInstances.size());
   {
     size_t instanceIndex = findInstances("fox1")[0];
@@ -707,6 +734,34 @@ void VgeExample::setupDynamicUbo() {
     dynamicUbo[instanceIndex].modelMatrix =
         glm::scale(dynamicUbo[instanceIndex].modelMatrix,
                    glm::vec3{appleScale, -appleScale, appleScale});
+    dynamicUbo[instanceIndex].numVertices =
+        modelInstances[instanceIndex].model->getVertexCount();
+    dynamicUbo[instanceIndex].numIndices =
+        modelInstances[instanceIndex].model->getIndexCount();
+  }
+  {
+    float boneScale = 5.f;
+    size_t instanceIndex = findInstances("bone1")[0];
+    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
+        dynamicUbo[instanceIndex].modelMatrix, glm::radians(90.f), forward);
+    // FlipY manually
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+                   glm::vec3{boneScale, -boneScale, boneScale});
+    dynamicUbo[instanceIndex].numVertices =
+        modelInstances[instanceIndex].model->getVertexCount();
+    dynamicUbo[instanceIndex].numIndices =
+        modelInstances[instanceIndex].model->getIndexCount();
+  }
+  {
+    float boneScale = 5.f;
+    size_t instanceIndex = findInstances("bone4")[0];
+    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
+        dynamicUbo[instanceIndex].modelMatrix, glm::radians(90.f), right);
+    // FlipY manually
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+                   glm::vec3{boneScale, -boneScale, boneScale});
     dynamicUbo[instanceIndex].numVertices =
         modelInstances[instanceIndex].model->getVertexCount();
     dynamicUbo[instanceIndex].numIndices =
