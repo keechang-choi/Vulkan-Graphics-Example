@@ -273,8 +273,21 @@ void VgeExample::prepareCompute() {
   {
     uint32_t maxComputeSharedMemorySize =
         physicalDevice.getProperties().limits.maxComputeSharedMemorySize;
+    const std::array<uint32_t, 3>& maxComputeWorkGroupSize =
+        physicalDevice.getProperties().limits.maxComputeWorkGroupSize;
+    std::cout << "maxComputeWorkGroupSize: " << maxComputeWorkGroupSize[0]
+              << ", " << maxComputeWorkGroupSize[1] << ", "
+              << maxComputeWorkGroupSize[2] << std::endl;
+
+    const std::array<uint32_t, 3>& maxComputeWorkGroupCount =
+        physicalDevice.getProperties().limits.maxComputeWorkGroupCount;
+    std::cout << "maxComputeWorkGroupCount: " << maxComputeWorkGroupCount[0]
+              << ", " << maxComputeWorkGroupCount[1] << ", "
+              << maxComputeWorkGroupCount[2] << std::endl;
+
     std::cout << "maxComputeSharedMemorySize: " << maxComputeSharedMemorySize
               << std::endl;
+
     sharedDataSize = std::min(
         kDesiredSharedDataSize,
         static_cast<uint32_t>(maxComputeSharedMemorySize / sizeof(glm::vec4)));
@@ -1265,6 +1278,10 @@ void VgeExample::updateGraphicsUbo() {
   };
   graphics.globalUbo.tailInfo.x = static_cast<float>(tailSize);
   graphics.globalUbo.tailInfo.y = static_cast<float>(tailFrontIndex);
+  graphics.globalUbo.pointSize.x =
+      std::min(opts.pointSize[0], opts.pointSize[1]);
+  graphics.globalUbo.pointSize.y =
+      std::max(opts.pointSize[0], opts.pointSize[1]);
   std::memcpy(graphics.globalUniformBuffers[currentFrameIndex]->getMappedData(),
               &graphics.globalUbo, sizeof(GlobalUbo));
 }
@@ -1480,6 +1497,8 @@ void VgeExample::onUpdateUIOverlay() {
                             0.001f, "%.3f");
       uiOverlay->inputFloat("tailSampleTime", &opts.tailSampleTime, 0.001f,
                             "%.3f");
+      ImGui::DragFloat2("Drag pointSize min/max", opts.pointSize, 1.f, 1.f,
+                        128.f, "%.0f");
       uiOverlay->inputFloat("gravity", &opts.gravity, 0.001f, "%.3f");
       uiOverlay->inputFloat("power", &opts.power, 0.01f, "%.3f");
       uiOverlay->inputFloat("soften", &opts.soften, 0.0001f, "%.4f");
@@ -1506,7 +1525,7 @@ void VgeExample::onUpdateUIOverlay() {
       uiOverlay->radioButton("model attraction", &opts.attractionType, 1);
 
       uiOverlay->sliderInt("numAttractors", &opts.numAttractors, 2, 6);
-      ImGui::DragInt("Drag numParticles", &opts.numParticles,
+      ImGui::DragInt("Drag numParticles", &opts.numParticles, 16.f,
                      opts.numAttractors, kMaxNumParticles);
       if (ImGui::TreeNodeEx("colors", ImGuiTreeNodeFlags_DefaultOpen)) {
         for (size_t i = 0; i < opts.numAttractors; i++) {

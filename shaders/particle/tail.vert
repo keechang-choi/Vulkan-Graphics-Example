@@ -12,6 +12,7 @@ layout (set = 0, binding = 0) uniform GlobalUbo
 	mat4 inverseView;
     vec2 screenDim;
     vec2 tailInfo;
+    vec2 pointSize;
 } globalUbo;
 
 out gl_PerVertex

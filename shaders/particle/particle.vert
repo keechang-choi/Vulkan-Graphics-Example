@@ -12,6 +12,7 @@ layout (set = 0, binding = 0) uniform GlobalUbo
 	mat4 inverseView;
     vec2 screenDim;
 	vec2 tailInfo;
+	vec2 pointSize;
 } globalUbo;
 
 out gl_PerVertex
@@ -42,7 +43,7 @@ void main ()
 
 	vec4 eyePos = globalUbo.view * vec4(inPos.x, inPos.y, inPos.z, 1.0); 
 	vec4 projectedCorner = globalUbo.projection * vec4(0.5 * spriteSize, 0.5 * spriteSize, eyePos.z, eyePos.w);
-	gl_PointSize = clamp(globalUbo.screenDim.x * projectedCorner.x / projectedCorner.w, 2.0, 32.0);
+	gl_PointSize = clamp(globalUbo.screenDim.x * projectedCorner.x / projectedCorner.w, globalUbo.pointSize.x, globalUbo.pointSize.y);
 	// gl_PointSize = 3.0;
 
 	gl_Position = globalUbo.projection * eyePos;

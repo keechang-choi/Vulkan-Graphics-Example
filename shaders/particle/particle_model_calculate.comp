@@ -33,7 +33,6 @@ layout(std140, set = 0, binding = 1) buffer SSBO
    Particle particles[ ];
 };
 
-layout (local_size_x = 256) in;
 
 layout (set = 0, binding = 2) uniform UBO 
 {
@@ -67,6 +66,7 @@ layout (constant_id = 0) const int SHARED_DATA_SIZE = 512;
 layout (constant_id = 1) const int INTEGRATOR = 0;
 layout (constant_id = 2) const int INTEGRATE_STEP = 0;
 
+layout (local_size_x_id = 0) in;
 
 // Share data between computer shader invocations to speed up caluclations
 shared vec4 sharedData[SHARED_DATA_SIZE];

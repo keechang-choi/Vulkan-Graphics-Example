@@ -20,6 +20,7 @@ struct GlobalUbo {
   glm::vec2 screenDim;
   // NOTE: alignment
   glm::vec2 tailInfo{0.f};
+  glm::vec2 pointSize{1.f, 64.f};
 };
 
 // NOTE: for current animation implementation,
@@ -50,9 +51,6 @@ struct Particle {
 
 struct SpecializationData {
   uint32_t sharedDataSize;
-  float gravity;
-  float power;
-  float soften;
   uint32_t integrator;
   uint32_t integrateStep;
 };
@@ -79,6 +77,7 @@ struct Options {
   float lineWidth = 1.0f;
   int32_t attractionType = 0;
   int32_t bindingModel = 2;
+  float pointSize[2] = {1.f, 128.f};
 };
 
 class VgeExample : public VgeBase {
