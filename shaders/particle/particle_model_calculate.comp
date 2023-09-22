@@ -51,6 +51,15 @@ layout (std140, set = 1, binding = 0) readonly buffer VertexSSBO{
 layout (std140, set = 1, binding = 1) readonly buffer IndexSSBO{
 	uint indices[ ];
 };
+
+layout (set = 2, binding = 0) uniform ModelUbo 
+{
+	mat4 modelMatrix;
+	vec4 modelColor;
+	uint numVertices;
+	uint numIndices;
+} modelUbo;
+
 //layout (constant_id = 0) const int SHARED_DATA_SIZE = 512;
 // TODO: check being greater than local group size intended for calculation and approximation.
 const int SHARED_DATA_SIZE = 256;
@@ -79,8 +88,18 @@ void main()
 	// uint vertIndex = indices[modIndex];
 	// 4019
 	// 1728
-	uint modIndex = uint(mod(index, 4019));
-	vec3 targetPos = 10.0 * vertices[modIndex].pos.xyz;
+	vec3 targetPos;
+	if(index < modelUbo.numVertices){
+		targetPos = vertices[index].pos.xyz;
+	}else{
+		uint modIndex = uint(mod(index-modelUbo.numVertices, modelUbo.numIndices/3));
+		vec3 p0 = vertices[indices[modIndex*3]].pos.xyz;
+		vec3 p1 = vertices[indices[modIndex*3+1]].pos.xyz;
+		vec3 p2 = vertices[indices[modIndex*3+2]].pos.xyz;
+		// center of triangle
+		targetPos = (p0 + p1 + p2) / 3.0;
+	}
+	targetPos = (modelUbo.modelMatrix * vec4(targetPos, 1.0)).xyz;
 	float dirSign = 1.0;
 	if(ubo.clickData.w == 1.0){
 		targetPos = ubo.clickData.xyz;

@@ -645,7 +645,7 @@ void VgeExample::createVertexSCI() {
 }
 
 void VgeExample::setupDynamicUbo() {
-  const float foxScale = 0.03f;
+  const float foxScale = 0.1f;
   glm::vec3 up{0.f, -1.f, 0.f};
   dynamicUbo.resize(modelInstances.size());
   {
@@ -659,6 +659,10 @@ void VgeExample::setupDynamicUbo() {
         glm::scale(dynamicUbo[instanceIndex].modelMatrix,
                    glm::vec3{foxScale, -foxScale, foxScale});
     dynamicUbo[instanceIndex].modelColor = glm::vec4{1.0f, 0.f, 0.f, 0.3f};
+    dynamicUbo[instanceIndex].numVertices =
+        modelInstances[instanceIndex].model->getVertexCount();
+    dynamicUbo[instanceIndex].numIndices =
+        modelInstances[instanceIndex].model->getIndexCount();
   }
   {
     size_t instanceIndex = findInstances("fox1-1")[0];
@@ -671,6 +675,22 @@ void VgeExample::setupDynamicUbo() {
         glm::scale(dynamicUbo[instanceIndex].modelMatrix,
                    glm::vec3{foxScale, -foxScale, foxScale});
     dynamicUbo[instanceIndex].modelColor = glm::vec4{0.0f, 0.f, 1.f, 0.3f};
+    dynamicUbo[instanceIndex].numVertices =
+        modelInstances[instanceIndex].model->getVertexCount();
+    dynamicUbo[instanceIndex].numIndices =
+        modelInstances[instanceIndex].model->getIndexCount();
+  }
+  {
+    float appleScale = 100.f;
+    size_t instanceIndex = findInstances("apple1")[0];
+    // FlipY manually
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+                   glm::vec3{appleScale, -appleScale, appleScale});
+    dynamicUbo[instanceIndex].numVertices =
+        modelInstances[instanceIndex].model->getVertexCount();
+    dynamicUbo[instanceIndex].numIndices =
+        modelInstances[instanceIndex].model->getIndexCount();
   }
 }
 
@@ -1074,12 +1094,19 @@ void VgeExample::buildComputeCommandBuffers() {
       compute.cmdBuffers[currentFrameIndex].bindPipeline(
           vk::PipelineBindPoint::eCompute, *compute.pipelineModelCalculate);
       // bind SSBO for particle attraction
-      modelInstances[findInstances("apple1")[0]].model->bindSSBO(
-          compute.cmdBuffers[currentFrameIndex], *compute.pipelineLayout, 1);
+      modelInstances[opts.bindingModel].model->bindSSBO(
+          compute.cmdBuffers[currentFrameIndex], *compute.pipelineLayout,
+          1 /*set*/);
+      // bind dynamic
+      compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+          vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 2 /*set 1*/,
+          {*dynamicUboDescriptorSets[currentFrameIndex]},
+          alignedSizeDynamicUboElt * opts.bindingModel);
     }
     compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
         vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 0 /*set*/,
         *compute.descriptorSets[currentFrameIndex], nullptr);
+
     // NOTE: number of local work group should cover all vertices
     // TODO: +1 makes program stop.
     compute.cmdBuffers[currentFrameIndex].dispatch(numParticles / 256 + 1, 1,
@@ -1208,7 +1235,7 @@ void VgeExample::updateDynamicUbo() {
 
   glm::vec3 up{0.f, -1.f, 0.f};
   // deg per sec;
-  float rotationVelocity = 30.f;
+  float rotationVelocity = 10.f;
   {
     size_t instanceIndex = findInstances("fox1")[0];
     dynamicUbo[instanceIndex].modelMatrix =
@@ -1372,6 +1399,11 @@ void VgeExample::onUpdateUIOverlay() {
         cameraController.moveSpeed = this->opts.moveSpeed;
       }
       uiOverlay->inputFloat("lineWidth", &opts.lineWidth, 0.1f, "%.3f");
+      // binding model for model attraction
+      for (const auto& item : instanceMap) {
+        uiOverlay->radioButton(item.first.c_str(), &opts.bindingModel,
+                               item.second[0]);
+      }
       ImGui::TreePop();
     }
     if (ImGui::TreeNodeEx("Initializers", ImGuiTreeNodeFlags_DefaultOpen)) {

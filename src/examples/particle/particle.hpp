@@ -35,6 +35,8 @@ struct ModelInstance {
 struct DynamicUboElt {
   glm::mat4 modelMatrix{1.f};
   glm::vec4 modelColor{0.f};
+  uint32_t numVertices;
+  uint32_t numIndices;
 };
 
 struct Particle {
@@ -76,6 +78,7 @@ struct Options {
   float moveSpeed = 10.f;
   float lineWidth = 1.0f;
   int32_t attractionType = 0;
+  int32_t bindingModel = 2;
 };
 
 class VgeExample : public VgeBase {

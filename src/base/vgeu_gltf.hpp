@@ -303,6 +303,8 @@ class Model {
   void updateAnimation(const uint32_t frameIndex, const int Animationindex,
                        const float time, const bool repeat = false);
   Dimensions getDimensions() const { return dimensions; };
+  uint32_t getVertexCount() const { return vertexBuffer->getInstanceCount(); }
+  uint32_t getIndexCount() const { return indexBuffer->getInstanceCount(); }
 
   // NOTE: moved from globals to model class member.
   // TODO: all models should share those values, better to move it out of model
