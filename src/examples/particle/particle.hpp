@@ -191,7 +191,7 @@ class VgeExample : public VgeBase {
   float animationTime = 0.f;
   float animationLastTime = 0.f;
   uint32_t numParticles = 1024u * 4u * 6u;
-  const uint32_t kMaxNumParticles = 1024u * 1024u;
+  const uint32_t kMaxNumParticles = 1024u * 1024u * 4u;
   uint32_t numAttractors = 6u;
   uint32_t integrator = 1u;
   float rotationVelocity = 50.f;
