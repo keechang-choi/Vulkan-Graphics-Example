@@ -167,6 +167,9 @@ class VgeExample : public VgeBase {
       glm::vec4 clickData;
       float dt;
       uint32_t particleCount;
+      float gravity;
+      float power;
+      float soften;
     } ubo;
 
   } compute;

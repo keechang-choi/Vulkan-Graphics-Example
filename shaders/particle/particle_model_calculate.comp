@@ -40,6 +40,9 @@ layout (set = 0, binding = 2) uniform UBO
 	vec4 clickData;
 	float dt;
 	int particleCount;
+	float gravity;
+	float power;
+	float soften;
 } ubo;
 
 layout (std140, set = 1, binding = 0) readonly buffer VertexSSBO{
@@ -51,11 +54,8 @@ layout (std140, set = 1, binding = 1) readonly buffer IndexSSBO{
 //layout (constant_id = 0) const int SHARED_DATA_SIZE = 512;
 // TODO: check being greater than local group size intended for calculation and approximation.
 const int SHARED_DATA_SIZE = 256;
-layout (constant_id = 1) const float GRAVITY = 0.002;
-layout (constant_id = 2) const float POWER = 0.75;
-layout (constant_id = 3) const float SOFTEN = 0.0075;
-layout (constant_id = 4) const int INTEGRATOR = 0;
-layout (constant_id = 5) const int INTEGRATE_STEP = 0;
+layout (constant_id = 1) const int INTEGRATOR = 0;
+layout (constant_id = 2) const int INTEGRATE_STEP = 0;
 
 
 // Share data between computer shader invocations to speed up caluclations
@@ -89,8 +89,8 @@ void main()
 		dirSign = -1.0;
 	}
 	vec3 r = targetPos-position.xyz;
-	acceleration.xyz = GRAVITY * dirSign * normalize(r) * pow(dot(r, r), 0.5) - 
-		SOFTEN * normalize(velocity.xyz) * pow(dot(velocity.xyz, velocity.xyz), POWER);
+	acceleration.xyz = ubo.gravity * dirSign * normalize(r) * pow(dot(r, r), 0.5) - 
+		ubo.soften * normalize(velocity.xyz) * pow(dot(velocity.xyz, velocity.xyz), ubo.power);
 
 	
 	particles[index].pk[0].xyz = ubo.dt * velocity.xyz; 

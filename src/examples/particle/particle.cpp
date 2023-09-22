@@ -277,11 +277,8 @@ void VgeExample::prepareCompute() {
               << std::endl;
     SpecializationData specializationData{};
     specializationData.sharedDataSize = std::min(
-        1024u,
+        256u,
         static_cast<uint32_t>(maxComputeSharedMemorySize / sizeof(glm::vec4)));
-    specializationData.gravity = gravity;
-    specializationData.power = power;
-    specializationData.soften = soften;
     // TODO: for 1,2,4-> rk step, 5,6-> symplectic
     specializationData.integrator = integrator;
     specializationData.integrateStep = 0u;
@@ -290,15 +287,9 @@ void VgeExample::prepareCompute() {
     specializationMapEntries.emplace_back(
         0u, offsetof(SpecializationData, sharedDataSize), sizeof(uint32_t));
     specializationMapEntries.emplace_back(
-        1u, offsetof(SpecializationData, gravity), sizeof(float));
+        1u, offsetof(SpecializationData, integrator), sizeof(uint32_t));
     specializationMapEntries.emplace_back(
-        2u, offsetof(SpecializationData, power), sizeof(float));
-    specializationMapEntries.emplace_back(
-        3u, offsetof(SpecializationData, soften), sizeof(float));
-    specializationMapEntries.emplace_back(
-        4u, offsetof(SpecializationData, integrator), sizeof(uint32_t));
-    specializationMapEntries.emplace_back(
-        5u, offsetof(SpecializationData, integrateStep), sizeof(uint32_t));
+        2u, offsetof(SpecializationData, integrateStep), sizeof(uint32_t));
     if (attractionType == 0) {
       {
         auto compCalculateCode = vgeu::readFile(
@@ -1164,44 +1155,51 @@ void VgeExample::updateGraphicsUbo() {
 
 void VgeExample::updateComputeUbo() {
   compute.ubo.dt = paused ? 0.0f : frameTimer * opts.coefficientDeltaTime;
+  compute.ubo.gravity = opts.gravity;
+  compute.ubo.power = opts.power;
+  compute.ubo.soften = opts.soften;
+
+  {
+    glm::vec2 normalizedMousePos{
+        2.f * mouseData.mousePos.x / static_cast<float>(width) - 1.f,
+        2.f * mouseData.mousePos.y / static_cast<float>(height) - 1.f};
+
+    glm::vec4 rayStart = camera.getInverseView() *
+                         glm::inverse(camera.getProjection()) *
+                         glm::vec4(normalizedMousePos, 0.f, 1.f);
+    rayStart /= rayStart.w;
+    glm::vec4 rayEnd = camera.getInverseView() *
+                       glm::inverse(camera.getProjection()) *
+                       glm::vec4(normalizedMousePos, 0.1f, 1.f);
+    rayEnd /= rayEnd.w;
+
+    glm::vec3 rayDir(glm::normalize(rayEnd - rayStart));
+
+    glm::vec3 planeNormal{camera.getView()[0][2], camera.getView()[1][2],
+                          camera.getView()[2][2]};
+    std::optional<glm::vec3> intersectionPt =
+        ::rayPlaneIntersection(rayStart, rayDir, planeNormal, glm::vec3{0.f});
+
+    glm::vec4 clickPos{0.f};
+    if (intersectionPt.has_value()) {
+      clickPos = glm::vec4(intersectionPt.value(), 0.f);
+    }
+
+    if (mouseData.left) {
+      clickPos.w = 1.f;
+    } else if (mouseData.right) {
+      clickPos.w = 2.f;
+    } else if (mouseData.middle) {
+      clickPos.w = 3.f;
+    } else {
+      clickPos.w = 0.f;
+    }
+
+    compute.ubo.clickData = clickPos;
+  }
+
   std::memcpy(compute.uniformBuffers[currentFrameIndex]->getMappedData(),
               &compute.ubo, sizeof(compute.ubo));
-  glm::vec2 normalizedMousePos{
-      2.f * mouseData.mousePos.x / static_cast<float>(width) - 1.f,
-      2.f * mouseData.mousePos.y / static_cast<float>(height) - 1.f};
-
-  glm::vec4 rayStart = camera.getInverseView() *
-                       glm::inverse(camera.getProjection()) *
-                       glm::vec4(normalizedMousePos, 0.f, 1.f);
-  rayStart /= rayStart.w;
-  glm::vec4 rayEnd = camera.getInverseView() *
-                     glm::inverse(camera.getProjection()) *
-                     glm::vec4(normalizedMousePos, 0.1f, 1.f);
-  rayEnd /= rayEnd.w;
-
-  glm::vec3 rayDir(glm::normalize(rayEnd - rayStart));
-
-  glm::vec3 planeNormal{camera.getView()[0][2], camera.getView()[1][2],
-                        camera.getView()[2][2]};
-  std::optional<glm::vec3> intersectionPt =
-      ::rayPlaneIntersection(rayStart, rayDir, planeNormal, glm::vec3{0.f});
-
-  glm::vec4 clickPos{0.f};
-  if (intersectionPt.has_value()) {
-    clickPos = glm::vec4(intersectionPt.value(), 0.f);
-  }
-
-  if (mouseData.left) {
-    clickPos.w = 1.f;
-  } else if (mouseData.right) {
-    clickPos.w = 2.f;
-  } else if (mouseData.middle) {
-    clickPos.w = 3.f;
-  } else {
-    clickPos.w = 0.f;
-  }
-
-  compute.ubo.clickData = clickPos;
 }
 
 void VgeExample::updateDynamicUbo() {
@@ -1366,7 +1364,11 @@ void VgeExample::onUpdateUIOverlay() {
                             0.001f, "%.3f");
       uiOverlay->inputFloat("tailSampleTime", &opts.tailSampleTime, 0.001f,
                             "%.3f");
-      if (uiOverlay->inputFloat("moveSpeed", &opts.moveSpeed, 0.01f, "%.3f")) {
+      uiOverlay->inputFloat("gravity", &opts.gravity, 0.001f, "%.3f");
+      uiOverlay->inputFloat("power", &opts.power, 0.01f, "%.3f");
+      uiOverlay->inputFloat("soften", &opts.soften, 0.0001f, "%.4f");
+      if (uiOverlay->inputFloat("keyboardMoveSpeed", &opts.moveSpeed, 0.01f,
+                                "%.3f")) {
         cameraController.moveSpeed = this->opts.moveSpeed;
       }
       uiOverlay->inputFloat("lineWidth", &opts.lineWidth, 0.1f, "%.3f");
@@ -1393,9 +1395,6 @@ void VgeExample::onUpdateUIOverlay() {
       }
       uiOverlay->inputFloat("rotationVelocity", &opts.rotationVelocity,
                             0.000001f, "%.6f");
-      uiOverlay->inputFloat("gravity", &opts.gravity, 0.001f, "%.3f");
-      uiOverlay->inputFloat("power", &opts.power, 0.01f, "%.3f");
-      uiOverlay->inputFloat("soften", &opts.soften, 0.0001f, "%.4f");
       uiOverlay->inputInt("tailSize", &opts.tailSize, 1);
       if (ImGui::TreeNodeEx("integrator", ImGuiTreeNodeFlags_DefaultOpen)) {
         uiOverlay->radioButton("euler", &opts.integrator, 1);
@@ -1423,9 +1422,6 @@ void VgeExample::setOptions(const std::optional<Options>& opts) {
     numAttractors = static_cast<uint32_t>(this->opts.numAttractors);
     numParticles = static_cast<uint32_t>(this->opts.numParticles);
     rotationVelocity = this->opts.rotationVelocity;
-    gravity = this->opts.gravity;
-    power = this->opts.power;
-    soften = this->opts.soften;
     tailSampleTime = this->opts.tailSampleTime;
     tailSize = static_cast<uint32_t>(this->opts.tailSize);
     integrator = static_cast<uint32_t>(this->opts.integrator);

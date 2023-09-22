@@ -30,10 +30,13 @@ layout (binding = 2) uniform UBO
 	vec4 clickData;
 	float dt;
 	int particleCount;
+	float gravity;
+	float power;
+	float soften;
 } ubo;
 
-layout (constant_id = 4) const int INTEGRATOR = 0;
-layout (constant_id = 5) const int INTEGRATE_STEP = 0;
+layout (constant_id = 1) const int INTEGRATOR = 0;
+layout (constant_id = 2) const int INTEGRATE_STEP = 0;
 
 void main() 
 {
