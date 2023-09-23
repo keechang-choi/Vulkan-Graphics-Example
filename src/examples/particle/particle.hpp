@@ -43,9 +43,8 @@ struct DynamicUboElt {
 struct Particle {
   glm::vec4 pos;
   glm::vec4 vel;
-  glm::vec4 pk[4];
-  glm::vec4 vk[4];
-  glm::vec4 attractionIndex;
+  glm::vec4 pk[1];
+  glm::vec4 vk[1];
   glm::vec4 attractionWeight;
 };
 

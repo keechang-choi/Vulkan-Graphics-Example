@@ -7,7 +7,6 @@ struct Particle
 	vec4 vel;
 	vec4 pk[4];
 	vec4 vk[4];
-	vec4 attractionIndex;
 	vec4 attractionWeight;
 };
 
