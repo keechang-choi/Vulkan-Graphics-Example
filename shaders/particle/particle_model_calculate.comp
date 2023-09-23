@@ -15,8 +15,8 @@ struct Particle
 {
 	vec4 pos;
 	vec4 vel;
-	vec4 pk[1];
-	vec4 vk[1];
+	vec4 pk[4];
+	vec4 vk[4];
 	vec4 attractionWeight;
 };
 
