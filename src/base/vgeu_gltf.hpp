@@ -152,6 +152,11 @@ struct Primitive {
 };
 
 #define MAX_JOINT_MATRICES 64
+struct MeshMatricesData {
+  glm::mat4 matrix{1.f};
+  glm::mat4 jointMatrices[MAX_JOINT_MATRICES]{};
+  glm::vec4 jointcount{0.f};
+};
 struct Mesh {
   // NOTE: vector of Primitive class itself
   std::vector<Primitive> primitives;
@@ -161,11 +166,7 @@ struct Mesh {
   // we need separate uniformBuffers and descriptorSets
   std::vector<std::unique_ptr<VgeuBuffer>> uniformBuffers;
   std::vector<vk::raii::DescriptorSet> descriptorSets;
-  struct UniformBlock {
-    glm::mat4 matrix{1.f};
-    glm::mat4 jointMatrices[MAX_JOINT_MATRICES]{};
-    glm::vec4 jointcount{0.f};
-  } uniformBlock;
+  MeshMatricesData uniformBlock;
 
   Mesh(VmaAllocator allocator, glm::mat4 matrix, const uint32_t framesInFlight);
 };
@@ -305,6 +306,8 @@ class Model {
   Dimensions getDimensions() const { return dimensions; };
   uint32_t getVertexCount() const { return vertexBuffer->getInstanceCount(); }
   uint32_t getIndexCount() const { return indexBuffer->getInstanceCount(); }
+
+  void getSkinMatrices(std::vector<MeshMatricesData>& skinMatricesData) const;
 
   // NOTE: moved from globals to model class member.
   // TODO: all models should share those values, better to move it out of model

@@ -81,6 +81,11 @@ struct Options {
   int32_t desiredSharedDataSize = 256u;
 };
 
+struct AnimatedVertex {
+  glm::vec4 pos;
+  glm::vec4 normal;
+  glm::vec4 tangent;
+};
 class VgeExample : public VgeBase {
  public:
   VgeExample();
@@ -163,6 +168,11 @@ class VgeExample : public VgeBase {
     vk::raii::Pipeline pipelineIntegrate = nullptr;
 
     vk::raii::Pipeline pipelineModelAnimate = nullptr;
+    std::vector<vgeu::glTF::MeshMatricesData> skinMatricesData;
+    std::vector<std::unique_ptr<vgeu::VgeuBuffer>> skinMatricesBuffers;
+    std::vector<AnimatedVertex> animatedVertices;
+    std::vector<std::unique_ptr<vgeu::VgeuBuffer>> animatedVertexBuffers;
+
     vk::raii::Pipeline pipelineModelCalculate = nullptr;
     vk::raii::Pipeline pipelineModelIntegrate = nullptr;
     // TOOD: check alignment for std140

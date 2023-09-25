@@ -1364,7 +1364,7 @@ void Node::update(const uint32_t frameIndex, bool isBindPose) {
       std::memcpy(mesh->uniformBuffers[frameIndex]->getMappedData(),
                   &mesh->uniformBlock, sizeof(mesh->uniformBlock));
     } else {
-      Mesh::UniformBlock emptySkinUniformBlock;
+      MeshMatricesData emptySkinUniformBlock;
       emptySkinUniformBlock.matrix = m;
       std::memcpy(mesh->uniformBuffers[frameIndex]->getMappedData(),
                   &emptySkinUniformBlock, sizeof(emptySkinUniformBlock));
@@ -1546,5 +1546,18 @@ void Model::bindSSBO(const vk::raii::CommandBuffer& cmdBuffer,
   cmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, pipelineLayout,
                                bindSet /*sets*/, *descriptorSetVertex, nullptr);
 }
+
+void Model::getSkinMatrices(
+    std::vector<MeshMatricesData>& skinMatricesData) const {
+  if (skinMatricesData.size() != skins.size()) {
+    skinMatricesData.resize(skins.size());
+  }
+  for (const Node* node : linearNodes) {
+    if (node->skinIndex != -1) {
+      skinMatricesData[node->skinIndex] = node->mesh->uniformBlock;
+    }
+  }
+}
+
 }  // namespace glTF
 }  // namespace vgeu
