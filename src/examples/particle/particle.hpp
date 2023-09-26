@@ -76,9 +76,10 @@ struct Options {
   float moveSpeed = 10.f;
   float lineWidth = 1.0f;
   int32_t attractionType = 0;
-  int32_t bindingModel = 2;
+  int32_t bindingModel = 4;
   float pointSize[2] = {1.f, 128.f};
   int32_t desiredSharedDataSize = 256u;
+  float animationSpeed = 0.1;
 };
 
 struct AnimatedVertex {

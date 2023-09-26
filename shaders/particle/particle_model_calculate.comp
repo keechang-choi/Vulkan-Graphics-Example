@@ -1,7 +1,23 @@
 
 #version 450
 
-struct Vertex{
+struct VertexIn{
+	vec4 pos; // w as skinIndex
+	vec4 normal; // w not used
+	vec4 color;  
+	vec4 joint0;
+	vec4 weight0;
+	vec4 tangent;
+	vec2 uv;
+};
+
+struct MeshMatrices{
+	mat4 nodeMatrix;
+	mat4 jointMatrices[64];
+	vec4 jointCount;
+};
+
+struct AnimatedVertex{
 	vec4 pos; // w as skinIndex
 	vec4 normal; // w not used
 	vec4 tangent;
@@ -39,10 +55,6 @@ layout (set = 0, binding = 2) uniform UBO
 	float soften;
 } ubo;
 
-// animated vertices
-layout (std430, set = 3, binding = 1) readonly buffer VertexSSBO{
-	Vertex vertices[ ];
-};
 // NOTE: std140 alignment rounded up to size of vec4
 layout (std430, set = 1, binding = 1) readonly buffer IndexSSBO{
 	uint indices[ ];
@@ -55,6 +67,11 @@ layout (set = 2, binding = 0) uniform ModelUbo
 	uint numVertices;
 	uint numIndices;
 } modelUbo;
+
+// animated vertices
+layout (std430, set = 3, binding = 1) readonly buffer AnimatedVertexSSBO{
+	AnimatedVertex vertices[ ];
+};
 
 layout (constant_id = 0) const int SHARED_DATA_SIZE = 512;
 // TODO: check being greater than local group size intended for calculation and approximation.

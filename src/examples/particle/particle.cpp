@@ -69,7 +69,7 @@ VgeExample::~VgeExample() {}
 void VgeExample::initVulkan() {
   cameraController.moveSpeed = opts.moveSpeed;
   // camera setup
-  camera.setViewTarget(glm::vec3{0.f, -20.f, -.01f}, glm::vec3{0.f, 0.f, 0.f});
+  camera.setViewTarget(glm::vec3{0.f, -10.f, -20.f}, glm::vec3{0.f, 0.f, 0.f});
   camera.setPerspectiveProjection(
       glm::radians(60.f),
       static_cast<float>(width) / (static_cast<float>(height)), 0.1f, 256.f);
@@ -514,19 +514,25 @@ void VgeExample::loadAssets() {
   fox->additionalBufferUsageFlags = vk::BufferUsageFlagBits::eStorageBuffer;
   fox->loadFromFile(getAssetsPath() + "/models/fox-normal/fox-normal.gltf",
                     glTFLoadingFlags);
-
   {
     ModelInstance modelInstance{};
     modelInstance.model = fox;
-    modelInstance.name = "fox1";
-    modelInstance.animationIndex = 2;
+    modelInstance.name = "fox0";
+    modelInstance.animationIndex = 0;
     addModelInstance(modelInstance);
   }
 
+  std::shared_ptr<vgeu::glTF::Model> fox1;
+  fox1 = std::make_shared<vgeu::glTF::Model>(
+      device, globalAllocator->getAllocator(), queue, commandPool,
+      MAX_CONCURRENT_FRAMES);
+  fox1->additionalBufferUsageFlags = vk::BufferUsageFlagBits::eStorageBuffer;
+  fox1->loadFromFile(getAssetsPath() + "/models/fox-normal/fox-normal.gltf",
+                     glTFLoadingFlags);
   {
     ModelInstance modelInstance{};
-    modelInstance.model = fox;
-    modelInstance.name = "fox1-1";
+    modelInstance.model = fox1;
+    modelInstance.name = "fox1";
     modelInstance.animationIndex = 2;
     addModelInstance(modelInstance);
   }
@@ -536,6 +542,7 @@ void VgeExample::loadAssets() {
   fox2 = std::make_shared<vgeu::glTF::Model>(
       device, globalAllocator->getAllocator(), queue, commandPool,
       MAX_CONCURRENT_FRAMES);
+  fox2->additionalBufferUsageFlags = vk::BufferUsageFlagBits::eStorageBuffer;
   fox2->loadFromFile(getAssetsPath() + "/models/fox-normal/fox-normal.gltf",
                      glTFLoadingFlags);
   {
@@ -543,6 +550,21 @@ void VgeExample::loadAssets() {
     modelInstance.model = fox2;
     modelInstance.name = "fox2";
     modelInstance.animationIndex = -1;
+    addModelInstance(modelInstance);
+  }
+
+  std::shared_ptr<vgeu::glTF::Model> fox3;
+  fox3 = std::make_shared<vgeu::glTF::Model>(
+      device, globalAllocator->getAllocator(), queue, commandPool,
+      MAX_CONCURRENT_FRAMES);
+  fox3->additionalBufferUsageFlags = vk::BufferUsageFlagBits::eStorageBuffer;
+  fox3->loadFromFile(getAssetsPath() + "/models/fox-normal/fox-normal.gltf",
+                     glTFLoadingFlags);
+  {
+    ModelInstance modelInstance{};
+    modelInstance.model = fox3;
+    modelInstance.name = "fox3";
+    modelInstance.animationIndex = 1;
     addModelInstance(modelInstance);
   }
 
@@ -838,13 +860,13 @@ void VgeExample::createVertexSCI() {
 }
 
 void VgeExample::setupDynamicUbo() {
-  const float foxScale = 0.05f;
+  const float foxScale = 0.1f;
   glm::vec3 up{0.f, -1.f, 0.f};
   glm::vec3 right{1.f, 0.f, 0.f};
   glm::vec3 forward{0.f, 0.f, 1.f};
   dynamicUbo.resize(modelInstances.size());
   {
-    size_t instanceIndex = findInstances("fox1")[0];
+    size_t instanceIndex = findInstances("fox0")[0];
     dynamicUbo[instanceIndex].modelMatrix =
         glm::translate(glm::mat4{1.f}, glm::vec3{-3.f, 0.f, 0.f});
     dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
@@ -860,7 +882,7 @@ void VgeExample::setupDynamicUbo() {
         modelInstances[instanceIndex].model->getIndexCount();
   }
   {
-    size_t instanceIndex = findInstances("fox1-1")[0];
+    size_t instanceIndex = findInstances("fox1")[0];
     dynamicUbo[instanceIndex].modelMatrix =
         glm::translate(glm::mat4{1.f}, glm::vec3{3.f, 0.f, 0.f});
     dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
@@ -887,6 +909,26 @@ void VgeExample::setupDynamicUbo() {
                    glm::vec3{foxScale, -foxScale, foxScale});
     // default
     dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
+    dynamicUbo[instanceIndex].numVertices =
+        modelInstances[instanceIndex].model->getVertexCount();
+    dynamicUbo[instanceIndex].numIndices =
+        modelInstances[instanceIndex].model->getIndexCount();
+  }
+  {
+    size_t instanceIndex = findInstances("fox3")[0];
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::translate(glm::mat4{1.f}, glm::vec3{+2.f, 0.f, 0.f});
+    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
+        dynamicUbo[instanceIndex].modelMatrix, glm::radians(180.f), up);
+    // FlipY manually
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+                   glm::vec3{foxScale, -foxScale, foxScale});
+    dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f, 1.f, 1.f, 0.3f};
+    dynamicUbo[instanceIndex].numVertices =
+        modelInstances[instanceIndex].model->getVertexCount();
+    dynamicUbo[instanceIndex].numIndices =
+        modelInstances[instanceIndex].model->getIndexCount();
   }
   {
     float appleScale = 100.f;
@@ -1351,10 +1393,12 @@ void VgeExample::buildComputeCommandBuffers() {
     // pre compute animation
     compute.cmdBuffers[currentFrameIndex].bindPipeline(
         vk::PipelineBindPoint::eCompute, *compute.pipelineModelAnimate);
+
     // bind SSBO for particle attraction, input vertices
     modelInstances[opts.bindingModel].model->bindSSBO(
         compute.cmdBuffers[currentFrameIndex], *compute.pipelineLayout,
         1 /*set*/);
+
     // bind SSBO for skin matrix and animated vertices
     compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
         vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 3 /*set*/,
@@ -1369,8 +1413,11 @@ void VgeExample::buildComputeCommandBuffers() {
     vk::BufferMemoryBarrier bufferBarrier(
         vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eShaderRead,
         VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
-        compute.storageBuffers[currentFrameIndex]->getBuffer(), 0ull,
-        compute.storageBuffers[currentFrameIndex]->getBufferSize());
+        compute.animatedVertexBuffers[currentFrameIndex][opts.bindingModel]
+            ->getBuffer(),
+        0ull,
+        compute.animatedVertexBuffers[currentFrameIndex][opts.bindingModel]
+            ->getBufferSize());
     compute.cmdBuffers[currentFrameIndex].pipelineBarrier(
         vk::PipelineStageFlagBits::eComputeShader,
         vk::PipelineStageFlagBits::eComputeShader, vk::DependencyFlags{},
@@ -1385,7 +1432,7 @@ void VgeExample::buildComputeCommandBuffers() {
     } else {
       compute.cmdBuffers[currentFrameIndex].bindPipeline(
           vk::PipelineBindPoint::eCompute, *compute.pipelineModelCalculate);
-      // bind SSBO for particle attraction
+      // bind SSBO for particle attraction (indices)
       modelInstances[opts.bindingModel].model->bindSSBO(
           compute.cmdBuffers[currentFrameIndex], *compute.pipelineLayout,
           1 /*set*/);
@@ -1532,21 +1579,22 @@ void VgeExample::updateComputeUbo() {
 }
 
 void VgeExample::updateDynamicUbo() {
-  float animationTimer = animationTime - animationLastTime;
+  float animationTimer =
+      (animationTime - animationLastTime) * opts.animationSpeed;
   // model move
 
   glm::vec3 up{0.f, -1.f, 0.f};
   // deg per sec;
-  float rotationVelocity = 10.f;
+  float rotationVelocity = 50.f;
   {
-    size_t instanceIndex = findInstances("fox1")[0];
-    // dynamicUbo[instanceIndex].modelMatrix =
-    //     glm::rotate(glm::mat4{1.f},
-    //                 glm::radians(rotationVelocity) * animationTimer, up) *
-    //     dynamicUbo[instanceIndex].modelMatrix;
+    size_t instanceIndex = findInstances("fox0")[0];
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::rotate(glm::mat4{1.f},
+                    glm::radians(rotationVelocity) * animationTimer, up) *
+        dynamicUbo[instanceIndex].modelMatrix;
   }
   {
-    size_t instanceIndex = findInstances("fox1-1")[0];
+    size_t instanceIndex = findInstances("fox1")[0];
     dynamicUbo[instanceIndex].modelMatrix =
         glm::rotate(glm::mat4{1.f},
                     glm::radians(rotationVelocity) * animationTimer, up) *
@@ -1698,6 +1746,10 @@ void VgeExample::onUpdateUIOverlay() {
       uiOverlay->inputFloat("gravity", &opts.gravity, 0.001f, "%.3f");
       uiOverlay->inputFloat("power", &opts.power, 0.01f, "%.3f");
       uiOverlay->inputFloat("soften", &opts.soften, 0.0001f, "%.4f");
+
+      uiOverlay->inputFloat("animationSpeed", &opts.animationSpeed, 0.001f,
+                            "%.3f");
+
       if (uiOverlay->inputFloat("keyboardMoveSpeed", &opts.moveSpeed, 0.01f,
                                 "%.3f")) {
         cameraController.moveSpeed = this->opts.moveSpeed;
