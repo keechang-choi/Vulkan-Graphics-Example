@@ -65,7 +65,10 @@ void Texture::fromglTFImage(tinygltf::Image& gltfImage, std::string path,
     assert(gltfImage.component == 4 && "failed: image channel is not RGBA");
     vk::DeviceSize bufferSize = gltfImage.image.size();
     uint32_t pixelCount = gltfImage.width * gltfImage.height;
-    uint32_t pixelSize = 4;
+    uint32_t pixelSize = gltfImage.bits / 8 * gltfImage.component;
+    assert(pixelSize == 4 || pixelSize == 8);
+    vk::Format format = vk::Format::eR8G8B8A8Unorm;
+    if (pixelSize == 8) format = vk::Format::eR16G16B16A16Unorm;
     assert(bufferSize == pixelCount * pixelSize);
 
     width = gltfImage.width;
@@ -86,8 +89,8 @@ void Texture::fromglTFImage(tinygltf::Image& gltfImage, std::string path,
                   stagingBuffer.getBufferSize());
 
       vgeuImage = std::make_unique<VgeuImage>(
-          device, allocator, vk::Format::eR8G8B8A8Unorm,
-          vk::Extent2D(width, height), vk::ImageTiling::eOptimal,
+          device, allocator, format, vk::Extent2D(width, height),
+          vk::ImageTiling::eOptimal,
           vk::ImageUsageFlagBits::eSampled |
               vk::ImageUsageFlagBits::eTransferSrc |
               vk::ImageUsageFlagBits::eTransferDst,

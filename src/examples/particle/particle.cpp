@@ -621,6 +621,23 @@ void VgeExample::loadAssets() {
     modelInstance.name = "bone5";
     addModelInstance(modelInstance);
   }
+
+  std::shared_ptr<vgeu::glTF::Model> dutchShipMedium;
+  dutchShipMedium = std::make_shared<vgeu::glTF::Model>(
+      device, globalAllocator->getAllocator(), queue, commandPool,
+      MAX_CONCURRENT_FRAMES);
+  dutchShipMedium->additionalBufferUsageFlags =
+      vk::BufferUsageFlagBits::eStorageBuffer;
+  dutchShipMedium->loadFromFile(
+      getAssetsPath() +
+          "/models/dutch_ship_medium_1k/dutch_ship_medium_1k.gltf",
+      glTFLoadingFlags);
+  {
+    ModelInstance modelInstance{};
+    modelInstance.model = dutchShipMedium;
+    modelInstance.name = "dutchShipMedium";
+    addModelInstance(modelInstance);
+  }
 }
 
 void VgeExample::createStorageBuffers() {
@@ -946,8 +963,8 @@ void VgeExample::setupDynamicUbo() {
     dynamicUbo[instanceIndex].numIndices =
         modelInstances[instanceIndex].model->getIndexCount();
   }
+  float boneScale = 5.f;
   {
-    float boneScale = 5.f;
     size_t instanceIndex = findInstances("bone1")[0];
     dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
         dynamicUbo[instanceIndex].modelMatrix, glm::radians(90.f), forward);
@@ -961,7 +978,6 @@ void VgeExample::setupDynamicUbo() {
         modelInstances[instanceIndex].model->getIndexCount();
   }
   {
-    float boneScale = 5.f;
     size_t instanceIndex = findInstances("bone4")[0];
     dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
         dynamicUbo[instanceIndex].modelMatrix, glm::radians(90.f), right);
@@ -975,12 +991,29 @@ void VgeExample::setupDynamicUbo() {
         modelInstances[instanceIndex].model->getIndexCount();
   }
   {
-    float boneScale = 5.f;
     size_t instanceIndex = findInstances("bone5")[0];
     // FlipY manually
     dynamicUbo[instanceIndex].modelMatrix =
         glm::scale(dynamicUbo[instanceIndex].modelMatrix,
                    glm::vec3{boneScale, -boneScale, boneScale});
+    dynamicUbo[instanceIndex].numVertices =
+        modelInstances[instanceIndex].model->getVertexCount();
+    dynamicUbo[instanceIndex].numIndices =
+        modelInstances[instanceIndex].model->getIndexCount();
+  }
+  float shipScale = 1.f;
+  {
+    size_t instanceIndex = findInstances("dutchShipMedium")[0];
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::translate(glm::mat4{1.f}, glm::vec3{0.f, 0.f, 0.f});
+    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
+        dynamicUbo[instanceIndex].modelMatrix, glm::radians(180.f), up);
+    // FlipY manually
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+                   glm::vec3{shipScale, -shipScale, shipScale});
+    // default
+    dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
     dynamicUbo[instanceIndex].numVertices =
         modelInstances[instanceIndex].model->getVertexCount();
     dynamicUbo[instanceIndex].numIndices =
@@ -1599,6 +1632,13 @@ void VgeExample::updateDynamicUbo() {
   }
   {
     size_t instanceIndex = findInstances("fox1")[0];
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::rotate(glm::mat4{1.f},
+                    glm::radians(rotationVelocity) * animationTimer, up) *
+        dynamicUbo[instanceIndex].modelMatrix;
+  }
+  {
+    size_t instanceIndex = findInstances("dutchShipMedium")[0];
     dynamicUbo[instanceIndex].modelMatrix =
         glm::rotate(glm::mat4{1.f},
                     glm::radians(rotationVelocity) * animationTimer, up) *
