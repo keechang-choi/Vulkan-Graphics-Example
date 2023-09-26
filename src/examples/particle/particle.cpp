@@ -69,7 +69,7 @@ VgeExample::~VgeExample() {}
 void VgeExample::initVulkan() {
   cameraController.moveSpeed = opts.moveSpeed;
   // camera setup
-  camera.setViewTarget(glm::vec3{0.f, -10.f, -20.f}, glm::vec3{0.f, 0.f, 0.f});
+  camera.setViewTarget(glm::vec3{0.f, -20.f, -20.f}, glm::vec3{0.f, 0.f, 0.f});
   camera.setPerspectiveProjection(
       glm::radians(60.f),
       static_cast<float>(width) / (static_cast<float>(height)), 0.1f, 256.f);
@@ -702,11 +702,15 @@ void VgeExample::createStorageBuffers() {
       velocity += rot * rotationVelocity;
       particle.pos = glm::vec4(position, mass);
       particle.vel = glm::vec4(velocity, colorOffset);
-      // mesh attraction uniform distributed region
-      float r1 = uniformDist(rndEngine);
-      float r2 = uniformDist(rndEngine);
-      particle.attractionWeight.x = std::sqrt(r1) * (1.f - r2);
-      particle.attractionWeight.y = std::sqrt(r1) * r2;
+      if (attractionType == 1) {
+        // mesh attraction uniform distributed region
+        float r1 = uniformDist(rndEngine);
+        float r2 = uniformDist(rndEngine);
+        particle.attractionWeight.x = std::sqrt(r1) * (1.f - r2);
+        particle.attractionWeight.y = std::sqrt(r1) * r2;
+        // initial pos
+        particle.pk[1] = particle.pos;
+      }
     }
   }
 

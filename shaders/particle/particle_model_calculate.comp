@@ -121,6 +121,8 @@ void main()
 	}else if(ubo.clickData.w == 2.0){
 		targetPos = ubo.clickData.xyz;
 		dirSign = -1.0;
+	}else if(ubo.clickData.w == 3.0){
+		targetPos = particlesIn[index].pk[1].xyz;
 	}
 	vec3 r = targetPos-position.xyz;
 	acceleration.xyz = ubo.gravity * dirSign * normalize(r) * pow(dot(r, r), 0.5) - 
