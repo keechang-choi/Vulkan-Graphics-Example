@@ -1549,6 +1549,11 @@ void Model::bindSSBO(const vk::raii::CommandBuffer& cmdBuffer,
 
 void Model::getSkinMatrices(
     std::vector<MeshMatricesData>& skinMatricesData) const {
+  if (skins.size() == 0) {
+    // dummy
+    skinMatricesData.resize(1);
+    return;
+  }
   if (skinMatricesData.size() != skins.size()) {
     skinMatricesData.resize(skins.size());
   }

@@ -286,7 +286,7 @@ void VgeExample::prepareCompute() {
   {
     vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
                                             *compute.skinDescriptorSetLayout);
-    compute.descriptorSets.resize(MAX_CONCURRENT_FRAMES);
+    compute.skinDescriptorSets.resize(MAX_CONCURRENT_FRAMES);
     for (size_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
       compute.skinDescriptorSets[i].reserve(modelInstances.size());
       for (size_t j = 0; j < modelInstances.size(); j++) {
@@ -301,9 +301,9 @@ void VgeExample::prepareCompute() {
         animatedVertexBufferInfos;
     animatedVertexBufferInfos.resize(compute.skinDescriptorSets.size());
     for (size_t i = 0; i < compute.skinDescriptorSets.size(); i++) {
-      skinMatricesBufferInfos.reserve(skinMatricesBufferInfos[i].size());
-      animatedVertexBufferInfos.reserve(skinMatricesBufferInfos[i].size());
-      for (size_t j = 0; j < skinMatricesBufferInfos[i].size(); j++) {
+      skinMatricesBufferInfos.reserve(compute.skinDescriptorSets[i].size());
+      animatedVertexBufferInfos.reserve(compute.skinDescriptorSets[i].size());
+      for (size_t j = 0; j < compute.skinDescriptorSets[i].size(); j++) {
         skinMatricesBufferInfos[i].push_back(
             compute.skinMatricesBuffers[i][j]->descriptorInfo());
         animatedVertexBufferInfos[i].push_back(
@@ -320,7 +320,7 @@ void VgeExample::prepareCompute() {
             vk::DescriptorType::eStorageBuffer, nullptr,
             skinMatricesBufferInfos[i][j]);
         writeDescriptorSets.emplace_back(
-            *compute.animatedVertexBuffers[i][j], 1 /*binding*/, 0,
+            *compute.skinDescriptorSets[i][j], 1 /*binding*/, 0,
             vk::DescriptorType::eStorageBuffer, nullptr,
             animatedVertexBufferInfos[i][j]);
       }
@@ -412,6 +412,24 @@ void VgeExample::prepareCompute() {
         compute.pipelineIntegrate =
             vk::raii::Pipeline(device, pipelineCache, computePipelineCI);
       }
+      // compute animation
+      auto compIntegrateCode =
+          vgeu::readFile(getShadersPath() + "/particle/model_animate.comp.spv");
+      vk::raii::ShaderModule compIntegrateShaderModule =
+          vgeu::createShaderModule(device, compIntegrateCode);
+      vk::SpecializationInfo specializationInfo(
+          specializationMapEntries,
+          vk::ArrayProxyNoTemporaries<const SpecializationData>(
+              specializationData));
+      vk::PipelineShaderStageCreateInfo computeShaderStageCI(
+          vk::PipelineShaderStageCreateFlags{},
+          vk::ShaderStageFlagBits::eCompute, *compIntegrateShaderModule, "main",
+          &specializationInfo);
+      vk::ComputePipelineCreateInfo computePipelineCI(vk::PipelineCreateFlags{},
+                                                      computeShaderStageCI,
+                                                      *compute.pipelineLayout);
+      compute.pipelineModelAnimate =
+          vk::raii::Pipeline(device, pipelineCache, computePipelineCI);
     } else if (attractionType == 1) {
       {
         auto compCalculateCode = vgeu::readFile(
@@ -756,7 +774,7 @@ void VgeExample::createStorageBuffers() {
     for (auto i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
       compute.animatedVertexBuffers[i].reserve(modelInstances.size());
       for (size_t j = 0; j < modelInstances.size(); j++) {
-        compute.animatedVertexBuffers[j].push_back(
+        compute.animatedVertexBuffers[i].push_back(
             std::move(std::make_unique<vgeu::VgeuBuffer>(
                 globalAllocator->getAllocator(), sizeof(AnimatedVertex),
                 modelInstances[j].model->getVertexCount(),

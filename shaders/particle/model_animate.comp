@@ -1,0 +1,118 @@
+
+#version 450
+
+struct VertexIn{
+	vec4 pos; // w as skinIndex
+	vec4 normal; // w not used
+	vec4 color;  
+	vec4 joint0;
+	vec4 weight0;
+	vec4 tangent;
+	vec2 uv;
+};
+
+struct VertexOut{
+	vec4 pos; // w as skinIndex
+	vec4 normal; // w not used
+	vec4 tangent;
+};
+
+struct MeshMatrices{
+	mat4 nodeMatrix;
+	mat4 jointMatrices[64];
+	vec4 jointCount;
+};
+
+// // Binding 0 : Position storage buffer prev frame
+// layout(std140, set = 0, binding = 0) readonly buffer SSBOIn
+// {
+//    Particle particlesIn[ ];
+// };
+
+// // Binding 1 : Position storage buffer
+// layout(std140, set = 0, binding = 1) buffer SSBO
+// {
+//    Particle particles[ ];
+// };
+
+
+layout (set = 0, binding = 2) uniform UBO 
+{
+	vec4 clickData;
+	float dt;
+	int particleCount;
+	float gravity;
+	float power;
+	float soften;
+} ubo;
+
+layout (std430, set = 1, binding = 0) readonly buffer VertexInSSBO{
+	VertexIn verticesIn[ ];
+};
+// NOTE: std140 alignment rounded up to size of vec4
+layout (std430, set = 1, binding = 1) readonly buffer IndexSSBO{
+	uint indices[ ];
+};
+
+layout (set = 2, binding = 0) uniform ModelUbo 
+{
+	mat4 modelMatrix;
+	vec4 modelColor;
+	uint numVertices;
+	uint numIndices;
+} modelUbo;
+
+
+layout (std430, set = 3, binding = 0) readonly buffer SkinSSBO{
+	MeshMatrices meshMatrices[ ];
+};
+layout (std430, set = 3, binding = 1) writeonly buffer VertexOutSSBO{
+	VertexOut verticesOut[ ];
+};
+
+layout (constant_id = 0) const int SHARED_DATA_SIZE = 512;
+// TODO: check being greater than local group size intended for calculation and approximation.
+// const int SHARED_DATA_SIZE = 256;
+layout (constant_id = 1) const int INTEGRATOR = 0;
+layout (constant_id = 2) const int INTEGRATE_STEP = 0;
+
+layout (local_size_x_id = 3) in;
+
+// Share data between computer shader invocations to speed up caluclations
+shared vec4 sharedData[SHARED_DATA_SIZE];
+
+
+void main() 
+{
+	// Current SSBO index
+	uint index = gl_GlobalInvocationID.x;
+	// should not return early for barrier
+	if (index >= verticesIn.length()) 
+		return;	
+
+
+	VertexIn vIn = verticesIn[index];
+	int skinIndex = int(vIn.pos.w);
+	VertexOut vOut;
+	vOut.pos = vIn.pos;
+	vOut.normal = vIn.normal;
+	vOut.tangent = vIn.tangent;
+	if(skinIndex >= 0){
+		MeshMatrices eachSkinData = meshMatrices[skinIndex];
+		vec4 inJointWeights = vIn.weight0;
+		vec4 inJointIndices = vIn.joint0;
+		mat4 skinMatrix = inJointWeights.x * eachSkinData.jointMatrices[int(inJointIndices.x)] +
+			inJointWeights.y * eachSkinData.jointMatrices[int(inJointIndices.y)] +
+			inJointWeights.z * eachSkinData.jointMatrices[int(inJointIndices.z)] +
+			inJointWeights.w * eachSkinData.jointMatrices[int(inJointIndices.w)];
+		mat4 transform = eachSkinData.nodeMatrix * skinMatrix;
+		vOut.pos = transform * vec4(vIn.pos.xyz, 1.0);
+		vOut.normal = normalize(inverse(transpose(transform)) * vec4(vIn.normal.xyz, 0.0));
+		float w = vIn.tangent.w;
+		vOut.tangent = normalize(transform * vec4(vIn.tangent.xyz, 0.0));
+		vOut.tangent.w = w;
+	}
+	verticesOut[index] = vOut;
+	
+
+}
