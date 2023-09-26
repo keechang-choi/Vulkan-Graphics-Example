@@ -4,11 +4,7 @@
 struct Vertex{
 	vec4 pos; // w as skinIndex
 	vec4 normal; // w not used
-	vec4 color;  
-	vec4 joint0;
-	vec4 weight0;
 	vec4 tangent;
-	vec2 uv;
 };
 
 struct Particle
@@ -43,7 +39,8 @@ layout (set = 0, binding = 2) uniform UBO
 	float soften;
 } ubo;
 
-layout (std430, set = 1, binding = 0) readonly buffer VertexSSBO{
+// animated vertices
+layout (std430, set = 3, binding = 1) readonly buffer VertexSSBO{
 	Vertex vertices[ ];
 };
 // NOTE: std140 alignment rounded up to size of vec4

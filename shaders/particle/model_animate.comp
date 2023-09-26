@@ -23,35 +23,8 @@ struct MeshMatrices{
 	vec4 jointCount;
 };
 
-// // Binding 0 : Position storage buffer prev frame
-// layout(std140, set = 0, binding = 0) readonly buffer SSBOIn
-// {
-//    Particle particlesIn[ ];
-// };
-
-// // Binding 1 : Position storage buffer
-// layout(std140, set = 0, binding = 1) buffer SSBO
-// {
-//    Particle particles[ ];
-// };
-
-
-layout (set = 0, binding = 2) uniform UBO 
-{
-	vec4 clickData;
-	float dt;
-	int particleCount;
-	float gravity;
-	float power;
-	float soften;
-} ubo;
-
 layout (std430, set = 1, binding = 0) readonly buffer VertexInSSBO{
 	VertexIn verticesIn[ ];
-};
-// NOTE: std140 alignment rounded up to size of vec4
-layout (std430, set = 1, binding = 1) readonly buffer IndexSSBO{
-	uint indices[ ];
 };
 
 layout (set = 2, binding = 0) uniform ModelUbo 
@@ -70,17 +43,7 @@ layout (std430, set = 3, binding = 1) writeonly buffer VertexOutSSBO{
 	VertexOut verticesOut[ ];
 };
 
-layout (constant_id = 0) const int SHARED_DATA_SIZE = 512;
-// TODO: check being greater than local group size intended for calculation and approximation.
-// const int SHARED_DATA_SIZE = 256;
-layout (constant_id = 1) const int INTEGRATOR = 0;
-layout (constant_id = 2) const int INTEGRATE_STEP = 0;
-
 layout (local_size_x_id = 3) in;
-
-// Share data between computer shader invocations to speed up caluclations
-shared vec4 sharedData[SHARED_DATA_SIZE];
-
 
 void main() 
 {

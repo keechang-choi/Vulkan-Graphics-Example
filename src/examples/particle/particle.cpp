@@ -412,24 +412,6 @@ void VgeExample::prepareCompute() {
         compute.pipelineIntegrate =
             vk::raii::Pipeline(device, pipelineCache, computePipelineCI);
       }
-      // compute animation
-      auto compIntegrateCode =
-          vgeu::readFile(getShadersPath() + "/particle/model_animate.comp.spv");
-      vk::raii::ShaderModule compIntegrateShaderModule =
-          vgeu::createShaderModule(device, compIntegrateCode);
-      vk::SpecializationInfo specializationInfo(
-          specializationMapEntries,
-          vk::ArrayProxyNoTemporaries<const SpecializationData>(
-              specializationData));
-      vk::PipelineShaderStageCreateInfo computeShaderStageCI(
-          vk::PipelineShaderStageCreateFlags{},
-          vk::ShaderStageFlagBits::eCompute, *compIntegrateShaderModule, "main",
-          &specializationInfo);
-      vk::ComputePipelineCreateInfo computePipelineCI(vk::PipelineCreateFlags{},
-                                                      computeShaderStageCI,
-                                                      *compute.pipelineLayout);
-      compute.pipelineModelAnimate =
-          vk::raii::Pipeline(device, pipelineCache, computePipelineCI);
     } else if (attractionType == 1) {
       {
         auto compCalculateCode = vgeu::readFile(
@@ -469,6 +451,26 @@ void VgeExample::prepareCompute() {
             vk::PipelineCreateFlags{}, computeShaderStageCI,
             *compute.pipelineLayout);
         compute.pipelineModelIntegrate =
+            vk::raii::Pipeline(device, pipelineCache, computePipelineCI);
+      }
+      {
+        // compute animation
+        auto compIntegrateCode = vgeu::readFile(
+            getShadersPath() + "/particle/model_animate.comp.spv");
+        vk::raii::ShaderModule compIntegrateShaderModule =
+            vgeu::createShaderModule(device, compIntegrateCode);
+        vk::SpecializationInfo specializationInfo(
+            specializationMapEntries,
+            vk::ArrayProxyNoTemporaries<const SpecializationData>(
+                specializationData));
+        vk::PipelineShaderStageCreateInfo computeShaderStageCI(
+            vk::PipelineShaderStageCreateFlags{},
+            vk::ShaderStageFlagBits::eCompute, *compIntegrateShaderModule,
+            "main", &specializationInfo);
+        vk::ComputePipelineCreateInfo computePipelineCI(
+            vk::PipelineCreateFlags{}, computeShaderStageCI,
+            *compute.pipelineLayout);
+        compute.pipelineModelAnimate =
             vk::raii::Pipeline(device, pipelineCache, computePipelineCI);
       }
     }
@@ -526,6 +528,21 @@ void VgeExample::loadAssets() {
     modelInstance.model = fox;
     modelInstance.name = "fox1-1";
     modelInstance.animationIndex = 2;
+    addModelInstance(modelInstance);
+  }
+
+  // NOTE: different animation to fox1
+  std::shared_ptr<vgeu::glTF::Model> fox2;
+  fox2 = std::make_shared<vgeu::glTF::Model>(
+      device, globalAllocator->getAllocator(), queue, commandPool,
+      MAX_CONCURRENT_FRAMES);
+  fox2->loadFromFile(getAssetsPath() + "/models/fox-normal/fox-normal.gltf",
+                     glTFLoadingFlags);
+  {
+    ModelInstance modelInstance{};
+    modelInstance.model = fox2;
+    modelInstance.name = "fox2";
+    modelInstance.animationIndex = -1;
     addModelInstance(modelInstance);
   }
 
@@ -821,7 +838,7 @@ void VgeExample::createVertexSCI() {
 }
 
 void VgeExample::setupDynamicUbo() {
-  const float foxScale = 0.1f;
+  const float foxScale = 0.05f;
   glm::vec3 up{0.f, -1.f, 0.f};
   glm::vec3 right{1.f, 0.f, 0.f};
   glm::vec3 forward{0.f, 0.f, 1.f};
@@ -857,6 +874,19 @@ void VgeExample::setupDynamicUbo() {
         modelInstances[instanceIndex].model->getVertexCount();
     dynamicUbo[instanceIndex].numIndices =
         modelInstances[instanceIndex].model->getIndexCount();
+  }
+  {
+    size_t instanceIndex = findInstances("fox2")[0];
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::translate(glm::mat4{1.f}, glm::vec3{-2.f, 0.f, 0.f});
+    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
+        dynamicUbo[instanceIndex].modelMatrix, glm::radians(180.f), up);
+    // FlipY manually
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+                   glm::vec3{foxScale, -foxScale, foxScale});
+    // default
+    dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
   }
   {
     float appleScale = 100.f;
@@ -1145,6 +1175,18 @@ void VgeExample::draw() {
   updateComputeUbo();
   updateGraphicsUbo();
 
+  // update animation ssbo
+  {
+    modelInstances[opts.bindingModel].model->getSkinMatrices(
+        compute.skinMatricesData[opts.bindingModel]);
+    std::memcpy(
+        compute.skinMatricesBuffers[currentFrameIndex][opts.bindingModel]
+            ->getMappedData(),
+        compute.skinMatricesData[opts.bindingModel].data(),
+        compute.skinMatricesBuffers[currentFrameIndex][opts.bindingModel]
+            ->getBufferSize());
+  }
+
   // TODO: Fence and compute recording order
 
   //  compute recording and submitting
@@ -1305,6 +1347,35 @@ void VgeExample::buildComputeCommandBuffers() {
         vk::PipelineStageFlagBits::eComputeShader, vk::DependencyFlags{},
         nullptr, bufferBarrier, nullptr);
   }
+  if (attractionType == 1) {
+    // pre compute animation
+    compute.cmdBuffers[currentFrameIndex].bindPipeline(
+        vk::PipelineBindPoint::eCompute, *compute.pipelineModelAnimate);
+    // bind SSBO for particle attraction, input vertices
+    modelInstances[opts.bindingModel].model->bindSSBO(
+        compute.cmdBuffers[currentFrameIndex], *compute.pipelineLayout,
+        1 /*set*/);
+    // bind SSBO for skin matrix and animated vertices
+    compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+        vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 3 /*set*/,
+        *compute.skinDescriptorSets[currentFrameIndex][opts.bindingModel],
+        nullptr);
+    compute.cmdBuffers[currentFrameIndex].dispatch(
+        modelInstances[opts.bindingModel].model->getVertexCount() /
+                sharedDataSize +
+            1,
+        1, 1);
+    // memory barrier
+    vk::BufferMemoryBarrier bufferBarrier(
+        vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eShaderRead,
+        VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+        compute.storageBuffers[currentFrameIndex]->getBuffer(), 0ull,
+        compute.storageBuffers[currentFrameIndex]->getBufferSize());
+    compute.cmdBuffers[currentFrameIndex].pipelineBarrier(
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::PipelineStageFlagBits::eComputeShader, vk::DependencyFlags{},
+        nullptr, bufferBarrier, nullptr);
+  }
 
   for (size_t i = 0; i < ::mapToIntegrateSteps(integrator); i++) {
     // 1st pass
@@ -1323,6 +1394,11 @@ void VgeExample::buildComputeCommandBuffers() {
           vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 2 /*set 1*/,
           {*dynamicUboDescriptorSets[currentFrameIndex]},
           alignedSizeDynamicUboElt * opts.bindingModel);
+      // bind SSBO for skin matrix and animated vertices
+      compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+          vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 3 /*set*/,
+          *compute.skinDescriptorSets[currentFrameIndex][opts.bindingModel],
+          nullptr);
     }
     compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
         vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 0 /*set*/,
