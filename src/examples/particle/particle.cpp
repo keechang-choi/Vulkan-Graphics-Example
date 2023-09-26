@@ -188,7 +188,6 @@ void VgeExample::prepareCompute() {
     // set 1
     setLayouts.push_back(*modelInstances[0].model->descriptorSetLayoutVertex);
 
-    // TODO: remove after skin ssbo implemented
     // set 2 dynamic ubo
     {
       std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
@@ -201,11 +200,25 @@ void VgeExample::prepareCompute() {
       setLayouts.push_back(*dynamicUboDescriptorSetLayout);
     }
 
+    // set 3 skin ssbo
+    {
+      std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
+      layoutBindings.emplace_back(0 /*binding*/,
+                                  vk::DescriptorType::eStorageBuffer, 1,
+                                  vk::ShaderStageFlagBits::eCompute);
+      layoutBindings.emplace_back(1 /*binding*/,
+                                  vk::DescriptorType::eStorageBuffer, 1,
+                                  vk::ShaderStageFlagBits::eCompute);
+      vk::DescriptorSetLayoutCreateInfo layoutCI({}, layoutBindings);
+      compute.skinDescriptorSetLayout =
+          vk::raii::DescriptorSetLayout(device, layoutCI);
+      setLayouts.push_back(*compute.skinDescriptorSetLayout);
+    }
+
     // create pipelineLayout
     vk::PipelineLayoutCreateInfo pipelineLayoutCI({}, setLayouts);
     compute.pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutCI);
   }
-
   // create descriptorSets
   {
     vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
@@ -242,31 +255,77 @@ void VgeExample::prepareCompute() {
           vk::DescriptorType::eUniformBuffer, nullptr, uniformBufferInfos[i]);
     }
     device.updateDescriptorSets(writeDescriptorSets, nullptr);
+  }
 
-    // dynamic UBO
-    {
-      vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
-                                              *dynamicUboDescriptorSetLayout);
-      dynamicUboDescriptorSets.reserve(MAX_CONCURRENT_FRAMES);
-      for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
-        dynamicUboDescriptorSets.push_back(
+  // dynamic UBO
+  {
+    vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
+                                            *dynamicUboDescriptorSetLayout);
+    dynamicUboDescriptorSets.reserve(MAX_CONCURRENT_FRAMES);
+    for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      dynamicUboDescriptorSets.push_back(
+          std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
+    }
+    std::vector<vk::DescriptorBufferInfo> bufferInfos;
+    bufferInfos.reserve(dynamicUniformBuffers.size());
+    std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
+    writeDescriptorSets.reserve(dynamicUniformBuffers.size());
+    for (int i = 0; i < dynamicUniformBuffers.size(); i++) {
+      // NOTE: descriptorBufferInfo range be alignedSizeDynamicUboElt
+      bufferInfos.push_back(dynamicUniformBuffers[i]->descriptorInfo(
+          alignedSizeDynamicUboElt, 0));
+      writeDescriptorSets.emplace_back(
+          *dynamicUboDescriptorSets[i], 0, 0,
+          vk::DescriptorType::eUniformBufferDynamic, nullptr,
+          bufferInfos.back());
+    }
+    device.updateDescriptorSets(writeDescriptorSets, nullptr);
+  }
+
+  // skin ssbo
+  {
+    vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
+                                            *compute.skinDescriptorSetLayout);
+    compute.descriptorSets.resize(MAX_CONCURRENT_FRAMES);
+    for (size_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      compute.skinDescriptorSets[i].reserve(modelInstances.size());
+      for (size_t j = 0; j < modelInstances.size(); j++) {
+        compute.skinDescriptorSets[i].push_back(
             std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
       }
-      std::vector<vk::DescriptorBufferInfo> bufferInfos;
-      bufferInfos.reserve(dynamicUniformBuffers.size());
-      std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
-      writeDescriptorSets.reserve(dynamicUniformBuffers.size());
-      for (int i = 0; i < dynamicUniformBuffers.size(); i++) {
-        // NOTE: descriptorBufferInfo range be alignedSizeDynamicUboElt
-        bufferInfos.push_back(dynamicUniformBuffers[i]->descriptorInfo(
-            alignedSizeDynamicUboElt, 0));
-        writeDescriptorSets.emplace_back(
-            *dynamicUboDescriptorSets[i], 0, 0,
-            vk::DescriptorType::eUniformBufferDynamic, nullptr,
-            bufferInfos.back());
-      }
-      device.updateDescriptorSets(writeDescriptorSets, nullptr);
     }
+
+    std::vector<std::vector<vk::DescriptorBufferInfo>> skinMatricesBufferInfos;
+    skinMatricesBufferInfos.resize(compute.skinDescriptorSets.size());
+    std::vector<std::vector<vk::DescriptorBufferInfo>>
+        animatedVertexBufferInfos;
+    animatedVertexBufferInfos.resize(compute.skinDescriptorSets.size());
+    for (size_t i = 0; i < compute.skinDescriptorSets.size(); i++) {
+      skinMatricesBufferInfos.reserve(skinMatricesBufferInfos[i].size());
+      animatedVertexBufferInfos.reserve(skinMatricesBufferInfos[i].size());
+      for (size_t j = 0; j < skinMatricesBufferInfos[i].size(); j++) {
+        skinMatricesBufferInfos[i].push_back(
+            compute.skinMatricesBuffers[i][j]->descriptorInfo());
+        animatedVertexBufferInfos[i].push_back(
+            compute.animatedVertexBuffers[i][j]->descriptorInfo());
+      }
+    }
+    std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
+    writeDescriptorSets.reserve(compute.skinDescriptorSets.size() *
+                                compute.skinDescriptorSets[0].size());
+    for (size_t i = 0; i < compute.skinDescriptorSets.size(); i++) {
+      for (size_t j = 0; j < compute.skinDescriptorSets[i].size(); j++) {
+        writeDescriptorSets.emplace_back(
+            *compute.skinDescriptorSets[i][j], 0 /*binding*/, 0,
+            vk::DescriptorType::eStorageBuffer, nullptr,
+            skinMatricesBufferInfos[i][j]);
+        writeDescriptorSets.emplace_back(
+            *compute.animatedVertexBuffers[i][j], 1 /*binding*/, 0,
+            vk::DescriptorType::eStorageBuffer, nullptr,
+            animatedVertexBufferInfos[i][j]);
+      }
+    }
+    device.updateDescriptorSets(writeDescriptorSets, nullptr);
   }
 
   // create pipelines
@@ -641,6 +700,7 @@ void VgeExample::createStorageBuffers() {
         });
   }
 
+  // TODO: improve tail ssbo performance.
   // tail
   if (tailSize > 0) {
     tailData.resize(numParticles * tailSize);
@@ -667,6 +727,42 @@ void VgeExample::createStorageBuffers() {
           /*VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT*/
           VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
               VMA_ALLOCATION_CREATE_MAPPED_BIT);
+    }
+  }
+
+  // use loaded model to create skin ssbo
+  {
+    compute.skinMatricesData.resize(modelInstances.size());
+    for (size_t i = 0; i < modelInstances.size(); i++) {
+      modelInstances[i].model->getSkinMatrices(compute.skinMatricesData[i]);
+    }
+    compute.skinMatricesBuffers.resize(MAX_CONCURRENT_FRAMES);
+    for (auto i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      compute.skinMatricesBuffers[i].reserve(modelInstances.size());
+      for (size_t j = 0; j < modelInstances.size(); j++) {
+        // mapped
+        compute.skinMatricesBuffers[i].push_back(
+            std::move(std::make_unique<vgeu::VgeuBuffer>(
+                globalAllocator->getAllocator(),
+                sizeof(vgeu::glTF::MeshMatricesData),
+                compute.skinMatricesData[j].size(),
+                vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_AUTO,
+                VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                    VMA_ALLOCATION_CREATE_MAPPED_BIT)));
+      }
+    }
+    // animated vertex ssbo wo transfer and mapped ptr
+    compute.animatedVertexBuffers.resize(MAX_CONCURRENT_FRAMES);
+    for (auto i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      compute.animatedVertexBuffers[i].reserve(modelInstances.size());
+      for (size_t j = 0; j < modelInstances.size(); j++) {
+        compute.animatedVertexBuffers[j].push_back(
+            std::move(std::make_unique<vgeu::VgeuBuffer>(
+                globalAllocator->getAllocator(), sizeof(AnimatedVertex),
+                modelInstances[j].model->getVertexCount(),
+                vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_AUTO,
+                VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT)));
+      }
     }
   }
 }
@@ -820,11 +916,14 @@ void VgeExample::createDescriptorPool() {
   poolSizes.emplace_back(vk::DescriptorType::eUniformBufferDynamic,
                          MAX_CONCURRENT_FRAMES);
   poolSizes.emplace_back(vk::DescriptorType::eStorageBuffer,
-                         MAX_CONCURRENT_FRAMES * 2);
+                         MAX_CONCURRENT_FRAMES * 2 +
+                             MAX_CONCURRENT_FRAMES * modelInstances.size() * 2);
   // NOTE: need to check flag
   vk::DescriptorPoolCreateInfo descriptorPoolCI(
       vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-      MAX_CONCURRENT_FRAMES * 3 /*set globalUBO, dynamicUBO, computeUbo*/,
+      MAX_CONCURRENT_FRAMES * 3 /*set globalUBO, dynamicUBO, computeUbo*/ +
+          MAX_CONCURRENT_FRAMES *
+              modelInstances.size() /*skin & animated vertex ssbo*/,
       poolSizes);
   descriptorPool = vk::raii::DescriptorPool(device, descriptorPoolCI);
 }

@@ -167,11 +167,22 @@ class VgeExample : public VgeBase {
     std::vector<vk::raii::Pipeline> pipelineCalculate;
     vk::raii::Pipeline pipelineIntegrate = nullptr;
 
+    vk::raii::DescriptorSetLayout skinDescriptorSetLayout = nullptr;
+    // each frames in flight, each model
+    std::vector<std::vector<vk::raii::DescriptorSet>> skinDescriptorSets;
+
+    // each model, each skins
+    std::vector<std::vector<vgeu::glTF::MeshMatricesData>> skinMatricesData;
+    // each frames in flight, each model
+    std::vector<std::vector<std::unique_ptr<vgeu::VgeuBuffer>>>
+        skinMatricesBuffers;
+
+    // each frames in flight, each model
+    std::vector<std::vector<std::unique_ptr<vgeu::VgeuBuffer>>>
+        animatedVertexBuffers;
+
+    // for compute animation
     vk::raii::Pipeline pipelineModelAnimate = nullptr;
-    std::vector<vgeu::glTF::MeshMatricesData> skinMatricesData;
-    std::vector<std::unique_ptr<vgeu::VgeuBuffer>> skinMatricesBuffers;
-    std::vector<AnimatedVertex> animatedVertices;
-    std::vector<std::unique_ptr<vgeu::VgeuBuffer>> animatedVertexBuffers;
 
     vk::raii::Pipeline pipelineModelCalculate = nullptr;
     vk::raii::Pipeline pipelineModelIntegrate = nullptr;
