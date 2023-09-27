@@ -10,6 +10,11 @@ struct Particle
 	vec4 attractionWeight;
 };
 
+struct TailElt
+{
+	vec4 pos;
+};
+
 // Binding 0 : Position storage buffer prev frame
 layout(std430, binding = 0) readonly buffer SSBOIn
 {
@@ -30,7 +35,20 @@ layout (binding = 2) uniform UBO
 	float gravity;
 	float power;
 	float soften;
+	float tailTimer;
+	uint tailSize;
 } ubo;
+
+
+layout(std430, binding = 3) readonly buffer TailSSBOIn
+{
+   TailElt tailsIn[ ];
+};
+
+layout(std430, binding = 4) buffer TailSSBO
+{
+   TailElt tails[ ];
+};
 
 layout (constant_id = 1) const int INTEGRATOR = 0;
 layout (constant_id = 2) const int INTEGRATE_STEP = 0;
@@ -78,5 +96,16 @@ void main()
 		// ruth or yoshida, 4th-order symplectic
 		particles[index].pos.xyz = particles[index].pk[3].xyz;
 		particles[index].vel.xyz = particles[index].vk[3].xyz;
+	}
+	// tail update in compute shader
+	if(ubo.tailTimer == 0.0){
+		for(int i=0;i<ubo.tailSize-1;i++){
+			tails[index*ubo.tailSize + i+1] = tailsIn[index*ubo.tailSize + i];
+		}
+		tails[index*ubo.tailSize + 0].pos = particles[index].pos;
+	}else{
+		for(int i=0;i<ubo.tailSize;i++){
+			tails[index*ubo.tailSize + i] = tailsIn[index*ubo.tailSize + i];
+		}
 	}
 }

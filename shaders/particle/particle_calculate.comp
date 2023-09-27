@@ -31,6 +31,8 @@ layout (set = 0, binding = 2) uniform UBO
 	float gravity;
 	float power;
 	float soften;
+	float tailTimer;
+	uint tailSize;
 } ubo;
 
 layout (constant_id = 0) const int SHARED_DATA_SIZE = 512;

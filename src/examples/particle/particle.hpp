@@ -195,6 +195,8 @@ class VgeExample : public VgeBase {
       float gravity;
       float power;
       float soften;
+      float tailTimer;
+      uint32_t tailSize;
     } ubo;
 
   } compute;
@@ -226,20 +228,17 @@ class VgeExample : public VgeBase {
   struct TailElt {
     // xyz,w=packedColor
     glm::vec4 pos{0.f};
-    // head index just inserted at
-    float insertedAt = 0.f;
   };
   std::vector<TailElt> tailData;
   std::vector<std::unique_ptr<vgeu::VgeuBuffer>> tailBuffers;
   std::vector<uint32_t> tailIndices;
-  std::vector<std::unique_ptr<vgeu::VgeuBuffer>> tailIndexBuffers;
+  std::unique_ptr<vgeu::VgeuBuffer> tailIndexBuffer;
 
   vk::raii::Pipeline tailPipeline = nullptr;
   float tailTimer = -1.f;
   size_t tailSize = 300;
   float tailSampleTime = 0.1f;
   VertexInfos tailVertexInfos;
-  int tailFrontIndex = -1;
 
   Options opts{};
   int values_offset = 0;

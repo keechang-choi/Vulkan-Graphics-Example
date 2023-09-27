@@ -53,6 +53,8 @@ layout (set = 0, binding = 2) uniform UBO
 	float gravity;
 	float power;
 	float soften;
+	float tailTimer;
+	uint tailSize;
 } ubo;
 
 // NOTE: std140 alignment rounded up to size of vec4

@@ -30,6 +30,8 @@ layout (binding = 2) uniform UBO
 	float gravity;
 	float power;
 	float soften;
+	float tailTimer;
+	uint tailSize;
 } ubo;
 
 layout (constant_id = 1) const int INTEGRATOR = 0;

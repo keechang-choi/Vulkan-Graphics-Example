@@ -1,7 +1,6 @@
 #version 450
 
 layout (location = 0) in vec4 inPos;
-layout (location = 1) in float inInsertedAt;
 
 layout (location = 0) out vec3 outColor;
 
@@ -43,7 +42,6 @@ void main ()
 	vec4 eyePos = globalUbo.view * vec4(inPos.x, inPos.y, inPos.z, 1.0); 
 	gl_Position = globalUbo.projection * eyePos;
     float tailSize = globalUbo.tailInfo.x;
-    float tailFrontIndex = globalUbo.tailInfo.y;
-    float alpha = (tailSize - mod((tailFrontIndex + tailSize - inInsertedAt), tailSize))/tailSize;
+    float alpha = (tailSize - mod(gl_VertexIndex, tailSize))/tailSize;
 	outColor = unpackColor(inPos.w) * pow(alpha, 2.0);
 }

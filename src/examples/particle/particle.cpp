@@ -177,6 +177,13 @@ void VgeExample::prepareCompute() {
       layoutBindings.emplace_back(2 /* binding */,
                                   vk::DescriptorType::eUniformBuffer, 1,
                                   vk::ShaderStageFlagBits::eCompute);
+      // tail
+      layoutBindings.emplace_back(3 /* binding */,
+                                  vk::DescriptorType::eStorageBuffer, 1,
+                                  vk::ShaderStageFlagBits::eCompute);
+      layoutBindings.emplace_back(4 /* binding */,
+                                  vk::DescriptorType::eStorageBuffer, 1,
+                                  vk::ShaderStageFlagBits::eCompute);
 
       vk::DescriptorSetLayoutCreateInfo layoutCI(
           vk::DescriptorSetLayoutCreateFlags{}, layoutBindings);
@@ -233,9 +240,12 @@ void VgeExample::prepareCompute() {
     storageBufferInfos.reserve(compute.descriptorSets.size());
     std::vector<vk::DescriptorBufferInfo> uniformBufferInfos;
     uniformBufferInfos.reserve(compute.descriptorSets.size());
+    std::vector<vk::DescriptorBufferInfo> tailStorageBufferInfos;
+    tailStorageBufferInfos.reserve(compute.descriptorSets.size());
     for (size_t i = 0; i < compute.descriptorSets.size(); i++) {
       storageBufferInfos.push_back(compute.storageBuffers[i]->descriptorInfo());
       uniformBufferInfos.push_back(compute.uniformBuffers[i]->descriptorInfo());
+      tailStorageBufferInfos.push_back(tailBuffers[i]->descriptorInfo());
     }
     std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
     writeDescriptorSets.reserve(compute.descriptorSets.size());
@@ -253,6 +263,15 @@ void VgeExample::prepareCompute() {
       writeDescriptorSets.emplace_back(
           *compute.descriptorSets[i], 2 /*binding*/, 0,
           vk::DescriptorType::eUniformBuffer, nullptr, uniformBufferInfos[i]);
+
+      writeDescriptorSets.emplace_back(
+          *compute.descriptorSets[i], 3 /*binding*/, 0,
+          vk::DescriptorType::eStorageBuffer, nullptr,
+          tailStorageBufferInfos[prevFrameIdx]);
+      writeDescriptorSets.emplace_back(*compute.descriptorSets[i],
+                                       4 /*binding*/, 0,
+                                       vk::DescriptorType::eStorageBuffer,
+                                       nullptr, tailStorageBufferInfos[i]);
     }
     device.updateDescriptorSets(writeDescriptorSets, nullptr);
   }
@@ -792,12 +811,16 @@ void VgeExample::createStorageBuffers() {
           VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
               VMA_ALLOCATION_CREATE_MAPPED_BIT);
     }
+    for (size_t i = 0; i < tailBuffers.size(); i++) {
+      std::memcpy(tailBuffers[i]->getMappedData(), tailData.data(),
+                  tailBuffers[i]->getBufferSize());
+    }
 
     // index buffer
-    tailIndices.resize(numParticles * (tailSize + 1));
-    tailIndexBuffers.resize(MAX_CONCURRENT_FRAMES);
-    for (size_t i = 0; i < tailIndexBuffers.size(); i++) {
-      tailIndexBuffers[i] = std::make_unique<vgeu::VgeuBuffer>(
+    // TODO: staging buffer and dedicated memory
+    {
+      tailIndices.resize(numParticles * (tailSize + 1));
+      tailIndexBuffer = std::make_unique<vgeu::VgeuBuffer>(
           globalAllocator->getAllocator(), sizeof(uint32_t), tailIndices.size(),
           vk::BufferUsageFlagBits::eIndexBuffer |
               vk::BufferUsageFlagBits::eTransferDst,
@@ -805,6 +828,17 @@ void VgeExample::createStorageBuffers() {
           /*VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT*/
           VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
               VMA_ALLOCATION_CREATE_MAPPED_BIT);
+
+      for (size_t i = 0; i < numParticles; i++) {
+        for (size_t j = 0; j < tailSize; j++) {
+          tailIndices[i * tailSize + j] = i * tailSize + j;
+        }
+        // https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VkPipelineInputAssemblyStateCreateInfo.html
+        // 0xffffffff
+        tailIndices[i * tailSize + tailSize] = static_cast<uint32_t>(-1);
+      }
+      std::memcpy(tailIndexBuffer->getMappedData(), tailIndices.data(),
+                  sizeof(uint32_t) * tailIndices.size());
     }
   }
 
@@ -870,9 +904,6 @@ void VgeExample::createVertexSCI() {
   tailVertexInfos.attributeDescriptions.emplace_back(
       0 /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
       offsetof(TailElt, pos));
-  tailVertexInfos.attributeDescriptions.emplace_back(
-      1 /*location*/, 0 /* binding */, vk::Format::eR32Sfloat,
-      offsetof(TailElt, insertedAt));
 
   tailVertexInfos.vertexInputSCI = vk::PipelineVertexInputStateCreateInfo(
       vk::PipelineVertexInputStateCreateFlags{},
@@ -1044,7 +1075,8 @@ void VgeExample::createDescriptorPool() {
                          MAX_CONCURRENT_FRAMES);
   poolSizes.emplace_back(vk::DescriptorType::eStorageBuffer,
                          MAX_CONCURRENT_FRAMES * 2 +
-                             MAX_CONCURRENT_FRAMES * modelInstances.size() * 2);
+                             MAX_CONCURRENT_FRAMES * modelInstances.size() * 2 +
+                             MAX_CONCURRENT_FRAMES * 2);
   // NOTE: need to check flag
   vk::DescriptorPoolCreateInfo descriptorPoolCI(
       vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
@@ -1381,8 +1413,7 @@ void VgeExample::buildCommandBuffers() {
     drawCmdBuffers[currentFrameIndex].bindVertexBuffers(
         0, tailBuffers[currentFrameIndex]->getBuffer(), offset);
     drawCmdBuffers[currentFrameIndex].bindIndexBuffer(
-        tailIndexBuffers[currentFrameIndex]->getBuffer(), 0,
-        vk::IndexType::eUint32);
+        tailIndexBuffer->getBuffer(), 0, vk::IndexType::eUint32);
     drawCmdBuffers[currentFrameIndex].drawIndexed(numParticles * (tailSize + 1),
                                                   1, 0, 0, 0);
   }
@@ -1557,7 +1588,6 @@ void VgeExample::updateGraphicsUbo() {
       static_cast<float>(height),
   };
   graphics.globalUbo.tailInfo.x = static_cast<float>(tailSize);
-  graphics.globalUbo.tailInfo.y = static_cast<float>(tailFrontIndex);
   graphics.globalUbo.pointSize.x =
       std::min(opts.pointSize[0], opts.pointSize[1]);
   graphics.globalUbo.pointSize.y =
@@ -1571,6 +1601,8 @@ void VgeExample::updateComputeUbo() {
   compute.ubo.gravity = opts.gravity;
   compute.ubo.power = opts.power;
   compute.ubo.soften = opts.soften;
+  compute.ubo.tailTimer = tailTimer;
+  compute.ubo.tailSize = tailSize;
 
   {
     glm::vec2 normalizedMousePos{
@@ -1709,48 +1741,11 @@ void VgeExample::setupCommandLineParser(CLI::App& app) {
       ->capture_default_str();
 }
 void VgeExample::updateTailSSBO() {
-  // vertex update
-  {
-    const Particle* particles = static_cast<Particle*>(
-        compute.storageBuffers[currentFrameIndex]->getMappedData());
-    if (tailTimer > opts.tailSampleTime || tailTimer < 0.f) {
-      for (size_t i = 0; i < numParticles; i++) {
-        glm::vec4 packedTailElt = particles[i].pos;
-        packedTailElt.w = particles[i].vel.w;
-        if (tailFrontIndex == -1) {
-          // initialize
-          for (size_t j = 0; j < tailSize; j++) {
-            tailData[i * tailSize + j].pos = packedTailElt;
-            tailData[i * tailSize + j].insertedAt = 0.0f;
-          }
-        } else {
-          tailData[i * tailSize + tailFrontIndex].pos = packedTailElt;
-          tailData[i * tailSize + tailFrontIndex].insertedAt =
-              static_cast<float>(tailFrontIndex);
-        }
-      }
-      tailFrontIndex = (tailFrontIndex + 1) % tailSize;
-      tailTimer = 0.f;
-    }
-    if (!paused) {
-      tailTimer += frameTimer;
-    }
-    std::memcpy(tailBuffers[currentFrameIndex]->getMappedData(),
-                tailData.data(), sizeof(TailElt) * tailData.size());
+  if (tailTimer > opts.tailSampleTime || tailTimer < 0.f) {
+    tailTimer = 0.f;
   }
-  // index update
-  {
-    for (size_t i = 0; i < numParticles; i++) {
-      for (size_t j = 0; j < tailSize; j++) {
-        tailIndices[i * tailSize + j] =
-            i * tailSize + (tailFrontIndex + tailSize - 1 - j) % tailSize;
-      }
-      // https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VkPipelineInputAssemblyStateCreateInfo.html
-      // 0xffffffff
-      tailIndices[i * tailSize + tailSize - 1] = static_cast<uint32_t>(-1);
-    }
-    std::memcpy(tailIndexBuffers[currentFrameIndex]->getMappedData(),
-                tailIndices.data(), sizeof(uint32_t) * tailIndices.size());
+  if (!paused) {
+    tailTimer += frameTimer;
   }
 }
 void VgeExample::onUpdateUIOverlay() {
