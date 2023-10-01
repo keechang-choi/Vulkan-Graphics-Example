@@ -129,7 +129,7 @@ class VgeExample : public VgeBase {
   void updateGraphicsUbo();
   void updateComputeUbo();
   void updateDynamicUbo();
-  void updateTailSSBO();
+  void updateTailData();
 
   void addModelInstance(const ModelInstance& newInstance);
   const std::vector<size_t>& findInstances(const std::string& name);
@@ -236,8 +236,8 @@ class VgeExample : public VgeBase {
 
   vk::raii::Pipeline tailPipeline = nullptr;
   float tailTimer = -1.f;
-  size_t tailSize = 300;
-  float tailSampleTime = 0.1f;
+  size_t tailSize = 30;
+  float tailSampleTime = 0.05f;
   VertexInfos tailVertexInfos;
 
   Options opts{};

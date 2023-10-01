@@ -799,64 +799,70 @@ void VgeExample::createStorageBuffers() {
 
   // TODO: improve tail ssbo performance.
   // tail
-  if (tailSize > 0) {
-    {
+
+  {
+    if (tailSize > 0) {
       tailData.resize(numParticles * tailSize);
-      // for (size_t i = 0; i < numParticles; i++) {
-      //   for (size_t j = 0; j < tailSize; j++) {
-      //     tailData[i * tailSize + j].pos = particles[i].pos;
-      //     tailData[i * tailSize + j].pos.w = particles[i].vel.w;
-      //   }
-      // }
-      vgeu::VgeuBuffer tailStagingBuffer(
+      for (size_t i = 0; i < numParticles; i++) {
+        for (size_t j = 0; j < tailSize; j++) {
+          tailData[i * tailSize + j].pos = particles[i].pos;
+          tailData[i * tailSize + j].pos.w = particles[i].vel.w;
+        }
+      }
+    } else {
+      // dummy data
+      tailData.resize(1);
+    }
+    vgeu::VgeuBuffer tailStagingBuffer(
+        globalAllocator->getAllocator(), sizeof(TailElt), tailData.size(),
+        vk::BufferUsageFlagBits::eVertexBuffer |
+            vk::BufferUsageFlagBits::eStorageBuffer |
+            vk::BufferUsageFlagBits::eTransferSrc,
+        VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT);
+    std::memcpy(tailStagingBuffer.getMappedData(), tailData.data(),
+                tailStagingBuffer.getBufferSize());
+
+    tailBuffers.resize(MAX_CONCURRENT_FRAMES);
+    for (size_t i = 0; i < tailBuffers.size(); i++) {
+      tailBuffers[i] = std::make_unique<vgeu::VgeuBuffer>(
           globalAllocator->getAllocator(), sizeof(TailElt), tailData.size(),
           vk::BufferUsageFlagBits::eVertexBuffer |
               vk::BufferUsageFlagBits::eStorageBuffer |
-              vk::BufferUsageFlagBits::eTransferSrc,
-          VMA_MEMORY_USAGE_AUTO,
-          VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-              VMA_ALLOCATION_CREATE_MAPPED_BIT);
-      std::memcpy(tailStagingBuffer.getMappedData(), tailData.data(),
-                  tailStagingBuffer.getBufferSize());
-
-      tailBuffers.resize(MAX_CONCURRENT_FRAMES);
-      for (size_t i = 0; i < tailBuffers.size(); i++) {
-        tailBuffers[i] = std::make_unique<vgeu::VgeuBuffer>(
-            globalAllocator->getAllocator(), sizeof(TailElt), tailData.size(),
-            vk::BufferUsageFlagBits::eVertexBuffer |
-                vk::BufferUsageFlagBits::eStorageBuffer |
-                vk::BufferUsageFlagBits::eTransferDst,
-            VMA_MEMORY_USAGE_AUTO, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
-      }
-
-      vgeu::oneTimeSubmit(
-          device, commandPool, queue,
-          [&](const vk::raii::CommandBuffer& cmdBuffer) {
-            for (size_t i = 0; i < tailBuffers.size(); i++) {
-              cmdBuffer.copyBuffer(
-                  tailStagingBuffer.getBuffer(), tailBuffers[i]->getBuffer(),
-                  vk::BufferCopy(0, 0, tailStagingBuffer.getBufferSize()));
-              // TODO: pipeline barrier to the compute queue?
-              // TODO: check spec and exs for ownership transfer
-              // release
-              if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
-                vk::BufferMemoryBarrier bufferBarrier(
-                    vk::AccessFlagBits::eTransferWrite, vk::AccessFlags{},
-                    graphics.queueFamilyIndex, compute.queueFamilyIndex,
-                    tailBuffers[i]->getBuffer(), 0ull,
-                    tailBuffers[i]->getBufferSize());
-                cmdBuffer.pipelineBarrier(
-                    vk::PipelineStageFlagBits::eTransfer,
-                    vk::PipelineStageFlagBits::eBottomOfPipe,
-                    vk::DependencyFlags{}, nullptr, bufferBarrier, nullptr);
-              }
-            }
-          });
+              vk::BufferUsageFlagBits::eTransferDst,
+          VMA_MEMORY_USAGE_AUTO, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
     }
 
-    // index buffer
-    // TODO: staging buffer and dedicated memory
-    {
+    vgeu::oneTimeSubmit(
+        device, commandPool, queue,
+        [&](const vk::raii::CommandBuffer& cmdBuffer) {
+          for (size_t i = 0; i < tailBuffers.size(); i++) {
+            cmdBuffer.copyBuffer(
+                tailStagingBuffer.getBuffer(), tailBuffers[i]->getBuffer(),
+                vk::BufferCopy(0, 0, tailStagingBuffer.getBufferSize()));
+            // TODO: pipeline barrier to the compute queue?
+            // TODO: check spec and exs for ownership transfer
+            // release
+            if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
+              vk::BufferMemoryBarrier bufferBarrier(
+                  vk::AccessFlagBits::eTransferWrite, vk::AccessFlags{},
+                  graphics.queueFamilyIndex, compute.queueFamilyIndex,
+                  tailBuffers[i]->getBuffer(), 0ull,
+                  tailBuffers[i]->getBufferSize());
+              cmdBuffer.pipelineBarrier(
+                  vk::PipelineStageFlagBits::eTransfer,
+                  vk::PipelineStageFlagBits::eBottomOfPipe,
+                  vk::DependencyFlags{}, nullptr, bufferBarrier, nullptr);
+            }
+          }
+        });
+  }
+
+  // index buffer
+  // TODO: staging buffer and dedicated memory
+  {
+    if (tailSize > 0) {
       tailIndices.resize(numParticles * (tailSize + 1));
       for (size_t i = 0; i < numParticles; i++) {
         for (size_t j = 0; j < tailSize; j++) {
@@ -866,30 +872,31 @@ void VgeExample::createStorageBuffers() {
         // 0xffffffff
         tailIndices[i * (tailSize + 1) + tailSize] = static_cast<uint32_t>(-1);
       }
-      vgeu::VgeuBuffer tailIndexStagingBuffer(
-          globalAllocator->getAllocator(), sizeof(uint32_t), tailIndices.size(),
-          vk::BufferUsageFlagBits::eIndexBuffer |
-              vk::BufferUsageFlagBits::eTransferSrc,
-          VMA_MEMORY_USAGE_AUTO,
-          VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-              VMA_ALLOCATION_CREATE_MAPPED_BIT);
-      std::memcpy(tailIndexStagingBuffer.getMappedData(), tailIndices.data(),
-                  tailIndexStagingBuffer.getBufferSize());
-
-      tailIndexBuffer = std::make_unique<vgeu::VgeuBuffer>(
-          globalAllocator->getAllocator(), sizeof(uint32_t), tailIndices.size(),
-          vk::BufferUsageFlagBits::eIndexBuffer |
-              vk::BufferUsageFlagBits::eTransferDst,
-          VMA_MEMORY_USAGE_AUTO, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
-      vgeu::oneTimeSubmit(
-          device, commandPool, queue,
-          [&](const vk::raii::CommandBuffer& cmdBuffer) {
-            cmdBuffer.copyBuffer(
-                tailIndexStagingBuffer.getBuffer(),
-                tailIndexBuffer->getBuffer(),
-                vk::BufferCopy(0, 0, tailIndexStagingBuffer.getBufferSize()));
-          });
+    } else {
+      tailIndices.resize(1);
     }
+    vgeu::VgeuBuffer tailIndexStagingBuffer(
+        globalAllocator->getAllocator(), sizeof(uint32_t), tailIndices.size(),
+        vk::BufferUsageFlagBits::eIndexBuffer |
+            vk::BufferUsageFlagBits::eTransferSrc,
+        VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT);
+    std::memcpy(tailIndexStagingBuffer.getMappedData(), tailIndices.data(),
+                tailIndexStagingBuffer.getBufferSize());
+
+    tailIndexBuffer = std::make_unique<vgeu::VgeuBuffer>(
+        globalAllocator->getAllocator(), sizeof(uint32_t), tailIndices.size(),
+        vk::BufferUsageFlagBits::eIndexBuffer |
+            vk::BufferUsageFlagBits::eTransferDst,
+        VMA_MEMORY_USAGE_AUTO, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
+    vgeu::oneTimeSubmit(
+        device, commandPool, queue,
+        [&](const vk::raii::CommandBuffer& cmdBuffer) {
+          cmdBuffer.copyBuffer(
+              tailIndexStagingBuffer.getBuffer(), tailIndexBuffer->getBuffer(),
+              vk::BufferCopy(0, 0, tailIndexStagingBuffer.getBufferSize()));
+        });
   }
 
   // use loaded model to create skin ssbo
@@ -1326,11 +1333,10 @@ void VgeExample::draw() {
     }
   }
 
-  // calculate tail
-  if (tailSize > 0) updateTailSSBO();
-
   prepareFrame();
 
+  // calculate tail
+  updateTailData();
   // update uniform buffers;
   updateDynamicUbo();
   updateComputeUbo();
@@ -1494,6 +1500,7 @@ void VgeExample::buildCommandBuffers() {
         graphics.queueFamilyIndex, compute.queueFamilyIndex,
         tailBuffers[currentFrameIndex]->getBuffer(), 0ull,
         tailBuffers[currentFrameIndex]->getBufferSize());
+
     drawCmdBuffers[currentFrameIndex].pipelineBarrier(
         vk::PipelineStageFlagBits::eVertexInput,
         vk::PipelineStageFlagBits::eBottomOfPipe, vk::DependencyFlags{},
@@ -1520,6 +1527,7 @@ void VgeExample::buildComputeCommandBuffers() {
         graphics.queueFamilyIndex, compute.queueFamilyIndex,
         tailBuffers[currentFrameIndex]->getBuffer(), 0ull,
         tailBuffers[currentFrameIndex]->getBufferSize());
+
     // NOTE: top of pipeline -> same as all commands,
     compute.cmdBuffers[currentFrameIndex].pipelineBarrier(
         vk::PipelineStageFlagBits::eTopOfPipe,
@@ -1628,6 +1636,7 @@ void VgeExample::buildComputeCommandBuffers() {
         compute.queueFamilyIndex, graphics.queueFamilyIndex,
         tailBuffers[currentFrameIndex]->getBuffer(), 0ull,
         tailBuffers[currentFrameIndex]->getBufferSize());
+
     compute.cmdBuffers[currentFrameIndex].pipelineBarrier(
         vk::PipelineStageFlagBits::eComputeShader,
         vk::PipelineStageFlagBits::eBottomOfPipe, vk::DependencyFlags{},
@@ -1804,11 +1813,14 @@ void VgeExample::setupCommandLineParser(CLI::App& app) {
   app.add_option("--rotationVelocity, --rv", rotationVelocity,
                  "initial y-axis rotation velocity )")
       ->capture_default_str();
-  app.add_option("--gravity, -g", gravity, "gravity constants")
+  app.add_option("--gravity, -g", gravity,
+                 "gravity constants / 500.0 for model attraction")
       ->capture_default_str();
-  app.add_option("--power, -p", power, "power constants")
+  app.add_option("--power, -p", power,
+                 "power constants / 0.75 for model attraction")
       ->capture_default_str();
-  app.add_option("--soften, -s", soften, "soften constants")
+  app.add_option("--soften, -s", soften,
+                 "soften constants / 2.0 for model attraction")
       ->capture_default_str();
   app.add_option("--tailSize, --ts", tailSize, "tail size")
       ->capture_default_str();
@@ -1816,13 +1828,13 @@ void VgeExample::setupCommandLineParser(CLI::App& app) {
       ->capture_default_str();
 }
 
-void VgeExample::updateTailSSBO() {
-  if (tailTimer > opts.tailSampleTime || tailTimer < 0.f) {
-    tailTimer = 0.f;
-  }
-
+void VgeExample::updateTailData() {
   if (!paused) {
     tailTimer += frameTimer;
+  }
+  // NOTE: timer 0.0 -> update tail's head position.
+  if (tailTimer > opts.tailSampleTime || tailTimer < 0.f) {
+    tailTimer = 0.f;
   }
 }
 
@@ -1874,7 +1886,11 @@ void VgeExample::onUpdateUIOverlay() {
       uiOverlay->inputFloat("lineWidth", &opts.lineWidth, 0.1f, "%.3f");
       // binding model for model attraction
       for (const auto& item : instanceMap) {
-        uiOverlay->radioButton(item.first.c_str(), &opts.bindingModel,
+        std::string caption =
+            item.first + " / verts: " +
+            std::to_string(
+                modelInstances[item.second[0]].model->getVertexCount());
+        uiOverlay->radioButton(caption.c_str(), &opts.bindingModel,
                                item.second[0]);
       }
       ImGui::TreePop();

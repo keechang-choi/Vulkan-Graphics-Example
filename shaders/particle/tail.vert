@@ -43,5 +43,5 @@ void main ()
 	gl_Position = globalUbo.projection * eyePos;
     float tailSize = globalUbo.tailInfo.x;
     float alpha = (tailSize - mod(gl_VertexIndex, tailSize))/tailSize;
-	outColor = unpackColor(inPos.w); // * pow(alpha, 2.0);
+	outColor = unpackColor(inPos.w) * pow(alpha, 2.0);
 }
