@@ -831,11 +831,11 @@ void VgeExample::createStorageBuffers() {
 
       for (size_t i = 0; i < numParticles; i++) {
         for (size_t j = 0; j < tailSize; j++) {
-          tailIndices[i * tailSize + j] = i * tailSize + j;
+          tailIndices[i * (tailSize + 1) + j] = i * tailSize + j;
         }
         // https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VkPipelineInputAssemblyStateCreateInfo.html
         // 0xffffffff
-        tailIndices[i * tailSize + tailSize] = static_cast<uint32_t>(-1);
+        tailIndices[i * (tailSize + 1) + tailSize] = static_cast<uint32_t>(-1);
       }
       std::memcpy(tailIndexBuffer->getMappedData(), tailIndices.data(),
                   sizeof(uint32_t) * tailIndices.size());
@@ -1740,14 +1740,40 @@ void VgeExample::setupCommandLineParser(CLI::App& app) {
   app.add_option("--tailSampleTime, --tst", tailSampleTime, "tail sample time")
       ->capture_default_str();
 }
+
 void VgeExample::updateTailSSBO() {
+  // int prevFrameIdx =
+  //     (currentFrameIndex + MAX_CONCURRENT_FRAMES - 1) %
+  //     MAX_CONCURRENT_FRAMES;
+  // const TailElt* tsIn =
+  //     static_cast<TailElt*>(tailBuffers[prevFrameIdx]->getMappedData());
+  // const Particle* ps = static_cast<Particle*>(
+  //     compute.storageBuffers[currentFrameIndex]->getMappedData());
   if (tailTimer > opts.tailSampleTime || tailTimer < 0.f) {
     tailTimer = 0.f;
   }
+  //   for (int i = 0; i < numParticles; i++) {
+  //     for (int j = 0; j < tailSize - 1; j++) {
+  //       tailData[i * tailSize + j + 1].pos = tsIn[i * tailSize + j].pos;
+  //     }
+  //     tailData[i * tailSize + 0].pos = ps[i].pos;
+  //     tailData[i * tailSize + 0].pos.w = ps[i].vel.w;
+  //   }
+  // } else {
+  //   for (int i = 0; i < numParticles; i++) {
+  //     for (int j = 0; j < tailSize; j++) {
+  //       tailData[i * tailSize + j].pos = tsIn[i * tailSize + j].pos;
+  //     }
+  //   }
+  // }
+  // std::memcpy(tailBuffers[currentFrameIndex]->getMappedData(),
+  // tailData.data(),
+  //             tailBuffers[currentFrameIndex]->getBufferSize());
   if (!paused) {
     tailTimer += frameTimer;
   }
 }
+
 void VgeExample::onUpdateUIOverlay() {
   if (uiOverlay->header("Inputs")) {
     ImGui::Text("Mouse Left: %s", mouseData.left ? "true" : "false");
