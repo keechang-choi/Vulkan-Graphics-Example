@@ -800,35 +800,64 @@ void VgeExample::createStorageBuffers() {
   // TODO: improve tail ssbo performance.
   // tail
   if (tailSize > 0) {
-    tailData.resize(numParticles * tailSize);
-    tailBuffers.resize(MAX_CONCURRENT_FRAMES);
-    for (size_t i = 0; i < tailBuffers.size(); i++) {
-      tailBuffers[i] = std::make_unique<vgeu::VgeuBuffer>(
+    {
+      tailData.resize(numParticles * tailSize);
+      // for (size_t i = 0; i < numParticles; i++) {
+      //   for (size_t j = 0; j < tailSize; j++) {
+      //     tailData[i * tailSize + j].pos = particles[i].pos;
+      //     tailData[i * tailSize + j].pos.w = particles[i].vel.w;
+      //   }
+      // }
+      vgeu::VgeuBuffer tailStagingBuffer(
           globalAllocator->getAllocator(), sizeof(TailElt), tailData.size(),
           vk::BufferUsageFlagBits::eVertexBuffer |
-              vk::BufferUsageFlagBits::eStorageBuffer,
+              vk::BufferUsageFlagBits::eStorageBuffer |
+              vk::BufferUsageFlagBits::eTransferSrc,
           VMA_MEMORY_USAGE_AUTO,
           VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
               VMA_ALLOCATION_CREATE_MAPPED_BIT);
-    }
-    for (size_t i = 0; i < tailBuffers.size(); i++) {
-      std::memcpy(tailBuffers[i]->getMappedData(), tailData.data(),
-                  tailBuffers[i]->getBufferSize());
+      std::memcpy(tailStagingBuffer.getMappedData(), tailData.data(),
+                  tailStagingBuffer.getBufferSize());
+
+      tailBuffers.resize(MAX_CONCURRENT_FRAMES);
+      for (size_t i = 0; i < tailBuffers.size(); i++) {
+        tailBuffers[i] = std::make_unique<vgeu::VgeuBuffer>(
+            globalAllocator->getAllocator(), sizeof(TailElt), tailData.size(),
+            vk::BufferUsageFlagBits::eVertexBuffer |
+                vk::BufferUsageFlagBits::eStorageBuffer |
+                vk::BufferUsageFlagBits::eTransferDst,
+            VMA_MEMORY_USAGE_AUTO, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
+      }
+
+      vgeu::oneTimeSubmit(
+          device, commandPool, queue,
+          [&](const vk::raii::CommandBuffer& cmdBuffer) {
+            for (size_t i = 0; i < tailBuffers.size(); i++) {
+              cmdBuffer.copyBuffer(
+                  tailStagingBuffer.getBuffer(), tailBuffers[i]->getBuffer(),
+                  vk::BufferCopy(0, 0, tailStagingBuffer.getBufferSize()));
+              // TODO: pipeline barrier to the compute queue?
+              // TODO: check spec and exs for ownership transfer
+              // release
+              if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
+                vk::BufferMemoryBarrier bufferBarrier(
+                    vk::AccessFlagBits::eTransferWrite, vk::AccessFlags{},
+                    graphics.queueFamilyIndex, compute.queueFamilyIndex,
+                    tailBuffers[i]->getBuffer(), 0ull,
+                    tailBuffers[i]->getBufferSize());
+                cmdBuffer.pipelineBarrier(
+                    vk::PipelineStageFlagBits::eTransfer,
+                    vk::PipelineStageFlagBits::eBottomOfPipe,
+                    vk::DependencyFlags{}, nullptr, bufferBarrier, nullptr);
+              }
+            }
+          });
     }
 
     // index buffer
     // TODO: staging buffer and dedicated memory
     {
       tailIndices.resize(numParticles * (tailSize + 1));
-      tailIndexBuffer = std::make_unique<vgeu::VgeuBuffer>(
-          globalAllocator->getAllocator(), sizeof(uint32_t), tailIndices.size(),
-          vk::BufferUsageFlagBits::eIndexBuffer |
-              vk::BufferUsageFlagBits::eTransferDst,
-          VMA_MEMORY_USAGE_AUTO,
-          /*VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT*/
-          VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-              VMA_ALLOCATION_CREATE_MAPPED_BIT);
-
       for (size_t i = 0; i < numParticles; i++) {
         for (size_t j = 0; j < tailSize; j++) {
           tailIndices[i * (tailSize + 1) + j] = i * tailSize + j;
@@ -837,8 +866,29 @@ void VgeExample::createStorageBuffers() {
         // 0xffffffff
         tailIndices[i * (tailSize + 1) + tailSize] = static_cast<uint32_t>(-1);
       }
-      std::memcpy(tailIndexBuffer->getMappedData(), tailIndices.data(),
-                  sizeof(uint32_t) * tailIndices.size());
+      vgeu::VgeuBuffer tailIndexStagingBuffer(
+          globalAllocator->getAllocator(), sizeof(uint32_t), tailIndices.size(),
+          vk::BufferUsageFlagBits::eIndexBuffer |
+              vk::BufferUsageFlagBits::eTransferSrc,
+          VMA_MEMORY_USAGE_AUTO,
+          VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+              VMA_ALLOCATION_CREATE_MAPPED_BIT);
+      std::memcpy(tailIndexStagingBuffer.getMappedData(), tailIndices.data(),
+                  tailIndexStagingBuffer.getBufferSize());
+
+      tailIndexBuffer = std::make_unique<vgeu::VgeuBuffer>(
+          globalAllocator->getAllocator(), sizeof(uint32_t), tailIndices.size(),
+          vk::BufferUsageFlagBits::eIndexBuffer |
+              vk::BufferUsageFlagBits::eTransferDst,
+          VMA_MEMORY_USAGE_AUTO, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
+      vgeu::oneTimeSubmit(
+          device, commandPool, queue,
+          [&](const vk::raii::CommandBuffer& cmdBuffer) {
+            cmdBuffer.copyBuffer(
+                tailIndexStagingBuffer.getBuffer(),
+                tailIndexBuffer->getBuffer(),
+                vk::BufferCopy(0, 0, tailIndexStagingBuffer.getBufferSize()));
+          });
     }
   }
 
@@ -1360,15 +1410,22 @@ void VgeExample::buildCommandBuffers() {
 
   // acquire barrier compute -> graphics
   if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
-    vk::BufferMemoryBarrier bufferBarrier(
+    std::vector<vk::BufferMemoryBarrier> bufferBarriers;
+    bufferBarriers.emplace_back(
         vk::AccessFlags{}, vk::AccessFlagBits::eVertexAttributeRead,
         compute.queueFamilyIndex, graphics.queueFamilyIndex,
         compute.storageBuffers[currentFrameIndex]->getBuffer(), 0ull,
         compute.storageBuffers[currentFrameIndex]->getBufferSize());
+    bufferBarriers.emplace_back(
+        vk::AccessFlags{}, vk::AccessFlagBits::eVertexAttributeRead,
+        compute.queueFamilyIndex, graphics.queueFamilyIndex,
+        tailBuffers[currentFrameIndex]->getBuffer(), 0ull,
+        tailBuffers[currentFrameIndex]->getBufferSize());
+
     drawCmdBuffers[currentFrameIndex].pipelineBarrier(
         vk::PipelineStageFlagBits::eTopOfPipe,
         vk::PipelineStageFlagBits::eVertexInput, vk::DependencyFlags{}, nullptr,
-        bufferBarrier, nullptr);
+        bufferBarriers, nullptr);
   }
 
   // NOTE: no secondary cmd buffers
@@ -1426,15 +1483,21 @@ void VgeExample::buildCommandBuffers() {
 
   // release graphics -> compute
   if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
-    vk::BufferMemoryBarrier bufferBarrier(
+    std::vector<vk::BufferMemoryBarrier> bufferBarriers;
+    bufferBarriers.emplace_back(
         vk::AccessFlagBits::eVertexAttributeRead, vk::AccessFlags{},
         graphics.queueFamilyIndex, compute.queueFamilyIndex,
         compute.storageBuffers[currentFrameIndex]->getBuffer(), 0ull,
         compute.storageBuffers[currentFrameIndex]->getBufferSize());
+    bufferBarriers.emplace_back(
+        vk::AccessFlagBits::eVertexAttributeRead, vk::AccessFlags{},
+        graphics.queueFamilyIndex, compute.queueFamilyIndex,
+        tailBuffers[currentFrameIndex]->getBuffer(), 0ull,
+        tailBuffers[currentFrameIndex]->getBufferSize());
     drawCmdBuffers[currentFrameIndex].pipelineBarrier(
         vk::PipelineStageFlagBits::eVertexInput,
         vk::PipelineStageFlagBits::eBottomOfPipe, vk::DependencyFlags{},
-        nullptr, bufferBarrier, nullptr);
+        nullptr, bufferBarriers, nullptr);
   }
 
   // end command buffer
@@ -1446,16 +1509,22 @@ void VgeExample::buildComputeCommandBuffers() {
 
   // acquire barrier graphics -> compute
   if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
-    vk::BufferMemoryBarrier bufferBarrier(
+    std::vector<vk::BufferMemoryBarrier> bufferBarriers;
+    bufferBarriers.emplace_back(
         vk::AccessFlags{}, vk::AccessFlagBits::eShaderWrite,
         graphics.queueFamilyIndex, compute.queueFamilyIndex,
         compute.storageBuffers[currentFrameIndex]->getBuffer(), 0ull,
         compute.storageBuffers[currentFrameIndex]->getBufferSize());
+    bufferBarriers.emplace_back(
+        vk::AccessFlags{}, vk::AccessFlagBits::eShaderWrite,
+        graphics.queueFamilyIndex, compute.queueFamilyIndex,
+        tailBuffers[currentFrameIndex]->getBuffer(), 0ull,
+        tailBuffers[currentFrameIndex]->getBufferSize());
     // NOTE: top of pipeline -> same as all commands,
     compute.cmdBuffers[currentFrameIndex].pipelineBarrier(
         vk::PipelineStageFlagBits::eTopOfPipe,
         vk::PipelineStageFlagBits::eComputeShader, vk::DependencyFlags{},
-        nullptr, bufferBarrier, nullptr);
+        nullptr, bufferBarriers, nullptr);
   }
   if (attractionType == 1) {
     // pre compute animation
@@ -1548,15 +1617,21 @@ void VgeExample::buildComputeCommandBuffers() {
 
   // release barrier
   if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
-    vk::BufferMemoryBarrier bufferBarrier(
+    std::vector<vk::BufferMemoryBarrier> bufferBarriers;
+    bufferBarriers.emplace_back(
         vk::AccessFlagBits::eShaderWrite, vk::AccessFlags{},
         compute.queueFamilyIndex, graphics.queueFamilyIndex,
         compute.storageBuffers[currentFrameIndex]->getBuffer(), 0ull,
         compute.storageBuffers[currentFrameIndex]->getBufferSize());
+    bufferBarriers.emplace_back(
+        vk::AccessFlagBits::eShaderWrite, vk::AccessFlags{},
+        compute.queueFamilyIndex, graphics.queueFamilyIndex,
+        tailBuffers[currentFrameIndex]->getBuffer(), 0ull,
+        tailBuffers[currentFrameIndex]->getBufferSize());
     compute.cmdBuffers[currentFrameIndex].pipelineBarrier(
         vk::PipelineStageFlagBits::eComputeShader,
         vk::PipelineStageFlagBits::eBottomOfPipe, vk::DependencyFlags{},
-        nullptr, bufferBarrier, nullptr);
+        nullptr, bufferBarriers, nullptr);
   }
   compute.cmdBuffers[currentFrameIndex].end();
 }
@@ -1742,33 +1817,10 @@ void VgeExample::setupCommandLineParser(CLI::App& app) {
 }
 
 void VgeExample::updateTailSSBO() {
-  // int prevFrameIdx =
-  //     (currentFrameIndex + MAX_CONCURRENT_FRAMES - 1) %
-  //     MAX_CONCURRENT_FRAMES;
-  // const TailElt* tsIn =
-  //     static_cast<TailElt*>(tailBuffers[prevFrameIdx]->getMappedData());
-  // const Particle* ps = static_cast<Particle*>(
-  //     compute.storageBuffers[currentFrameIndex]->getMappedData());
   if (tailTimer > opts.tailSampleTime || tailTimer < 0.f) {
     tailTimer = 0.f;
   }
-  //   for (int i = 0; i < numParticles; i++) {
-  //     for (int j = 0; j < tailSize - 1; j++) {
-  //       tailData[i * tailSize + j + 1].pos = tsIn[i * tailSize + j].pos;
-  //     }
-  //     tailData[i * tailSize + 0].pos = ps[i].pos;
-  //     tailData[i * tailSize + 0].pos.w = ps[i].vel.w;
-  //   }
-  // } else {
-  //   for (int i = 0; i < numParticles; i++) {
-  //     for (int j = 0; j < tailSize; j++) {
-  //       tailData[i * tailSize + j].pos = tsIn[i * tailSize + j].pos;
-  //     }
-  //   }
-  // }
-  // std::memcpy(tailBuffers[currentFrameIndex]->getMappedData(),
-  // tailData.data(),
-  //             tailBuffers[currentFrameIndex]->getBufferSize());
+
   if (!paused) {
     tailTimer += frameTimer;
   }
