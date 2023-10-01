@@ -16,10 +16,11 @@ struct GlobalUbo {
   glm::mat4 projection{1.f};
   glm::mat4 view{1.f};
   glm::mat4 inverseView{1.f};
-  // tailSize, tailFrontIndex
-  glm::vec2 screenDim;
   // NOTE: alignment
-  glm::vec2 tailInfo{0.f};
+  // tailSize, tailIntensity, tailFadeOut
+  glm::vec4 tailInfo{0.f};
+  glm::vec2 screenDim;
+  // point min size, max size
   glm::vec2 pointSize{1.f, 64.f};
 };
 
@@ -80,6 +81,8 @@ struct Options {
   float pointSize[2] = {1.f, 128.f};
   int32_t desiredSharedDataSize = 256u;
   float animationSpeed = 0.1;
+  float tailIntensity = 1.0;
+  float tailFadeOut = 2.0;
 };
 
 struct AnimatedVertex {

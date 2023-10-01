@@ -1672,6 +1672,8 @@ void VgeExample::updateGraphicsUbo() {
       static_cast<float>(height),
   };
   graphics.globalUbo.tailInfo.x = static_cast<float>(tailSize);
+  graphics.globalUbo.tailInfo.y = static_cast<float>(opts.tailIntensity);
+  graphics.globalUbo.tailInfo.z = static_cast<float>(opts.tailFadeOut);
   graphics.globalUbo.pointSize.x =
       std::min(opts.pointSize[0], opts.pointSize[1]);
   graphics.globalUbo.pointSize.y =
@@ -1833,6 +1835,7 @@ void VgeExample::updateTailData() {
     tailTimer += frameTimer;
   }
   // NOTE: timer 0.0 -> update tail's head position.
+  // if tailTimer == 0.0 when paused, tail disappears by this impl.
   if (tailTimer > opts.tailSampleTime || tailTimer < 0.f) {
     tailTimer = 0.f;
   }
@@ -1870,6 +1873,9 @@ void VgeExample::onUpdateUIOverlay() {
                             0.001f, "%.3f");
       uiOverlay->inputFloat("tailSampleTime", &opts.tailSampleTime, 0.001f,
                             "%.3f");
+      uiOverlay->inputFloat("tailIntensity", &opts.tailIntensity, 0.01f,
+                            "%.2f");
+      uiOverlay->inputFloat("tailFadeOut", &opts.tailFadeOut, 0.1f, "%.1f");
       ImGui::DragFloat2("Drag pointSize min/max", opts.pointSize, 1.f, 1.f,
                         128.f, "%.0f");
       uiOverlay->inputFloat("gravity", &opts.gravity, 0.001f, "%.3f");

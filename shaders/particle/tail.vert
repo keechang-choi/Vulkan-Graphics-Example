@@ -9,8 +9,8 @@ layout (set = 0, binding = 0) uniform GlobalUbo
 	mat4 projection;
     mat4 view;
 	mat4 inverseView;
+    vec4 tailInfo;
     vec2 screenDim;
-    vec2 tailInfo;
     vec2 pointSize;
 } globalUbo;
 
@@ -42,6 +42,8 @@ void main ()
 	vec4 eyePos = globalUbo.view * vec4(inPos.x, inPos.y, inPos.z, 1.0); 
 	gl_Position = globalUbo.projection * eyePos;
     float tailSize = globalUbo.tailInfo.x;
+    float tailIntensity = globalUbo.tailInfo.y;
+    float tailFadeOut = globalUbo.tailInfo.z;
     float alpha = (tailSize - mod(gl_VertexIndex, tailSize))/tailSize;
-	outColor = unpackColor(inPos.w) * pow(alpha, 2.0);
+	outColor = tailIntensity * unpackColor(inPos.w) * pow(alpha, tailFadeOut);
 }
