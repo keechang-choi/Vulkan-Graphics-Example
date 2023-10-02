@@ -70,5 +70,11 @@ void VgeuWindow::mousePositionCallback(GLFWwindow* window, double xpos,
   vgeuWindow->mouseData.mousePos.x = static_cast<float>(xpos);
   vgeuWindow->mouseData.mousePos.y = static_cast<float>(ypos);
 }
+void VgeuWindow::waitMinimized() {
+  while (width == 0 || height == 0) {
+    // width and height would be changed by resizeCallback
+    glfwWaitEvents();
+  }
+}
 
 }  // namespace vgeu

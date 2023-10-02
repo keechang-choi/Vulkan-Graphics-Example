@@ -204,8 +204,10 @@ void VgeBase::renderLoop() {
 }
 
 void VgeBase::windowResize() {
+  vgeuWindow->waitMinimized();
   // TODO: handle dest size for other platforms.
   vk::Extent2D extent = vgeuWindow->getExtent();
+
   destWidth = extent.width;
   destHeight = extent.height;
 
