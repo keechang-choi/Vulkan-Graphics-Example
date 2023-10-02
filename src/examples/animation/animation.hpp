@@ -33,6 +33,8 @@ struct DynamicUboElt {
   glm::vec4 modelColor{0.f};
 };
 
+struct Options {};
+
 class VgeExample : public VgeBase {
  public:
   VgeExample();
@@ -55,6 +57,7 @@ class VgeExample : public VgeBase {
   void updateUniforms();
   void addModelInstance(const ModelInstance& newInstance);
   const std::vector<size_t>& findInstances(const std::string& name);
+  void setOptions(const std::optional<Options>& opts){};
 
   // NOTE: movable element;
   std::vector<std::unique_ptr<vgeu::VgeuBuffer>> globalUniformBuffers;
@@ -82,5 +85,6 @@ class VgeExample : public VgeBase {
 
   float animationTime = 0.f;
   float animationLastTime = 0.f;
+  Options opts{};
 };
 }  // namespace vge

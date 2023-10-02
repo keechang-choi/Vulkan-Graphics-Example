@@ -14,6 +14,7 @@ struct GlobalUbo {
   glm::mat4 model{1.f};
   glm::mat4 view{1.f};
 };
+struct Options {};
 class VgeExample : public VgeBase {
  public:
   VgeExample();
@@ -31,6 +32,7 @@ class VgeExample : public VgeBase {
   void draw();
   void buildCommandBuffers();
   void viewChanged();
+  void setOptions(const std::optional<Options>& opts){};
 
   // NOTE: movable element;
   std::vector<std::unique_ptr<vgeu::VgeuBuffer>> uniformBuffers;
@@ -43,5 +45,7 @@ class VgeExample : public VgeBase {
   vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
   vk::raii::PipelineLayout pipelineLayout = nullptr;
   vk::raii::Pipeline pipeline = nullptr;
+
+  Options opts{};
 };
 }  // namespace vge

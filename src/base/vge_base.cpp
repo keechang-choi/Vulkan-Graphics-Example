@@ -18,9 +18,10 @@
 
 namespace vge {
 VgeBase::VgeBase() {
+  std::cout << "=============== Created: Vulkan Example Base ==============="
+            << std::endl;
   std::cout << "FileSystem::CurrentPath: " << std::filesystem::current_path()
             << std::endl;
-  std::cout << "Created: Vulkan Example Base" << std::endl;
 }
 VgeBase::~VgeBase() {
   // need to destroy non-RAII object created
@@ -151,7 +152,6 @@ void VgeBase::renderLoop() {
   vgeu::TransformComponent viewerTransform{};
   viewerTransform.translation = camera.getPosition();
   viewerTransform.rotation = camera.getRotationYXZ();
-  vgeu::KeyBoardMovementController cameraController{};
 
   while (!vgeuWindow->shouldClose()) {
     glfwPollEvents();
@@ -160,9 +160,11 @@ void VgeBase::renderLoop() {
       viewUpdated = false;
       viewChanged();
     }
+    mouseData = vgeuWindow->getMouseInputs();
 
     // UI overlay update
     updateUIOverlay();
+    if (restart) break;
 
     // NOTE: submitting cmd should be called after ui render()
     render();
@@ -171,6 +173,10 @@ void VgeBase::renderLoop() {
     auto tDiff =
         std::chrono::duration<double, std::milli>(tEnd - tStart).count();
     frameTimer = tDiff / 1000.0f;
+    if (resized) {
+      frameTimer = 0.f;
+      resized = false;
+    }
     paused = vgeuWindow->isPaused();
 
     if (!paused) {
@@ -202,8 +208,10 @@ void VgeBase::renderLoop() {
 }
 
 void VgeBase::windowResize() {
+  vgeuWindow->waitMinimized();
   // TODO: handle dest size for other platforms.
   vk::Extent2D extent = vgeuWindow->getExtent();
+
   destWidth = extent.width;
   destHeight = extent.height;
 
@@ -323,18 +331,18 @@ void VgeBase::updateUIOverlay() {
   ImGui::NewFrame();
   // demo for test
   ImGui::ShowDemoWindow();
-
   ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0);
   ImGui::SetNextWindowPos(
       ImVec2(10 * uiOverlay->getScale(), 10 * uiOverlay->getScale()));
   ImGui::Begin("Vulkan Example", nullptr,
-               ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoResize |
-                   ImGuiWindowFlags_NoMove);
+               0 /*ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoResize |
+                   ImGuiWindowFlags_NoMove*/);
   ImGui::TextUnformatted(title.c_str());
   ImGui::TextUnformatted(physicalDevice.getProperties().deviceName);
   ImGui::Text("%.2f ms/frame (%.1d fps)", (1000.0f / lastFPS), lastFPS);
 
-  ImGui::PushItemWidth(110.0f * uiOverlay->getScale());
+  // ImGui::PushItemWidth(110.0f * uiOverlay->getScale());
+  ImGui::PushItemWidth(ImGui::GetFontSize() * -12);
   onUpdateUIOverlay();
   ImGui::PopItemWidth();
 
@@ -365,9 +373,8 @@ std::string VgeBase::getAssetsPath() {
 void VgeBase::setupCommandLineParser(CLI::App& app) {
   // dummy flag for empty arg "",
   // (some vscode launch inputs may produce empty string arg)
-  bool emptyArg{false};
-  app.add_flag("--vs,", emptyArg,
-               "Dummy flag to prevent vscode launching with empty string arg");
+  CLI::retire_option(app, "--vs");
+
   app.add_option("-v, --validation", settings.validation,
                  "Enable/Disable Validation Layer")
       ->capture_default_str();

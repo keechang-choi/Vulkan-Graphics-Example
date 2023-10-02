@@ -91,7 +91,8 @@
         "filesystem": "cpp",
         "cassert": "cpp",
         "codecvt": "cpp",
-        "valarray": "cpp"
+        "valarray": "cpp",
+        "queue": "cpp"
     },
     "C_Cpp.intelliSenseEngineFallback": "disabled",
     "cmake.configureOnOpen": false

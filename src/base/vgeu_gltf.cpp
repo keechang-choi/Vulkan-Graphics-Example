@@ -65,7 +65,10 @@ void Texture::fromglTFImage(tinygltf::Image& gltfImage, std::string path,
     assert(gltfImage.component == 4 && "failed: image channel is not RGBA");
     vk::DeviceSize bufferSize = gltfImage.image.size();
     uint32_t pixelCount = gltfImage.width * gltfImage.height;
-    uint32_t pixelSize = 4;
+    uint32_t pixelSize = gltfImage.bits / 8 * gltfImage.component;
+    assert(pixelSize == 4 || pixelSize == 8);
+    vk::Format format = vk::Format::eR8G8B8A8Unorm;
+    if (pixelSize == 8) format = vk::Format::eR16G16B16A16Unorm;
     assert(bufferSize == pixelCount * pixelSize);
 
     width = gltfImage.width;
@@ -86,8 +89,8 @@ void Texture::fromglTFImage(tinygltf::Image& gltfImage, std::string path,
                   stagingBuffer.getBufferSize());
 
       vgeuImage = std::make_unique<VgeuImage>(
-          device, allocator, vk::Format::eR8G8B8A8Unorm,
-          vk::Extent2D(width, height), vk::ImageTiling::eOptimal,
+          device, allocator, format, vk::Extent2D(width, height),
+          vk::ImageTiling::eOptimal,
           vk::ImageUsageFlagBits::eSampled |
               vk::ImageUsageFlagBits::eTransferSrc |
               vk::ImageUsageFlagBits::eTransferDst,
@@ -323,10 +326,15 @@ void Model::loadFromFile(std::string filename,
           Vertex& vertex = vertices[primitive.firstVertex + i];
           // Pre-transform vertex positions by node-hierarchy
           if (preTransform) {
-            vertex.pos = glm::vec3(localMatrix * glm::vec4(vertex.pos, 1.0f));
-            vertex.normal = glm::normalize(
-                glm::mat3(glm::inverse(glm::transpose(localMatrix))) *
-                vertex.normal);
+            glm::vec4 v(vertex.pos);
+            v.w = 1.f;
+            vertex.pos = localMatrix * v;
+            vertex.pos.w = -1.f;
+            vertex.normal = glm::vec4(
+                glm::normalize(
+                    glm::mat3(glm::inverse(glm::transpose(localMatrix))) *
+                    vertex.normal),
+                0.f);
           }
           // Flip Y-Axis of vertex positions
           if (flipY) {
@@ -438,22 +446,25 @@ void Model::loadFromFile(std::string filename,
                              imageCount);
     }
   }
+  poolSizes.emplace_back(vk::DescriptorType::eStorageBuffer, 2);
   // NOTE: mesh and material own descriptorSet (not sets).
   // -> maxSets: unoCount for each mesh, imageCount for each material
   // one DescriptorSet of material may contain two textures (as binding).
   vk::DescriptorPoolCreateInfo descriptorPoolCI(
       vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-      uboCount * framesInFlight + imageCount, poolSizes);
+      uboCount * framesInFlight /*mesh ubo*/ + imageCount /*material*/ +
+          2 /*vertex*/,
+      poolSizes);
   descriptorPool = vk::raii::DescriptorPool(device, descriptorPoolCI);
 
   // Descriptors for per-node uniform buffers
   {
     // Layout is global, so only create if it hasn't already been created before
     if (!*descriptorSetLayoutUbo) {
-      vk::DescriptorSetLayoutBinding setlayoutBinding(
+      vk::DescriptorSetLayoutBinding setLayoutBinding(
           0, vk::DescriptorType::eUniformBuffer, 1,
           vk::ShaderStageFlagBits::eVertex);
-      vk::DescriptorSetLayoutCreateInfo setLayoutCI({}, 1, &setlayoutBinding);
+      vk::DescriptorSetLayoutCreateInfo setLayoutCI({}, 1, &setLayoutBinding);
       descriptorSetLayoutUbo =
           vk::raii::DescriptorSetLayout(device, setLayoutCI);
     }
@@ -494,6 +505,37 @@ void Model::loadFromFile(std::string filename,
                                      descriptorBindingFlags);
       }
     }
+  }
+
+  // DescriptorSets for animation in compute shader
+  if (additionalBufferUsageFlags & vk::BufferUsageFlagBits::eStorageBuffer) {
+    std::vector<vk::DescriptorSetLayoutBinding> setLayoutBindings{};
+    setLayoutBindings.emplace_back(0 /*binding*/,
+                                   vk::DescriptorType::eStorageBuffer, 1,
+                                   vk::ShaderStageFlagBits::eCompute);
+    setLayoutBindings.emplace_back(1 /*binding*/,
+                                   vk::DescriptorType::eStorageBuffer, 1,
+                                   vk::ShaderStageFlagBits::eCompute);
+    vk::DescriptorSetLayoutCreateInfo setLayoutCI({}, setLayoutBindings);
+    descriptorSetLayoutVertex =
+        vk::raii::DescriptorSetLayout(device, setLayoutCI);
+    // allocate and write
+    vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
+                                            *descriptorSetLayoutVertex);
+    descriptorSetVertex =
+        std::move(vk::raii::DescriptorSets(device, allocInfo).front());
+    std::vector<vk::DescriptorBufferInfo> descriptorInfos{};
+    descriptorInfos.push_back(vertexBuffer->descriptorInfo());
+    descriptorInfos.push_back(indexBuffer->descriptorInfo());
+
+    std::vector<vk::WriteDescriptorSet> writeDescriptorSets{};
+    writeDescriptorSets.emplace_back(*descriptorSetVertex, 0, 0,
+                                     vk::DescriptorType::eStorageBuffer,
+                                     nullptr, descriptorInfos[0]);
+    writeDescriptorSets.emplace_back(*descriptorSetVertex, 1, 0,
+                                     vk::DescriptorType::eStorageBuffer,
+                                     nullptr, descriptorInfos[1]);
+    device.updateDescriptorSets(writeDescriptorSets, nullptr);
   }
 }
 
@@ -611,7 +653,8 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
     newNode->matrix = glm::make_mat4x4(gltfNode.matrix.data());
     if (globalscale != 1.0f) {
       // NOTE: scaling would be done outside of model.
-      // newNode->matrix = glm::scale(newNode->matrix, glm::vec3(globalscale));
+      // newNode->matrix = glm::scale(newNode->matrix,
+      // glm::vec3(globalscale));
     }
   };
 
@@ -769,10 +812,13 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
 
         for (size_t v = 0; v < posAccessor.count; v++) {
           Vertex vert{};
-          vert.pos = glm::vec4(glm::make_vec3(&bufferPos[v * 3]), 1.0f);
-          vert.normal = glm::normalize(
+          // NOTE: put skinIndex at pos.w
+          vert.pos = glm::vec4(glm::make_vec3(&bufferPos[v * 3]),
+                               static_cast<float>(newNode->skinIndex));
+          vert.normal = glm::normalize(glm::vec4(
               glm::vec3(bufferNormals ? glm::make_vec3(&bufferNormals[v * 3])
-                                      : glm::vec3(0.0f)));
+                                      : glm::vec3(0.0f)),
+              0.f));
           vert.uv = bufferTexCoords ? glm::make_vec2(&bufferTexCoords[v * 2])
                                     : glm::vec3(0.0f);
           if (bufferColors) {
@@ -811,9 +857,12 @@ void Model::loadNode(Node* parent, const tinygltf::Node& gltfNode,
             glm::vec3 pos0(vertices[i * 3].pos);
             glm::vec3 pos1(vertices[i * 3 + 1].pos);
             glm::vec3 pos2(vertices[i * 3 + 2].pos);
-            vertices[i * 3].normal = glm::cross(pos1 - pos0, pos2 - pos1);
-            vertices[i * 3 + 1].normal = glm::cross(pos1 - pos0, pos2 - pos1);
-            vertices[i * 3 + 2].normal = glm::cross(pos1 - pos0, pos2 - pos1);
+            vertices[i * 3].normal =
+                glm::vec4(glm::cross(pos1 - pos0, pos2 - pos1), 0.f);
+            vertices[i * 3 + 1].normal =
+                glm::vec4(glm::cross(pos1 - pos0, pos2 - pos1), 0.f);
+            vertices[i * 3 + 2].normal =
+                glm::vec4(glm::cross(pos1 - pos0, pos2 - pos1), 0.f);
           }
         }
       }
@@ -1135,7 +1184,7 @@ void Model::prepareNodeDescriptor(
     vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
                                             *descriptorSetLayout);
     for (size_t i = 0; i < framesInFlight; i++) {
-      // NTOE: descriptorSets initialized here
+      // NOTE: descriptorSets initialized here
       node->mesh->descriptorSets.push_back(
           std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
       vk::DescriptorBufferInfo descriptorInfo =
@@ -1318,7 +1367,7 @@ void Node::update(const uint32_t frameIndex, bool isBindPose) {
       std::memcpy(mesh->uniformBuffers[frameIndex]->getMappedData(),
                   &mesh->uniformBlock, sizeof(mesh->uniformBlock));
     } else {
-      Mesh::UniformBlock emptySkinUniformBlock;
+      MeshMatricesData emptySkinUniformBlock;
       emptySkinUniformBlock.matrix = m;
       std::memcpy(mesh->uniformBuffers[frameIndex]->getMappedData(),
                   &emptySkinUniformBlock, sizeof(emptySkinUniformBlock));
@@ -1341,13 +1390,13 @@ vk::VertexInputAttributeDescription Vertex::getInputAttributeDescription(
     uint32_t binding, uint32_t location, VertexComponent component) {
   switch (component) {
     case VertexComponent::kPosition:
-      return vk::VertexInputAttributeDescription(location, binding,
-                                                 vk::Format::eR32G32B32Sfloat,
-                                                 offsetof(Vertex, pos));
+      return vk::VertexInputAttributeDescription(
+          location, binding, vk::Format::eR32G32B32A32Sfloat,
+          offsetof(Vertex, pos));
     case VertexComponent::kNormal:
-      return vk::VertexInputAttributeDescription(location, binding,
-                                                 vk::Format::eR32G32B32Sfloat,
-                                                 offsetof(Vertex, normal));
+      return vk::VertexInputAttributeDescription(
+          location, binding, vk::Format::eR32G32B32A32Sfloat,
+          offsetof(Vertex, normal));
     case VertexComponent::kUV:
       return vk::VertexInputAttributeDescription(
           location, binding, vk::Format::eR32G32Sfloat, offsetof(Vertex, uv));
@@ -1491,6 +1540,29 @@ void Model::updateAnimation(const uint32_t frameIndex, const int Animationindex,
   if (updated) {
     for (auto& node : nodes) {
       node->update(frameIndex);
+    }
+  }
+}
+
+void Model::bindSSBO(const vk::raii::CommandBuffer& cmdBuffer,
+                     vk::PipelineLayout pipelineLayout, uint32_t bindSet) {
+  cmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, pipelineLayout,
+                               bindSet /*sets*/, *descriptorSetVertex, nullptr);
+}
+
+void Model::getSkinMatrices(
+    std::vector<MeshMatricesData>& skinMatricesData) const {
+  if (skins.size() == 0) {
+    // dummy
+    skinMatricesData.resize(1);
+    return;
+  }
+  if (skinMatricesData.size() != skins.size()) {
+    skinMatricesData.resize(skins.size());
+  }
+  for (const Node* node : linearNodes) {
+    if (node->skinIndex != -1) {
+      skinMatricesData[node->skinIndex] = node->mesh->uniformBlock;
     }
   }
 }

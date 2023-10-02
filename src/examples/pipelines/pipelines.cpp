@@ -19,7 +19,7 @@ void VgeExample::initVulkan() {
   // ubo setup
   globalUbo.model = glm::scale(glm::mat4(1.0), glm::vec3(10.f));
   globalUbo.normalMatrix = glm::mat4(glm::inverse(glm::mat3(globalUbo.model)));
-  // TODO: check coordinate space
+  // NOTE: check coordinate space
   globalUbo.lightPos = glm::vec4(-2.f, -4.f, -2.f, 0.f);
   // camera setup
   camera.setViewTarget(glm::vec3{-2.f, -2.f, -5.f}, glm::vec3{0.f, 0.f, 0.f});

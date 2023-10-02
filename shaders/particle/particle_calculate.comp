@@ -1,0 +1,156 @@
+
+#version 450
+
+struct Particle
+{
+	vec4 pos;
+	vec4 vel;
+	vec4 pk[4];
+	vec4 vk[4];
+	vec4 attractionWeight;
+};
+
+// Binding 0 : Position storage buffer prev frame
+layout(std430, set = 0, binding = 0) readonly buffer SSBOIn
+{
+   Particle particlesIn[ ];
+};
+
+// Binding 1 : Position storage buffer
+layout(std430, set = 0, binding = 1) buffer SSBO
+{
+   Particle particles[ ];
+};
+
+
+layout (set = 0, binding = 2) uniform UBO 
+{
+	vec4 clickData;
+	float dt;
+	int particleCount;
+	float gravity;
+	float power;
+	float soften;
+	float tailTimer;
+	uint tailSize;
+} ubo;
+
+layout (constant_id = 0) const int SHARED_DATA_SIZE = 512;
+// TODO: check being greater than local group size intended for calculation and approximation.
+// const int SHARED_DATA_SIZE = 256;
+layout (constant_id = 1) const int INTEGRATOR = 0;
+layout (constant_id = 2) const int INTEGRATE_STEP = 0;
+
+
+layout (local_size_x_id = 3) in;
+
+
+// Share data between computer shader invocations to speed up caluclations
+shared vec4 sharedData[SHARED_DATA_SIZE];
+
+// dummy 0.0 at last for c
+const float o2c[3] = float[](0.0, 1.0, 0.0);
+const float o2d[2] = float[](0.5, 0.5);
+
+const float o4c[5] = float[](0.67560359597, -0.17560359597, -0.17560359597, 0.67560359597, 0.0);
+const float o4d[4] = float[](1.35120719196, -1.70241438392, 1.35120719196, 0.0);
+
+
+void stepInput(in uint index, out vec4 outPos, out vec4 outVel){
+	if (INTEGRATOR <= 4){
+		if (INTEGRATE_STEP == 1){
+			outPos = particlesIn[index].pos;
+			outVel = particlesIn[index].vel;
+		}else if (INTEGRATE_STEP == 2){
+			outPos = particlesIn[index].pos + 0.5 * particles[index].pk[0];
+			outVel = particlesIn[index].vel + 0.5 * particles[index].vk[0];
+		}else if (INTEGRATE_STEP == 3){
+			outPos = particlesIn[index].pos + 0.5 * particles[index].pk[1];
+			outVel = particlesIn[index].vel + 0.5 * particles[index].vk[1];
+		}else if (INTEGRATE_STEP == 4){
+			outPos = particlesIn[index].pos + particles[index].pk[2];
+			outVel = particlesIn[index].vel + particles[index].vk[2];
+		}
+	} else if(INTEGRATOR == 5){
+		outPos = particlesIn[index].pos;
+		outVel = particlesIn[index].vel;
+	} else if(INTEGRATOR == 6){
+		if (INTEGRATE_STEP == 1){
+			outPos = particlesIn[index].pos;
+			outVel = particlesIn[index].vel;
+		}else if (INTEGRATE_STEP == 2){
+			outPos = particles[index].pk[0];
+			outVel = particles[index].vk[0];
+		}
+	} else if(INTEGRATOR == 8){
+		if (INTEGRATE_STEP == 1){
+			outPos = particlesIn[index].pos + o4c[0] * ubo.dt * particlesIn[index].vel;
+			outVel = particlesIn[index].vel;
+		}else if (INTEGRATE_STEP == 2){
+			outPos = particles[index].pk[0];
+			outVel = particles[index].vk[0];
+		}else if (INTEGRATE_STEP == 3){
+			outPos = particles[index].pk[1];
+			outVel = particles[index].vk[1];
+		}else if (INTEGRATE_STEP == 4){
+			outPos = particles[index].pk[2];
+			outVel = particles[index].vk[2];
+		}
+	}
+	outPos.w = particles[index].pos.w;
+}
+
+void main() 
+{
+	// Current SSBO index
+	uint index = gl_GlobalInvocationID.x;
+	// should not return early for barrier
+	// if (index >= ubo.particleCount) 
+	// 	return;	
+
+	vec4 position; 
+	vec4 velocity; 
+	stepInput(index, position, velocity);
+	vec4 acceleration = vec4(0.0);
+
+	for (int i = 0; i < ubo.particleCount; i += SHARED_DATA_SIZE)
+	{
+		if (i + gl_LocalInvocationID.x < ubo.particleCount)
+		{
+			vec4 otherPos;
+			vec4 otherVel;
+			stepInput(i + gl_LocalInvocationID.x, otherPos, otherVel);
+			sharedData[gl_LocalInvocationID.x] = otherPos;
+		}
+		else
+		{
+			// 0.0 mass -> no effect
+			sharedData[gl_LocalInvocationID.x] = vec4(0.0);
+		}
+
+		memoryBarrierShared();
+		barrier();
+
+		for (int j = 0; j < gl_WorkGroupSize.x; j++)
+		{
+			vec4 other = sharedData[j];
+			vec3 r = other.xyz - position.xyz;
+			acceleration.xyz +=  (ubo.gravity * other.w / pow(dot(r, r) + ubo.soften, ubo.power)) * r;
+		}
+
+		// memoryBarrierShared();
+		barrier();
+	}
+
+	if(INTEGRATOR == 6){
+		particles[index].vk[INTEGRATE_STEP-1].xyz = velocity.xyz + o2d[INTEGRATE_STEP-1] * acceleration.xyz * ubo.dt;
+		particles[index].pk[INTEGRATE_STEP-1].xyz = position.xyz + o2c[INTEGRATE_STEP] * particles[index].vk[INTEGRATE_STEP-1].xyz * ubo.dt; 
+	}else if(INTEGRATOR == 8){
+		particles[index].vk[INTEGRATE_STEP-1].xyz = velocity.xyz + o4d[INTEGRATE_STEP-1] * acceleration.xyz * ubo.dt;
+		particles[index].pk[INTEGRATE_STEP-1].xyz = position.xyz + o4c[INTEGRATE_STEP] * particles[index].vk[INTEGRATE_STEP-1].xyz * ubo.dt; 
+	}else{
+		// RK step output
+		particles[index].pk[INTEGRATE_STEP-1].xyz = ubo.dt * velocity.xyz; 
+		particles[index].vk[INTEGRATE_STEP-1].xyz = ubo.dt * acceleration.xyz;
+	}
+}

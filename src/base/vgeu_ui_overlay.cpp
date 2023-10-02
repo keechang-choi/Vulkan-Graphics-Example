@@ -94,4 +94,70 @@ void UIOverlay::resize(uint32_t width, uint32_t height) {
   io.DisplaySize = ImVec2((float)(width), (float)(height));
 }
 
+bool UIOverlay::header(const char* caption, bool open) {
+  ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_DefaultOpen;
+  if (!open) {
+    flags = ImGuiTreeNodeFlags_CollapsingHeader;
+  }
+  return ImGui::CollapsingHeader(caption, flags);
+}
+
+bool UIOverlay::sliderFloat(const char* caption, float* value, float min,
+                            float max) {
+  bool res = ImGui::SliderFloat(caption, value, min, max);
+  if (res) {
+    updated = true;
+  };
+  return res;
+}
+
+bool UIOverlay::sliderInt(const char* caption, int32_t* value, int32_t min,
+                          int32_t max) {
+  bool res = ImGui::SliderInt(caption, value, min, max);
+  if (res) {
+    updated = true;
+  };
+  return res;
+}
+
+bool UIOverlay::button(const char* caption) {
+  bool res = ImGui::Button(caption);
+  if (res) {
+    updated = true;
+  };
+  return res;
+}
+
+bool UIOverlay::colorPicker(const char* caption, float* color) {
+  bool res = ImGui::ColorEdit4(caption, color, ImGuiColorEditFlags_NoInputs);
+  if (res) {
+    updated = true;
+  };
+  return res;
+}
+
+bool UIOverlay::inputFloat(const char* caption, float* value, float step,
+                           const char* format) {
+  bool res = ImGui::InputFloat(caption, value, step, step * 10.0f, format);
+  if (res) {
+    updated = true;
+  };
+  return res;
+}
+
+bool UIOverlay::inputInt(const char* caption, int32_t* value, int32_t step) {
+  bool res = ImGui::InputInt(caption, value, step, step * 10.0f);
+  if (res) {
+    updated = true;
+  };
+  return res;
+}
+
+bool UIOverlay::radioButton(const char* caption, int32_t* v, int32_t button) {
+  bool res = ImGui::RadioButton(caption, v, button);
+  if (res) {
+    updated = true;
+  };
+  return res;
+}
 }  // namespace vgeu

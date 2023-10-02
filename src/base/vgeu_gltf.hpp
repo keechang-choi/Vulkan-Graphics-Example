@@ -152,6 +152,11 @@ struct Primitive {
 };
 
 #define MAX_JOINT_MATRICES 64
+struct MeshMatricesData {
+  glm::mat4 matrix{1.f};
+  glm::mat4 jointMatrices[MAX_JOINT_MATRICES]{};
+  glm::vec4 jointcount{0.f};
+};
 struct Mesh {
   // NOTE: vector of Primitive class itself
   std::vector<Primitive> primitives;
@@ -161,11 +166,7 @@ struct Mesh {
   // we need separate uniformBuffers and descriptorSets
   std::vector<std::unique_ptr<VgeuBuffer>> uniformBuffers;
   std::vector<vk::raii::DescriptorSet> descriptorSets;
-  struct UniformBlock {
-    glm::mat4 matrix{1.f};
-    glm::mat4 jointMatrices[MAX_JOINT_MATRICES]{};
-    glm::vec4 jointcount{0.f};
-  } uniformBlock;
+  MeshMatricesData uniformBlock;
 
   Mesh(VmaAllocator allocator, glm::mat4 matrix, const uint32_t framesInFlight);
 };
@@ -235,13 +236,16 @@ enum class VertexComponent {
 };
 
 struct Vertex {
-  glm::vec3 pos;
-  glm::vec3 normal;
-  glm::vec2 uv;
-  glm::vec4 color;
-  glm::vec4 joint0;
-  glm::vec4 weight0;
-  glm::vec4 tangent;
+  // NOTE: vec3->vec4 for ssbo usage (last can be used to skinIndex)
+  alignas(16) glm::vec4 pos;
+  // NOTE: vec3->vec4 for ssbo usage
+  alignas(16) glm::vec4 normal;
+  alignas(16) glm::vec4 color;
+  alignas(16) glm::vec4 joint0;
+  alignas(16) glm::vec4 weight0;
+  alignas(16) glm::vec4 tangent;
+  // NOTE: moved last for ssbo usage
+  alignas(8) glm::vec2 uv;
 
   // NOTE: thread_local
   static vk::VertexInputBindingDescription& getInputBindingDescription(
@@ -279,6 +283,8 @@ class Model {
       float scale = 1.0f);
 
   void bindBuffers(const vk::raii::CommandBuffer& cmdBuffer);
+  void bindSSBO(const vk::raii::CommandBuffer& cmdBuffer,
+                vk::PipelineLayout pipelineLayout, uint32_t bindSet);
 
   // NOTE: nullable pipelinelayout
   void drawNode(const uint32_t frameIndex, const Node* node,
@@ -298,11 +304,17 @@ class Model {
   void updateAnimation(const uint32_t frameIndex, const int Animationindex,
                        const float time, const bool repeat = false);
   Dimensions getDimensions() const { return dimensions; };
+  uint32_t getVertexCount() const { return vertexBuffer->getInstanceCount(); }
+  uint32_t getIndexCount() const { return indexBuffer->getInstanceCount(); }
+
+  void getSkinMatrices(std::vector<MeshMatricesData>& skinMatricesData) const;
 
   // NOTE: moved from globals to model class member.
   // TODO: all models should share those values, better to move it out of model
   vk::raii::DescriptorSetLayout descriptorSetLayoutImage = nullptr;
   vk::raii::DescriptorSetLayout descriptorSetLayoutUbo = nullptr;
+  vk::raii::DescriptorSetLayout descriptorSetLayoutVertex = nullptr;
+
   // TODO: check instead usageFlags, for raytracing related
   vk::MemoryPropertyFlags memoryPropertyFlags{};
   // NOTE: <unresolved overloaded function type> for () constructor,
@@ -346,6 +358,9 @@ class Model {
   vk::raii::DescriptorPool descriptorPool = nullptr;
   std::unique_ptr<VgeuBuffer> vertexBuffer;
   std::unique_ptr<VgeuBuffer> indexBuffer;
+
+  // NOTE: descriptorSet for animation in compute shader
+  vk::raii::DescriptorSet descriptorSetVertex = nullptr;
 
   // NOTE: takes ownership since thoese are root nodes of each tree.
   // unique_ptr
