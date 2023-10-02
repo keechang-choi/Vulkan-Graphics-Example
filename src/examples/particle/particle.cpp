@@ -371,7 +371,7 @@ void VgeExample::prepareCompute() {
         static_cast<uint32_t>(maxComputeSharedMemorySize / sizeof(glm::vec4)));
     SpecializationData specializationData{};
     specializationData.sharedDataSize = sharedDataSize;
-    // TODO: for 1,2,4-> rk step, 5,6-> symplectic
+    // NOTE: for 1,2,4-> rk step, 5,6,8-> symplectic
     specializationData.integrator = integrator;
     specializationData.integrateStep = 0u;
     specializationData.localSizeX = sharedDataSize;
@@ -529,7 +529,7 @@ void VgeExample::loadAssets() {
   fox = std::make_shared<vgeu::glTF::Model>(
       device, globalAllocator->getAllocator(), queue, commandPool,
       MAX_CONCURRENT_FRAMES);
-  // TODO: additional flag structure update
+  // NOTE: additional flag for compute animation
   fox->additionalBufferUsageFlags = vk::BufferUsageFlagBits::eStorageBuffer;
   fox->loadFromFile(getAssetsPath() + "/models/fox-normal/fox-normal.gltf",
                     glTFLoadingFlags);
@@ -797,9 +797,7 @@ void VgeExample::createStorageBuffers() {
         });
   }
 
-  // TODO: improve tail ssbo performance.
   // tail
-
   {
     if (tailSize > 0) {
       tailData.resize(numParticles * tailSize);
@@ -860,7 +858,6 @@ void VgeExample::createStorageBuffers() {
   }
 
   // index buffer
-  // TODO: staging buffer and dedicated memory
   {
     if (tailSize > 0) {
       tailIndices.resize(numParticles * (tailSize + 1));
@@ -937,7 +934,7 @@ void VgeExample::createStorageBuffers() {
 }
 
 void VgeExample::createVertexSCI() {
-  // TODO: vertex binding and attribute descriptions
+  // vertex binding and attribute descriptions
   vertexInfos.bindingDescriptions.emplace_back(0 /*binding*/, sizeof(Particle),
                                                vk::VertexInputRate::eVertex);
 
@@ -1392,7 +1389,6 @@ void VgeExample::draw() {
         graphicsWaitSemaphores, graphicsWaitDstStageMasks,
         *drawCmdBuffers[currentFrameIndex], graphicsSignalSemaphore);
 
-    // TODO: fence?
     queue.submit(graphicsSubmitInfo, *waitFences[currentFrameIndex]);
   }
   submitFrame();
@@ -1597,7 +1593,6 @@ void VgeExample::buildComputeCommandBuffers() {
         *compute.descriptorSets[currentFrameIndex], nullptr);
 
     // NOTE: number of local work group should cover all vertices
-    // TODO: +1 makes program stop.
     compute.cmdBuffers[currentFrameIndex].dispatch(
         numParticles / sharedDataSize + 1, 1, 1);
 

@@ -207,7 +207,6 @@ class VgeExample : public VgeBase {
   std::vector<ModelInstance> modelInstances;
   std::unordered_map<std::string, std::vector<size_t>> instanceMap;
 
-  // TODO: move those into compute resource
   std::vector<DynamicUboElt> dynamicUbo;
   size_t alignedSizeDynamicUboElt = 0;
   std::vector<std::unique_ptr<vgeu::VgeuBuffer>> dynamicUniformBuffers;
@@ -226,7 +225,7 @@ class VgeExample : public VgeBase {
   float soften = 0.001;
 
   // vertex buffer ->
-  // TODO: to use this data for vertex buffer,
+  // NOTE: to use this data for vertex buffer,
   // change also vertexSCI to be consistent with offsetof()
   struct TailElt {
     // xyz,w=packedColor
