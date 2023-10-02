@@ -173,6 +173,10 @@ void VgeBase::renderLoop() {
     auto tDiff =
         std::chrono::duration<double, std::milli>(tEnd - tStart).count();
     frameTimer = tDiff / 1000.0f;
+    if (resized) {
+      frameTimer = 0.f;
+      resized = false;
+    }
     paused = vgeuWindow->isPaused();
 
     if (!paused) {
