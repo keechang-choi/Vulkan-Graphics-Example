@@ -94,6 +94,7 @@ void VgeExample::prepare() {
   createStorageBuffers();
   createVertexSCI();
   prepareGraphics();
+  prepareCompute();
   prepared = true;
 }
 
@@ -120,6 +121,67 @@ void VgeExample::prepareGraphics() {
   }
 }
 
+void VgeExample::prepareCompute() {
+  setupDynamicUbo();
+  {
+    // compute UBO
+    compute.uniformBuffers.reserve(MAX_CONCURRENT_FRAMES);
+    for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      compute.uniformBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
+          globalAllocator->getAllocator(), sizeof(compute.ubo), 1,
+          vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_AUTO,
+          VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+              VMA_ALLOCATION_CREATE_MAPPED_BIT |
+              VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT));
+      std::memcpy(compute.uniformBuffers[i]->getMappedData(), &compute.ubo,
+                  sizeof(compute.ubo));
+    }
+
+    // dynamic UBO
+    alignedSizeDynamicUboElt = padUniformBufferSize(sizeof(DynamicUboElt));
+    dynamicUniformBuffers.reserve(MAX_CONCURRENT_FRAMES);
+    for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      dynamicUniformBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
+          globalAllocator->getAllocator(), alignedSizeDynamicUboElt,
+          dynamicUbo.size(), vk::BufferUsageFlagBits::eUniformBuffer,
+          VMA_MEMORY_USAGE_AUTO,
+          VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+              VMA_ALLOCATION_CREATE_MAPPED_BIT |
+              VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT));
+      for (size_t j = 0; j < dynamicUbo.size(); j++) {
+        std::memcpy(
+            static_cast<char*>(dynamicUniformBuffers[i]->getMappedData()) +
+                j * alignedSizeDynamicUboElt,
+            &dynamicUbo[j], alignedSizeDynamicUboElt);
+      }
+    }
+  }
+
+  // dynamic UBO
+  {
+    vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
+                                            *dynamicUboDescriptorSetLayout);
+    dynamicUboDescriptorSets.reserve(MAX_CONCURRENT_FRAMES);
+    for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      dynamicUboDescriptorSets.push_back(
+          std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
+    }
+    std::vector<vk::DescriptorBufferInfo> bufferInfos;
+    bufferInfos.reserve(dynamicUniformBuffers.size());
+    std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
+    writeDescriptorSets.reserve(dynamicUniformBuffers.size());
+    for (int i = 0; i < dynamicUniformBuffers.size(); i++) {
+      // NOTE: descriptorBufferInfo range be alignedSizeDynamicUboElt
+      bufferInfos.push_back(dynamicUniformBuffers[i]->descriptorInfo(
+          alignedSizeDynamicUboElt, 0));
+      writeDescriptorSets.emplace_back(
+          *dynamicUboDescriptorSets[i], 0, 0,
+          vk::DescriptorType::eUniformBufferDynamic, nullptr,
+          bufferInfos.back());
+    }
+    device.updateDescriptorSets(writeDescriptorSets, nullptr);
+  }
+}
 void VgeExample::loadAssets() {
   // NOTE: no flip or preTransform for animation and skinning
   vgeu::FileLoadingFlags glTFLoadingFlags =
@@ -195,50 +257,10 @@ void VgeExample::loadAssets() {
   apple->additionalBufferUsageFlags = vk::BufferUsageFlagBits::eStorageBuffer;
   apple->loadFromFile(getAssetsPath() + "/models/apple/food_apple_01_4k.gltf",
                       glTFLoadingFlags);
-
   {
     ModelInstance modelInstance{};
     modelInstance.model = apple;
     modelInstance.name = "apple1";
-    addModelInstance(modelInstance);
-  }
-
-  std::shared_ptr<vgeu::glTF::Model> bone1;
-  bone1 = std::make_shared<vgeu::glTF::Model>(
-      device, globalAllocator->getAllocator(), queue, commandPool,
-      MAX_CONCURRENT_FRAMES);
-  bone1->additionalBufferUsageFlags = vk::BufferUsageFlagBits::eStorageBuffer;
-  bone1->loadFromFile(getAssetsPath() + "/models/bone.gltf", glTFLoadingFlags);
-  {
-    ModelInstance modelInstance{};
-    modelInstance.model = bone1;
-    modelInstance.name = "bone1";
-    addModelInstance(modelInstance);
-  }
-
-  std::shared_ptr<vgeu::glTF::Model> bone4;
-  bone4 = std::make_shared<vgeu::glTF::Model>(
-      device, globalAllocator->getAllocator(), queue, commandPool,
-      MAX_CONCURRENT_FRAMES);
-  bone4->additionalBufferUsageFlags = vk::BufferUsageFlagBits::eStorageBuffer;
-  bone4->loadFromFile(getAssetsPath() + "/models/bone4.gltf", glTFLoadingFlags);
-  {
-    ModelInstance modelInstance{};
-    modelInstance.model = bone4;
-    modelInstance.name = "bone4";
-    addModelInstance(modelInstance);
-  }
-
-  std::shared_ptr<vgeu::glTF::Model> bone5;
-  bone5 = std::make_shared<vgeu::glTF::Model>(
-      device, globalAllocator->getAllocator(), queue, commandPool,
-      MAX_CONCURRENT_FRAMES);
-  bone5->additionalBufferUsageFlags = vk::BufferUsageFlagBits::eStorageBuffer;
-  bone5->loadFromFile(getAssetsPath() + "/models/bone5.gltf", glTFLoadingFlags);
-  {
-    ModelInstance modelInstance{};
-    modelInstance.model = bone5;
-    modelInstance.name = "bone5";
     addModelInstance(modelInstance);
   }
 
@@ -258,9 +280,62 @@ void VgeExample::loadAssets() {
     modelInstance.name = "dutchShipMedium";
     addModelInstance(modelInstance);
   }
+
+  std::shared_ptr<SimpleModel> quad = std::make_shared<SimpleModel>(
+      device, globalAllocator->getAllocator(), queue, commandPool);
+  quad->setNgon(4, {0.5f, 0.5f, 0.5f, 1.f});
+  {
+    ModelInstance modelInstance{};
+    modelInstance.simpleModel = quad;
+    modelInstance.name = "quad1";
+    addModelInstance(modelInstance);
+  }
 }
 
 void VgeExample::createStorageBuffers() {
+  // use loaded model to create skin ssbo
+  {
+    compute.skinMatricesData.resize(modelInstances.size());
+    // TODO: optimize for models without skin
+    for (size_t i = 0; i < modelInstances.size(); i++) {
+      if (modelInstances[i].model)
+        modelInstances[i].model->getSkinMatrices(compute.skinMatricesData[i]);
+      else {
+        compute.skinMatricesData[i].resize(1);
+      }
+    }
+    compute.skinMatricesBuffers.resize(MAX_CONCURRENT_FRAMES);
+    for (auto i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      compute.skinMatricesBuffers[i].reserve(modelInstances.size());
+      for (size_t j = 0; j < modelInstances.size(); j++) {
+        // mapped
+        compute.skinMatricesBuffers[i].push_back(
+            std::move(std::make_unique<vgeu::VgeuBuffer>(
+                globalAllocator->getAllocator(),
+                sizeof(vgeu::glTF::MeshMatricesData),
+                compute.skinMatricesData[j].size(),
+                vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_AUTO,
+                VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                    VMA_ALLOCATION_CREATE_MAPPED_BIT)));
+      }
+    }
+    // animated vertex ssbo wo transfer and mapped ptr
+    compute.animatedVertexBuffers.resize(MAX_CONCURRENT_FRAMES);
+    for (auto i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      compute.animatedVertexBuffers[i].reserve(modelInstances.size());
+      for (size_t j = 0; j < modelInstances.size(); j++) {
+        compute.animatedVertexBuffers[i].push_back(
+            std::move(std::make_unique<vgeu::VgeuBuffer>(
+                globalAllocator->getAllocator(), sizeof(AnimatedVertex),
+                modelInstances[j].getVertexCount(),
+                vk::BufferUsageFlagBits::eStorageBuffer |
+                    vk::BufferUsageFlagBits::eVertexBuffer,
+                VMA_MEMORY_USAGE_AUTO,
+                VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT)));
+      }
+    }
+  }
+
   std::vector<Particle> particles;
 
   // tail
@@ -277,16 +352,6 @@ void VgeExample::createStorageBuffers() {
       // dummy data
       tailData.resize(1);
     }
-    vgeu::VgeuBuffer tailStagingBuffer(
-        globalAllocator->getAllocator(), sizeof(TailElt), tailData.size(),
-        vk::BufferUsageFlagBits::eVertexBuffer |
-            vk::BufferUsageFlagBits::eStorageBuffer |
-            vk::BufferUsageFlagBits::eTransferSrc,
-        VMA_MEMORY_USAGE_AUTO,
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-            VMA_ALLOCATION_CREATE_MAPPED_BIT);
-    std::memcpy(tailStagingBuffer.getMappedData(), tailData.data(),
-                tailStagingBuffer.getBufferSize());
 
     tailBuffers.resize(MAX_CONCURRENT_FRAMES);
     for (size_t i = 0; i < tailBuffers.size(); i++) {
@@ -295,32 +360,12 @@ void VgeExample::createStorageBuffers() {
           vk::BufferUsageFlagBits::eVertexBuffer |
               vk::BufferUsageFlagBits::eStorageBuffer |
               vk::BufferUsageFlagBits::eTransferDst,
-          VMA_MEMORY_USAGE_AUTO, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
-    }
-
-    vgeu::oneTimeSubmit(
-        device, commandPool, queue,
-        [&](const vk::raii::CommandBuffer& cmdBuffer) {
-          for (size_t i = 0; i < tailBuffers.size(); i++) {
-            cmdBuffer.copyBuffer(
-                tailStagingBuffer.getBuffer(), tailBuffers[i]->getBuffer(),
-                vk::BufferCopy(0, 0, tailStagingBuffer.getBufferSize()));
-            // TODO: pipeline barrier to the compute queue?
-            // TODO: check spec and exs for ownership transfer
-            // release
-            if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
-              vk::BufferMemoryBarrier bufferBarrier(
-                  vk::AccessFlagBits::eTransferWrite, vk::AccessFlags{},
-                  graphics.queueFamilyIndex, compute.queueFamilyIndex,
-                  tailBuffers[i]->getBuffer(), 0ull,
+          VMA_MEMORY_USAGE_AUTO,
+          VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+              VMA_ALLOCATION_CREATE_MAPPED_BIT);
+      std::memcpy(tailBuffers[i]->getMappedData(), tailData.data(),
                   tailBuffers[i]->getBufferSize());
-              cmdBuffer.pipelineBarrier(
-                  vk::PipelineStageFlagBits::eTransfer,
-                  vk::PipelineStageFlagBits::eBottomOfPipe,
-                  vk::DependencyFlags{}, nullptr, bufferBarrier, nullptr);
-            }
-          }
-        });
+    }
   }
 
   // index buffer
@@ -365,21 +410,26 @@ void VgeExample::createStorageBuffers() {
 
 void VgeExample::createVertexSCI() {
   // vertex binding and attribute descriptions
-  vertexInfos.bindingDescriptions.emplace_back(0 /*binding*/, sizeof(Particle),
-                                               vk::VertexInputRate::eVertex);
+  simpleVertexInfos.bindingDescriptions.emplace_back(
+      0 /*binding*/, sizeof(SimpleModel::Vertex), vk::VertexInputRate::eVertex);
 
-  vertexInfos.attributeDescriptions.emplace_back(
+  simpleVertexInfos.attributeDescriptions.emplace_back(
       0 /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
-      offsetof(Particle, pos));
-  vertexInfos.attributeDescriptions.emplace_back(
+      offsetof(SimpleModel::Vertex, pos));
+  simpleVertexInfos.attributeDescriptions.emplace_back(
       1 /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
-      offsetof(Particle, vel));
+      offsetof(SimpleModel::Vertex, normal));
+  simpleVertexInfos.attributeDescriptions.emplace_back(
+      2 /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
+      offsetof(SimpleModel::Vertex, color));
+  simpleVertexInfos.attributeDescriptions.emplace_back(
+      3 /*location*/, 0 /* binding */, vk::Format::eR32G32Sfloat,
+      offsetof(SimpleModel::Vertex, uv));
 
-  // for Runge-Kutta explicit method. RK4. but not used as vertex
-
-  vertexInfos.vertexInputSCI = vk::PipelineVertexInputStateCreateInfo(
+  simpleVertexInfos.vertexInputSCI = vk::PipelineVertexInputStateCreateInfo(
       vk::PipelineVertexInputStateCreateFlags{},
-      vertexInfos.bindingDescriptions, vertexInfos.attributeDescriptions);
+      simpleVertexInfos.bindingDescriptions,
+      simpleVertexInfos.attributeDescriptions);
 
   // tail
   tailVertexInfos.bindingDescriptions.emplace_back(
@@ -396,7 +446,7 @@ void VgeExample::createVertexSCI() {
 }
 
 void VgeExample::setupDynamicUbo() {
-  const float foxScale = 0.1f;
+  const float foxScale = 0.03f;
   glm::vec3 up{0.f, -1.f, 0.f};
   glm::vec3 right{1.f, 0.f, 0.f};
   glm::vec3 forward{0.f, 0.f, 1.f};
@@ -404,7 +454,7 @@ void VgeExample::setupDynamicUbo() {
   {
     size_t instanceIndex = findInstances("fox0")[0];
     dynamicUbo[instanceIndex].modelMatrix =
-        glm::translate(glm::mat4{1.f}, glm::vec3{-3.f, 0.f, 0.f});
+        glm::translate(glm::mat4{1.f}, glm::vec3{-6.f, 0.f, 0.f});
     dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
         dynamicUbo[instanceIndex].modelMatrix, glm::radians(180.f), up);
     // FlipY manually
@@ -412,15 +462,11 @@ void VgeExample::setupDynamicUbo() {
         glm::scale(dynamicUbo[instanceIndex].modelMatrix,
                    glm::vec3{foxScale, -foxScale, foxScale});
     dynamicUbo[instanceIndex].modelColor = glm::vec4{1.0f, 0.f, 0.f, 0.3f};
-    dynamicUbo[instanceIndex].numVertices =
-        modelInstances[instanceIndex].model->getVertexCount();
-    dynamicUbo[instanceIndex].numIndices =
-        modelInstances[instanceIndex].model->getIndexCount();
   }
   {
     size_t instanceIndex = findInstances("fox1")[0];
     dynamicUbo[instanceIndex].modelMatrix =
-        glm::translate(glm::mat4{1.f}, glm::vec3{3.f, 0.f, 0.f});
+        glm::translate(glm::mat4{1.f}, glm::vec3{6.f, 0.f, 0.f});
     dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
         dynamicUbo[instanceIndex].modelMatrix, glm::radians(0.f), up);
     // FlipY manually
@@ -428,10 +474,6 @@ void VgeExample::setupDynamicUbo() {
         glm::scale(dynamicUbo[instanceIndex].modelMatrix,
                    glm::vec3{foxScale, -foxScale, foxScale});
     dynamicUbo[instanceIndex].modelColor = glm::vec4{0.0f, 0.f, 1.f, 0.3f};
-    dynamicUbo[instanceIndex].numVertices =
-        modelInstances[instanceIndex].model->getVertexCount();
-    dynamicUbo[instanceIndex].numIndices =
-        modelInstances[instanceIndex].model->getIndexCount();
   }
   {
     size_t instanceIndex = findInstances("fox2")[0];
@@ -445,10 +487,6 @@ void VgeExample::setupDynamicUbo() {
                    glm::vec3{foxScale, -foxScale, foxScale});
     // default
     dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
-    dynamicUbo[instanceIndex].numVertices =
-        modelInstances[instanceIndex].model->getVertexCount();
-    dynamicUbo[instanceIndex].numIndices =
-        modelInstances[instanceIndex].model->getIndexCount();
   }
   {
     size_t instanceIndex = findInstances("fox3")[0];
@@ -461,66 +499,21 @@ void VgeExample::setupDynamicUbo() {
         glm::scale(dynamicUbo[instanceIndex].modelMatrix,
                    glm::vec3{foxScale, -foxScale, foxScale});
     dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f, 1.f, 1.f, 0.3f};
-    dynamicUbo[instanceIndex].numVertices =
-        modelInstances[instanceIndex].model->getVertexCount();
-    dynamicUbo[instanceIndex].numIndices =
-        modelInstances[instanceIndex].model->getIndexCount();
   }
   {
-    float appleScale = 100.f;
+    float appleScale = 10.f;
     size_t instanceIndex = findInstances("apple1")[0];
     // FlipY manually
     dynamicUbo[instanceIndex].modelMatrix =
         glm::scale(dynamicUbo[instanceIndex].modelMatrix,
                    glm::vec3{appleScale, -appleScale, appleScale});
-    dynamicUbo[instanceIndex].numVertices =
-        modelInstances[instanceIndex].model->getVertexCount();
-    dynamicUbo[instanceIndex].numIndices =
-        modelInstances[instanceIndex].model->getIndexCount();
   }
-  float boneScale = 5.f;
-  {
-    size_t instanceIndex = findInstances("bone1")[0];
-    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
-        dynamicUbo[instanceIndex].modelMatrix, glm::radians(90.f), forward);
-    // FlipY manually
-    dynamicUbo[instanceIndex].modelMatrix =
-        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
-                   glm::vec3{boneScale, -boneScale, boneScale});
-    dynamicUbo[instanceIndex].numVertices =
-        modelInstances[instanceIndex].model->getVertexCount();
-    dynamicUbo[instanceIndex].numIndices =
-        modelInstances[instanceIndex].model->getIndexCount();
-  }
-  {
-    size_t instanceIndex = findInstances("bone4")[0];
-    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
-        dynamicUbo[instanceIndex].modelMatrix, glm::radians(90.f), right);
-    // FlipY manually
-    dynamicUbo[instanceIndex].modelMatrix =
-        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
-                   glm::vec3{boneScale, -boneScale, boneScale});
-    dynamicUbo[instanceIndex].numVertices =
-        modelInstances[instanceIndex].model->getVertexCount();
-    dynamicUbo[instanceIndex].numIndices =
-        modelInstances[instanceIndex].model->getIndexCount();
-  }
-  {
-    size_t instanceIndex = findInstances("bone5")[0];
-    // FlipY manually
-    dynamicUbo[instanceIndex].modelMatrix =
-        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
-                   glm::vec3{boneScale, -boneScale, boneScale});
-    dynamicUbo[instanceIndex].numVertices =
-        modelInstances[instanceIndex].model->getVertexCount();
-    dynamicUbo[instanceIndex].numIndices =
-        modelInstances[instanceIndex].model->getIndexCount();
-  }
-  float shipScale = 1.f;
+
+  float shipScale = .5f;
   {
     size_t instanceIndex = findInstances("dutchShipMedium")[0];
     dynamicUbo[instanceIndex].modelMatrix =
-        glm::translate(glm::mat4{1.f}, glm::vec3{0.f, 0.f, 0.f});
+        glm::translate(glm::mat4{1.f}, glm::vec3{0.f, -5.f, 0.f});
     dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
         dynamicUbo[instanceIndex].modelMatrix, glm::radians(180.f), up);
     // FlipY manually
@@ -529,10 +522,19 @@ void VgeExample::setupDynamicUbo() {
                    glm::vec3{shipScale, -shipScale, shipScale});
     // default
     dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
-    dynamicUbo[instanceIndex].numVertices =
-        modelInstances[instanceIndex].model->getVertexCount();
-    dynamicUbo[instanceIndex].numIndices =
-        modelInstances[instanceIndex].model->getIndexCount();
+  }
+  float quadScale = 20.f;
+  {
+    size_t instanceIndex = findInstances("quad1")[0];
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::translate(glm::mat4{1.f}, glm::vec3{0.f, 0.f, 0.f});
+    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
+        dynamicUbo[instanceIndex].modelMatrix, glm::radians(90.f), right);
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+                   glm::vec3{quadScale, quadScale, quadScale});
+    // default
+    dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
   }
 }
 
@@ -585,6 +587,21 @@ void VgeExample::createDescriptorSetLayout() {
     setLayouts.push_back(*graphics.globalUboDescriptorSetLayout);
   }
 
+  // set 1
+  {
+    vk::DescriptorSetLayoutBinding layoutBinding(
+        0, vk::DescriptorType::eUniformBufferDynamic, 1,
+        vk::ShaderStageFlagBits::eVertex);
+    vk::DescriptorSetLayoutCreateInfo layoutCI({}, 1, &layoutBinding);
+    dynamicUboDescriptorSetLayout =
+        vk::raii::DescriptorSetLayout(device, layoutCI);
+    setLayouts.push_back(*dynamicUboDescriptorSetLayout);
+  }
+
+  // set 2
+  // TODO: need to improve structure. descriptorSetLayout per model
+  setLayouts.push_back(*modelInstances[0].model->descriptorSetLayoutImage);
+
   vk::PipelineLayoutCreateInfo pipelineLayoutCI({}, setLayouts);
   graphics.pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutCI);
 }
@@ -618,11 +635,16 @@ void VgeExample::createDescriptorSets() {
 
 void VgeExample::createPipelines() {
   vk::PipelineVertexInputStateCreateInfo vertexInputSCI =
-      vertexInfos.vertexInputSCI;
+      vgeu::glTF::Vertex::getPipelineVertexInputState({
+          vgeu::glTF::VertexComponent::kPosition,
+          vgeu::glTF::VertexComponent::kNormal,
+          vgeu::glTF::VertexComponent::kUV,
+          vgeu::glTF::VertexComponent::kColor,
+      });
 
   vk::PipelineInputAssemblyStateCreateInfo inputAssemblySCI(
       vk::PipelineInputAssemblyStateCreateFlags(),
-      vk::PrimitiveTopology::ePointList);
+      vk::PrimitiveTopology::eTriangleList);
 
   vk::PipelineViewportStateCreateInfo viewportSCI(
       vk::PipelineViewportStateCreateFlags(), 1, nullptr, 1, nullptr);
@@ -639,13 +661,14 @@ void VgeExample::createPipelines() {
                                     vk::StencilOp::eKeep,
                                     vk::CompareOp::eAlways);
   vk::PipelineDepthStencilStateCreateInfo depthStencilSCI(
-      vk::PipelineDepthStencilStateCreateFlags(), false /*depthTestEnable*/,
+      vk::PipelineDepthStencilStateCreateFlags(), true /*depthTestEnable*/,
       true, vk::CompareOp::eLessOrEqual, false, false, stencilOpState,
       stencilOpState);
 
   vk::PipelineColorBlendAttachmentState colorBlendAttachmentState(
-      true, vk::BlendFactor::eOne, vk::BlendFactor::eOne, vk::BlendOp::eAdd,
-      vk::BlendFactor::eSrcAlpha, vk::BlendFactor::eDstAlpha, vk::BlendOp::eAdd,
+      true, vk::BlendFactor::eSrcAlpha, vk::BlendFactor::eOneMinusSrcAlpha,
+      vk::BlendOp::eAdd, vk::BlendFactor::eOne, vk::BlendFactor::eOne,
+      vk::BlendOp::eAdd,
       vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
           vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA);
 
@@ -661,10 +684,8 @@ void VgeExample::createPipelines() {
   vk::PipelineDynamicStateCreateInfo dynamicSCI(
       vk::PipelineDynamicStateCreateFlags(), dynamicStates);
 
-  auto vertCode =
-      vgeu::readFile(getShadersPath() + "/particle/particle.vert.spv");
-  auto fragCode =
-      vgeu::readFile(getShadersPath() + "/particle/particle.frag.spv");
+  auto vertCode = vgeu::readFile(getShadersPath() + "/pbd/phong.vert.spv");
+  auto fragCode = vgeu::readFile(getShadersPath() + "/pbd/phong.frag.spv");
   // NOTE: after pipeline creation, shader modules can be destroyed.
   vk::raii::ShaderModule vertShaderModule =
       vgeu::createShaderModule(device, vertCode);
@@ -687,8 +708,43 @@ void VgeExample::createPipelines() {
       &rasterizationSCI, &multisampleSCI, &depthStencilSCI, &colorBlendSCI,
       &dynamicSCI, *graphics.pipelineLayout, *renderPass);
 
-  graphics.pipeline =
+  graphics.pipelinePhong =
       vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
+  {
+    vertexInputSCI.setVertexBindingDescriptions(
+        simpleVertexInfos.bindingDescriptions);
+    vertexInputSCI.setVertexAttributeDescriptions(
+        simpleVertexInfos.attributeDescriptions);
+    vertCode = vgeu::readFile(getShadersPath() + "/pbd/simpleMesh.vert.spv");
+    fragCode = vgeu::readFile(getShadersPath() + "/pbd/simpleMesh.frag.spv");
+    // NOTE: after pipeline creation, shader modules can be destroyed.
+    vertShaderModule = vgeu::createShaderModule(device, vertCode);
+    fragShaderModule = vgeu::createShaderModule(device, fragCode);
+    shaderStageCIs[0] = vk::PipelineShaderStageCreateInfo(
+        vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eVertex,
+        *vertShaderModule, "main", nullptr);
+    shaderStageCIs[1] = vk::PipelineShaderStageCreateInfo(
+        vk::PipelineShaderStageCreateFlags(),
+        vk::ShaderStageFlagBits::eFragment, *fragShaderModule, "main", nullptr);
+    graphics.pipelineSimpleMesh =
+        vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
+  }
+  {
+    inputAssemblySCI.topology = vk::PrimitiveTopology::eLineList;
+    vertCode = vgeu::readFile(getShadersPath() + "/pbd/simpleMesh.vert.spv");
+    fragCode = vgeu::readFile(getShadersPath() + "/pbd/simpleMesh.frag.spv");
+    // NOTE: after pipeline creation, shader modules can be destroyed.
+    vertShaderModule = vgeu::createShaderModule(device, vertCode);
+    fragShaderModule = vgeu::createShaderModule(device, fragCode);
+    shaderStageCIs[0] = vk::PipelineShaderStageCreateInfo(
+        vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eVertex,
+        *vertShaderModule, "main", nullptr);
+    shaderStageCIs[1] = vk::PipelineShaderStageCreateInfo(
+        vk::PipelineShaderStageCreateFlags(),
+        vk::ShaderStageFlagBits::eFragment, *fragShaderModule, "main", nullptr);
+    graphics.pipelineSimpleLine =
+        vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
+  }
   {
     vertexInputSCI.setVertexBindingDescriptions(
         tailVertexInfos.bindingDescriptions);
@@ -743,23 +799,22 @@ void VgeExample::draw() {
   updateComputeUbo();
   updateGraphicsUbo();
 
-  // TODO: Fence and compute recording order
-
   {
     // draw cmds recording or command buffers should be built already.
     buildCommandBuffers();
 
     std::vector<vk::PipelineStageFlags> graphicsWaitDstStageMasks{
-        vk::PipelineStageFlagBits::eVertexInput,
+        /*vk::PipelineStageFlagBits::eVertexInput,*/
         vk::PipelineStageFlagBits::eColorAttachmentOutput,
     };
 
     std::vector<vk::Semaphore> graphicsWaitSemaphores{
+        /**compute.semaphores[currentFrameIndex],*/
         *presentCompleteSemaphores[currentFrameIndex],
     };
 
     std::vector<vk::Semaphore> graphicsSignalSemaphore{
-        *graphics.semaphores[currentFrameIndex],
+        /**graphics.semaphores[currentFrameIndex],*/
         *renderCompleteSemaphores[currentFrameIndex],
     };
 
@@ -789,25 +844,23 @@ void VgeExample::buildCommandBuffers() {
       vk::Rect2D(vk::Offset2D(0, 0), swapChainData->swapChainExtent),
       clearValues);
 
-  // acquire barrier compute -> graphics
-  if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
+  // TODO: compute animation
+  //  acquire barrier compute -> graphics
+  /*if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
     std::vector<vk::BufferMemoryBarrier> bufferBarriers;
-    bufferBarriers.emplace_back(
-        vk::AccessFlags{}, vk::AccessFlagBits::eVertexAttributeRead,
-        compute.queueFamilyIndex, graphics.queueFamilyIndex,
-        compute.storageBuffers[currentFrameIndex]->getBuffer(), 0ull,
-        compute.storageBuffers[currentFrameIndex]->getBufferSize());
-    bufferBarriers.emplace_back(
-        vk::AccessFlags{}, vk::AccessFlagBits::eVertexAttributeRead,
-        compute.queueFamilyIndex, graphics.queueFamilyIndex,
-        tailBuffers[currentFrameIndex]->getBuffer(), 0ull,
-        tailBuffers[currentFrameIndex]->getBufferSize());
-
+    for (const auto& animatedVerteBuffer :
+         compute.animatedVertexBuffers[currentFrameIndex]) {
+      bufferBarriers.emplace_back(
+          vk::AccessFlags{}, vk::AccessFlagBits::eVertexAttributeRead,
+          compute.queueFamilyIndex, graphics.queueFamilyIndex,
+          animatedVerteBuffer->getBuffer(), 0ull,
+          animatedVerteBuffer->getBufferSize());
+    }
     drawCmdBuffers[currentFrameIndex].pipelineBarrier(
         vk::PipelineStageFlagBits::eTopOfPipe,
         vk::PipelineStageFlagBits::eVertexInput, vk::DependencyFlags{}, nullptr,
         bufferBarriers, nullptr);
-  }
+  }*/
 
   // NOTE: no secondary cmd buffers
   drawCmdBuffers[currentFrameIndex].beginRenderPass(
@@ -823,7 +876,6 @@ void VgeExample::buildCommandBuffers() {
       vk::PipelineBindPoint::eGraphics, *graphics.pipelineLayout, 0 /*set 0*/,
       {*graphics.globalUboDescriptorSets[currentFrameIndex]}, nullptr);
 
-  // particles
   {
     drawCmdBuffers[currentFrameIndex].setLineWidth(1.f);
     drawCmdBuffers[currentFrameIndex].setViewport(
@@ -834,10 +886,50 @@ void VgeExample::buildCommandBuffers() {
                      0.0f, 1.0f));
     // bind pipeline
     drawCmdBuffers[currentFrameIndex].bindPipeline(
-        vk::PipelineBindPoint::eGraphics, *graphics.pipeline);
+        vk::PipelineBindPoint::eGraphics, *graphics.pipelinePhong);
 
+    // draw all instances including model based and bones.
+    for (size_t instanceIdx = 0; instanceIdx < modelInstances.size();
+         instanceIdx++) {
+      const auto& modelInstance = modelInstances[instanceIdx];
+      if (!modelInstance.model) {
+        continue;
+      }
+      // bind dynamic
+      drawCmdBuffers[currentFrameIndex].bindDescriptorSets(
+          vk::PipelineBindPoint::eGraphics, *graphics.pipelineLayout,
+          1 /*set 1*/, {*dynamicUboDescriptorSets[currentFrameIndex]},
+          alignedSizeDynamicUboElt * instanceIdx);
+      // bind vertex buffer
+      // bind index buffer
+      modelInstance.model->bindBuffers(drawCmdBuffers[currentFrameIndex]);
+      // draw indexed
+      modelInstance.model->draw(currentFrameIndex,
+                                drawCmdBuffers[currentFrameIndex],
+                                vgeu::RenderFlagBits::kBindImages,
+                                *graphics.pipelineLayout, 2u /*set 2*/);
+    }
+  }
+
+  {
+    // simpleMesh
+    drawCmdBuffers[currentFrameIndex].bindPipeline(
+        vk::PipelineBindPoint::eGraphics, *graphics.pipelineSimpleMesh);
+    uint32_t instanceIdx = findInstances("quad1")[0];
+    const auto& modelInstance = modelInstances[instanceIdx];
+    // bind dynamic
+    drawCmdBuffers[currentFrameIndex].bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics, *graphics.pipelineLayout, 1 /*set 1*/,
+        {*dynamicUboDescriptorSets[currentFrameIndex]},
+        alignedSizeDynamicUboElt * instanceIdx);
     vk::DeviceSize offset(0);
-    // TODO: bind and draw
+    drawCmdBuffers[currentFrameIndex].bindVertexBuffers(
+        0, modelInstance.simpleModel->vertexBuffer->getBuffer(), offset);
+    drawCmdBuffers[currentFrameIndex].bindIndexBuffer(
+        modelInstance.simpleModel->indexBuffer->getBuffer(), offset,
+        vk::IndexType::eUint32);
+    drawCmdBuffers[currentFrameIndex].drawIndexed(
+        modelInstance.simpleModel->indexBuffer->getInstanceCount(), 1, 0, 0, 0);
   }
 
   // tail
@@ -861,24 +953,22 @@ void VgeExample::buildCommandBuffers() {
   drawCmdBuffers[currentFrameIndex].endRenderPass();
 
   // release graphics -> compute
-  if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
+  /*if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
     std::vector<vk::BufferMemoryBarrier> bufferBarriers;
-    bufferBarriers.emplace_back(
-        vk::AccessFlagBits::eVertexAttributeRead, vk::AccessFlags{},
-        graphics.queueFamilyIndex, compute.queueFamilyIndex,
-        compute.storageBuffers[currentFrameIndex]->getBuffer(), 0ull,
-        compute.storageBuffers[currentFrameIndex]->getBufferSize());
-    bufferBarriers.emplace_back(
-        vk::AccessFlagBits::eVertexAttributeRead, vk::AccessFlags{},
-        graphics.queueFamilyIndex, compute.queueFamilyIndex,
-        tailBuffers[currentFrameIndex]->getBuffer(), 0ull,
-        tailBuffers[currentFrameIndex]->getBufferSize());
+    for (const auto& animatedVerteBuffer :
+         compute.animatedVertexBuffers[currentFrameIndex]) {
+      bufferBarriers.emplace_back(vk::AccessFlagBits::eVertexAttributeRead,
+                                  vk::AccessFlags{}, graphics.queueFamilyIndex,
+                                  compute.queueFamilyIndex,
+                                  animatedVerteBuffer->getBuffer(), 0ull,
+                                  animatedVerteBuffer->getBufferSize());
+    }
 
     drawCmdBuffers[currentFrameIndex].pipelineBarrier(
         vk::PipelineStageFlagBits::eVertexInput,
         vk::PipelineStageFlagBits::eBottomOfPipe, vk::DependencyFlags{},
         nullptr, bufferBarriers, nullptr);
-  }
+  }*/
 
   // end command buffer
   drawCmdBuffers[currentFrameIndex].end();
@@ -906,6 +996,7 @@ void VgeExample::updateGraphicsUbo() {
   graphics.globalUbo.view = camera.getView();
   graphics.globalUbo.projection = camera.getProjection();
   graphics.globalUbo.inverseView = camera.getInverseView();
+  graphics.globalUbo.lightPos = glm::vec4(-2.f, -4.f, -2.f, 0.f);
   graphics.globalUbo.screenDim = glm::vec2{
       static_cast<float>(width),
       static_cast<float>(height),
@@ -1021,7 +1112,8 @@ void VgeExample::updateDynamicUbo() {
 }
 
 void VgeExample::addModelInstance(const ModelInstance& newInstance) {
-  size_t instanceIdx = modelInstances.size();
+  size_t instanceIdx;
+  instanceIdx = modelInstances.size();
   modelInstances.push_back(newInstance);
   instanceMap[newInstance.name].push_back(instanceIdx);
 }
@@ -1110,14 +1202,15 @@ void VgeExample::onUpdateUIOverlay() {
       }
       uiOverlay->inputFloat("lineWidth", &opts.lineWidth, 0.1f, "%.3f");
       // binding model for model attraction
-      for (const auto& item : instanceMap) {
-        std::string caption =
-            item.first + " / verts: " +
-            std::to_string(
-                modelInstances[item.second[0]].model->getVertexCount());
-        uiOverlay->radioButton(caption.c_str(), &opts.bindingModel,
-                               item.second[0]);
+      for (auto i = 0; i < modelInstances.size(); i++) {
+        const auto& modelInstance = modelInstances[i];
+        uint32_t vertexCount = modelInstance.getVertexCount();
+        std::string name = modelInstance.name;
+
+        std::string caption = name + " / verts: " + std::to_string(vertexCount);
+        uiOverlay->radioButton(caption.c_str(), &opts.bindingModel, i);
       }
+
       ImGui::TreePop();
     }
     if (ImGui::TreeNodeEx("Initializers", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -1190,6 +1283,86 @@ void VgeExample::setOptions(const std::optional<Options>& opts) {
   }
 }
 
+void SimpleModel::setNgon(uint32_t n, glm::vec4 color) {
+  isLines = false;
+  std::vector<SimpleModel::Vertex> vertices;
+  std::vector<uint32_t> indices;
+  for (auto i = 0; i < n; i++) {
+    auto& vert = vertices.emplace_back();
+    glm::vec4 pos{0.f};
+    pos.x = cos(glm::two_pi<float>() / static_cast<float>(n) *
+                static_cast<float>(i));
+    pos.y = sin(glm::two_pi<float>() / static_cast<float>(n) *
+                static_cast<float>(i));
+    glm::vec4 normal{0.f, 0.f, 1.f, 0.f};
+    glm::vec2 uv{(pos.x + 1.f) / 2.f, (pos.y + 1.f) / 2.f};
+    vert.pos = pos;
+    vert.normal = normal;
+    vert.color = color;
+    vert.uv = uv;
+  }
+  for (auto i = 0; i < n - 2; i++) {
+    indices.push_back(0);
+    indices.push_back(i + 1);
+    indices.push_back(i + 2);
+  }
+
+  vertexBuffer = std::make_unique<vgeu::VgeuBuffer>(
+      allocator, sizeof(SimpleModel::Vertex), vertices.size(),
+      vk::BufferUsageFlagBits::eVertexBuffer |
+          vk::BufferUsageFlagBits::eTransferDst,
+      VMA_MEMORY_USAGE_AUTO, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
+
+  indexBuffer = std::make_unique<vgeu::VgeuBuffer>(
+      allocator, sizeof(uint32_t), indices.size(),
+      vk::BufferUsageFlagBits::eIndexBuffer |
+          vk::BufferUsageFlagBits::eTransferDst,
+      VMA_MEMORY_USAGE_AUTO, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
+
+  vgeu::VgeuBuffer vertexStagingBuffer(
+      allocator, sizeof(SimpleModel::Vertex), vertices.size(),
+      vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_AUTO,
+      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+          VMA_ALLOCATION_CREATE_MAPPED_BIT);
+  std::memcpy(vertexStagingBuffer.getMappedData(), vertices.data(),
+              vertexStagingBuffer.getBufferSize());
+
+  vgeu::VgeuBuffer indexStagingBuffer(
+      allocator, sizeof(uint32_t), indices.size(),
+      vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_AUTO,
+      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+          VMA_ALLOCATION_CREATE_MAPPED_BIT);
+  std::memcpy(indexStagingBuffer.getMappedData(), indices.data(),
+              indexStagingBuffer.getBufferSize());
+
+  vgeu::oneTimeSubmit(
+      device, commandPool, transferQueue,
+      [&](const vk::raii::CommandBuffer& cmdBuffer) {
+        cmdBuffer.copyBuffer(
+            vertexStagingBuffer.getBuffer(), vertexBuffer->getBuffer(),
+            vk::BufferCopy(0, 0, vertexStagingBuffer.getBufferSize()));
+        cmdBuffer.copyBuffer(
+            indexStagingBuffer.getBuffer(), indexBuffer->getBuffer(),
+            vk::BufferCopy(0, 0, indexStagingBuffer.getBufferSize()));
+      });
+}
+
+SimpleModel::SimpleModel(const vk::raii::Device& device, VmaAllocator allocator,
+                         const vk::raii::Queue& transferQueue,
+                         const vk::raii::CommandPool& commandPool)
+    : device{device},
+      allocator{allocator},
+      transferQueue{transferQueue},
+      commandPool{commandPool} {}
+
+uint32_t ModelInstance::getVertexCount() const {
+  uint32_t vertexCount;
+  if (model)
+    vertexCount = model->getVertexCount();
+  else
+    vertexCount = simpleModel->vertexBuffer->getInstanceCount();
+  return vertexCount;
+}
 }  // namespace vge
 
 VULKAN_EXAMPLE_MAIN()

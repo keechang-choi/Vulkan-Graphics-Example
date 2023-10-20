@@ -16,6 +16,7 @@ struct GlobalUbo {
   glm::mat4 projection{1.f};
   glm::mat4 view{1.f};
   glm::mat4 inverseView{1.f};
+  glm::vec4 lightPos{0.f};
   // NOTE: alignment
   // tailSize, tailIntensity, tailFadeOut
   glm::vec4 tailInfo{0.f};
@@ -25,22 +26,43 @@ struct GlobalUbo {
 };
 
 // TODO: simple model for circle, quad, lines
+struct SimpleModel {
+  SimpleModel(const vk::raii::Device& device, VmaAllocator allocator,
+              const vk::raii::Queue& transferQueue,
+              const vk::raii::CommandPool& commandPool);
 
+  const vk::raii::Device& device;
+  VmaAllocator allocator;
+  const vk::raii::Queue& transferQueue;
+  const vk::raii::CommandPool& commandPool;
+
+  struct Vertex {
+    glm::vec4 pos;
+    glm::vec4 normal;
+    glm::vec4 color;
+    glm::vec2 uv;
+  };
+  bool isLines = false;
+  std::unique_ptr<vgeu::VgeuBuffer> vertexBuffer;
+  std::unique_ptr<vgeu::VgeuBuffer> indexBuffer;
+  void setNgon(uint32_t n, glm::vec4 color);
+  void setLineStrip(const std::vector<glm::vec4> lineStrip, glm::vec4 color);
+};
 // NOTE: for current animation implementation,
 // each instance need its own uniformBuffers
 struct ModelInstance {
   std::shared_ptr<vgeu::glTF::Model> model;
+  std::shared_ptr<SimpleModel> simpleModel;
   std::string name;
   bool isBone = false;
   int animationIndex = -1;
   float animationTime = 0.f;
+  uint32_t getVertexCount() const;
 };
 
 struct DynamicUboElt {
   glm::mat4 modelMatrix{1.f};
   glm::vec4 modelColor{0.f};
-  uint32_t numVertices;
-  uint32_t numIndices;
 };
 
 struct Particle {
@@ -73,7 +95,7 @@ struct Options {
   float gravity = 0.02f;
   float power = 1.f;
   float soften = 0.001f;
-  int32_t tailSize = 300;
+  int32_t tailSize = 0;
   float tailSampleTime = 0.1;
   int32_t integrator = 1;
   float moveSpeed = 10.f;
@@ -92,6 +114,13 @@ struct AnimatedVertex {
   glm::vec4 normal;
   glm::vec4 tangent;
 };
+
+struct VertexInfos {
+  vk::PipelineVertexInputStateCreateInfo vertexInputSCI;
+  std::vector<vk::VertexInputBindingDescription> bindingDescriptions;
+  std::vector<vk::VertexInputAttributeDescription> attributeDescriptions;
+};
+
 class VgeExample : public VgeBase {
  public:
   VgeExample();
@@ -123,6 +152,8 @@ class VgeExample : public VgeBase {
   void createPipelines();
 
   // compute resources
+  void prepareCompute();
+
   struct {
     uint32_t queueFamilyIndex;
     std::vector<std::unique_ptr<vgeu::VgeuBuffer>> storageBuffers;
@@ -135,6 +166,20 @@ class VgeExample : public VgeBase {
     vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
     std::vector<vk::raii::DescriptorSet> descriptorSets;
     vk::raii::PipelineLayout pipelineLayout = nullptr;
+
+    vk::raii::DescriptorSetLayout skinDescriptorSetLayout = nullptr;
+    // each frames in flight, each model
+    std::vector<std::vector<vk::raii::DescriptorSet>> skinDescriptorSets;
+
+    // each model, each skins
+    std::vector<std::vector<vgeu::glTF::MeshMatricesData>> skinMatricesData;
+    // each frames in flight, each model
+    std::vector<std::vector<std::unique_ptr<vgeu::VgeuBuffer>>>
+        skinMatricesBuffers;
+
+    // each frames in flight, each model
+    std::vector<std::vector<std::unique_ptr<vgeu::VgeuBuffer>>>
+        animatedVertexBuffers;
     struct computeUbo {
       glm::vec4 clickData;
       float dt;
@@ -159,11 +204,8 @@ class VgeExample : public VgeBase {
 
   void setOptions(const std::optional<Options>& opts);
 
-  struct VertexInfos {
-    vk::PipelineVertexInputStateCreateInfo vertexInputSCI;
-    std::vector<vk::VertexInputBindingDescription> bindingDescriptions;
-    std::vector<vk::VertexInputAttributeDescription> attributeDescriptions;
-  } vertexInfos;
+  // NOTE: for simple Model
+  VertexInfos simpleVertexInfos;
   struct {
     // NOTE: movable element;
     uint32_t queueFamilyIndex;
@@ -174,12 +216,14 @@ class VgeExample : public VgeBase {
     vk::raii::PipelineLayout pipelineLayout = nullptr;
 
     vk::raii::Pipeline pipelinePhong = nullptr;
-    vk::raii::Pipeline pipelineLine = nullptr;
+    vk::raii::Pipeline pipelineSimpleMesh = nullptr;
+    vk::raii::Pipeline pipelineSimpleLine = nullptr;
 
     std::vector<vk::raii::Semaphore> semaphores;
   } graphics;
 
   std::vector<ModelInstance> modelInstances;
+  // saves both index for corresponding model and simple model
   std::unordered_map<std::string, std::vector<size_t>> instanceMap;
 
   std::vector<DynamicUboElt> dynamicUbo;
@@ -213,7 +257,7 @@ class VgeExample : public VgeBase {
 
   vk::raii::Pipeline tailPipeline = nullptr;
   float tailTimer = -1.f;
-  size_t tailSize = 30;
+  size_t tailSize = 0;
   float tailSampleTime = 0.05f;
   VertexInfos tailVertexInfos;
 
