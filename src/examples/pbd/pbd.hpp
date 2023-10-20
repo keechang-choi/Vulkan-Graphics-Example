@@ -180,6 +180,9 @@ class VgeExample : public VgeBase {
     // each frames in flight, each model
     std::vector<std::vector<std::unique_ptr<vgeu::VgeuBuffer>>>
         animatedVertexBuffers;
+
+    // for compute animation
+    vk::raii::Pipeline pipelineModelAnimate = nullptr;
     struct computeUbo {
       glm::vec4 clickData;
       float dt;
