@@ -61,7 +61,7 @@ void main()
 	vOut.normal = vIn.normal;
 	vOut.color = vIn.color;
 	vOut.tangent = vIn.tangent;
-	vOut.uv = vIn.uv;
+	// vOut.uv = vIn.uv;
 
 	mat4 transform = modelUbo.modelMatrix;
 	if(skinIndex >= 0){
@@ -82,6 +82,4 @@ void main()
 	vOut.tangent.w = w;
 	
 	verticesOut[index] = vOut;
-	
-
 }

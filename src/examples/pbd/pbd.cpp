@@ -502,7 +502,9 @@ void VgeExample::createStorageBuffers() {
                 vk::BufferUsageFlagBits::eStorageBuffer |
                     vk::BufferUsageFlagBits::eVertexBuffer,
                 VMA_MEMORY_USAGE_AUTO,
-                VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT)));
+                /*VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT*/
+                VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                    VMA_ALLOCATION_CREATE_MAPPED_BIT)));
       }
     }
   }
@@ -1005,7 +1007,28 @@ void VgeExample::draw() {
                                      *compute.semaphores[currentFrameIndex]);
     compute.queue.submit(computeSubmitInfo);
   }
+  // TEST
+  // compute.queue.waitIdle();
 
+  // uint32_t shipIdx = findInstances("dutchShipMedium")[0];
+  // const AnimatedVertex* avs = static_cast<AnimatedVertex*>(
+  //     compute.animatedVertexBuffers[currentFrameIndex][shipIdx]
+  //         ->getMappedData());
+  // for (auto i = 0; i < modelInstances[shipIdx].getVertexCount(); i++) {
+  //   if (!((avs[i].pos.x ==
+  //          modelInstances[shipIdx].model->tmpVertices[i].pos.x) &&
+  //         (avs[i].pos.y ==
+  //          modelInstances[shipIdx].model->tmpVertices[i].pos.y) &&
+  //         (avs[i].pos.z ==
+  //          modelInstances[shipIdx].model->tmpVertices[i].pos.z))) {
+  //     std::cout << "Diff at" << i << std::endl;
+  //     std::cout << "- animated: " << glm::to_string(avs[i].pos) << std::endl;
+  //     std::cout << "-   loaded: "
+  //               << glm::to_string(
+  //                      modelInstances[shipIdx].model->tmpVertices[i].pos)
+  //               << std::endl;
+  //   }
+  // }
   {
     // draw cmds recording or command buffers should be built already.
     buildCommandBuffers();
@@ -1055,13 +1078,13 @@ void VgeExample::buildCommandBuffers() {
   //  acquire barrier compute -> graphics
   if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
     std::vector<vk::BufferMemoryBarrier> bufferBarriers;
-    for (const auto& animatedVerteBuffer :
+    for (const auto& animatedVertexBuffer :
          compute.animatedVertexBuffers[currentFrameIndex]) {
       bufferBarriers.emplace_back(
           vk::AccessFlags{}, vk::AccessFlagBits::eVertexAttributeRead,
           compute.queueFamilyIndex, graphics.queueFamilyIndex,
-          animatedVerteBuffer->getBuffer(), 0ull,
-          animatedVerteBuffer->getBufferSize());
+          animatedVertexBuffer->getBuffer(), 0ull,
+          animatedVertexBuffer->getBufferSize());
     }
     drawCmdBuffers[currentFrameIndex].pipelineBarrier(
         vk::PipelineStageFlagBits::eTopOfPipe,
@@ -1118,7 +1141,6 @@ void VgeExample::buildCommandBuffers() {
       // bind index buffer
       modelInstance.model->bindIndexBufferOnly(
           drawCmdBuffers[currentFrameIndex]);
-
       // draw indexed
       modelInstance.model->draw(currentFrameIndex,
                                 drawCmdBuffers[currentFrameIndex],
@@ -1171,13 +1193,13 @@ void VgeExample::buildCommandBuffers() {
   // release graphics -> compute
   if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
     std::vector<vk::BufferMemoryBarrier> bufferBarriers;
-    for (const auto& animatedVerteBuffer :
+    for (const auto& animatedVertexBuffer :
          compute.animatedVertexBuffers[currentFrameIndex]) {
       bufferBarriers.emplace_back(vk::AccessFlagBits::eVertexAttributeRead,
                                   vk::AccessFlags{}, graphics.queueFamilyIndex,
                                   compute.queueFamilyIndex,
-                                  animatedVerteBuffer->getBuffer(), 0ull,
-                                  animatedVerteBuffer->getBufferSize());
+                                  animatedVertexBuffer->getBuffer(), 0ull,
+                                  animatedVertexBuffer->getBufferSize());
     }
 
     drawCmdBuffers[currentFrameIndex].pipelineBarrier(
@@ -1198,13 +1220,13 @@ void VgeExample::buildComputeCommandBuffers() {
     // acquire barrier graphics -> compute
     if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
       std::vector<vk::BufferMemoryBarrier> bufferBarriers;
-      for (const auto& animatedVerteBuffer :
+      for (const auto& animatedVertexBuffer :
            compute.animatedVertexBuffers[currentFrameIndex]) {
         bufferBarriers.emplace_back(
             vk::AccessFlags{}, vk::AccessFlagBits::eShaderWrite,
             graphics.queueFamilyIndex, compute.queueFamilyIndex,
-            animatedVerteBuffer->getBuffer(), 0ull,
-            animatedVerteBuffer->getBufferSize());
+            animatedVertexBuffer->getBuffer(), 0ull,
+            animatedVertexBuffer->getBufferSize());
       }
       compute.cmdBuffers[currentFrameIndex].pipelineBarrier(
           vk::PipelineStageFlagBits::eTopOfPipe,
@@ -1262,13 +1284,13 @@ void VgeExample::buildComputeCommandBuffers() {
   // release barrier
   if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
     std::vector<vk::BufferMemoryBarrier> bufferBarriers;
-    for (const auto& animatedVerteBuffer :
+    for (const auto& animatedVertexBuffer :
          compute.animatedVertexBuffers[currentFrameIndex]) {
       bufferBarriers.emplace_back(vk::AccessFlagBits::eShaderWrite,
                                   vk::AccessFlags{}, compute.queueFamilyIndex,
                                   graphics.queueFamilyIndex,
-                                  animatedVerteBuffer->getBuffer(), 0ull,
-                                  animatedVerteBuffer->getBufferSize());
+                                  animatedVertexBuffer->getBuffer(), 0ull,
+                                  animatedVertexBuffer->getBufferSize());
     }
 
     compute.cmdBuffers[currentFrameIndex].pipelineBarrier(
@@ -1389,8 +1411,10 @@ void VgeExample::updateDynamicUbo() {
     size_t instanceIndex = findInstances("dutchShipMedium")[0];
     dynamicUbo[instanceIndex].modelMatrix =
         glm::rotate(glm::mat4{1.f},
-                    glm::radians(rotationVelocity) * animationTimer, up) *
+                    0.1f * glm::radians(rotationVelocity) * animationTimer,
+                    up) *
         dynamicUbo[instanceIndex].modelMatrix;
+    dynamicUbo[instanceIndex].modelMatrix = glm::mat4{1.f};
   }
   // update animation joint matrices for each shared model
   {

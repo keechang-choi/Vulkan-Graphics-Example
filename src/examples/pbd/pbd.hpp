@@ -104,7 +104,7 @@ struct Options {
   int32_t bindingModel = 4;
   float pointSize[2] = {1.f, 128.f};
   int32_t desiredSharedDataSize = 256u;
-  float animationSpeed = 0.1;
+  float animationSpeed = 0.5;
   float tailIntensity = 1.0;
   float tailFadeOut = 2.0;
 };
