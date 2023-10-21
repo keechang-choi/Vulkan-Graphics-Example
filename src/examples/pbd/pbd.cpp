@@ -577,6 +577,11 @@ void VgeExample::createStorageBuffers() {
               vk::BufferCopy(0, 0, tailIndexStagingBuffer.getBufferSize()));
         });
   }
+
+  compute.firstCompute.resize(MAX_CONCURRENT_FRAMES);
+  for (auto i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    compute.firstCompute[i] = true;
+  }
 }
 
 void VgeExample::createVertexSCI() {
@@ -601,6 +606,31 @@ void VgeExample::createVertexSCI() {
       vk::PipelineVertexInputStateCreateFlags{},
       simpleVertexInfos.bindingDescriptions,
       simpleVertexInfos.attributeDescriptions);
+
+  // vertex binding and attribute descriptions
+  animatedVertexInfos.bindingDescriptions.emplace_back(
+      0 /*binding*/, sizeof(AnimatedVertex), vk::VertexInputRate::eVertex);
+
+  animatedVertexInfos.attributeDescriptions.emplace_back(
+      0 /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
+      offsetof(AnimatedVertex, pos));
+  animatedVertexInfos.attributeDescriptions.emplace_back(
+      1 /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
+      offsetof(AnimatedVertex, normal));
+  animatedVertexInfos.attributeDescriptions.emplace_back(
+      2 /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
+      offsetof(AnimatedVertex, color));
+  animatedVertexInfos.attributeDescriptions.emplace_back(
+      3 /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
+      offsetof(AnimatedVertex, tangent));
+  animatedVertexInfos.attributeDescriptions.emplace_back(
+      4 /*location*/, 0 /* binding */, vk::Format::eR32G32Sfloat,
+      offsetof(AnimatedVertex, uv));
+
+  animatedVertexInfos.vertexInputSCI = vk::PipelineVertexInputStateCreateInfo(
+      vk::PipelineVertexInputStateCreateFlags{},
+      animatedVertexInfos.bindingDescriptions,
+      animatedVertexInfos.attributeDescriptions);
 
   // tail
   tailVertexInfos.bindingDescriptions.emplace_back(
@@ -805,12 +835,7 @@ void VgeExample::createDescriptorSets() {
 
 void VgeExample::createPipelines() {
   vk::PipelineVertexInputStateCreateInfo vertexInputSCI =
-      vgeu::glTF::Vertex::getPipelineVertexInputState({
-          vgeu::glTF::VertexComponent::kPosition,
-          vgeu::glTF::VertexComponent::kNormal,
-          vgeu::glTF::VertexComponent::kUV,
-          vgeu::glTF::VertexComponent::kColor,
-      });
+      animatedVertexInfos.vertexInputSCI;
 
   vk::PipelineInputAssemblyStateCreateInfo inputAssemblySCI(
       vk::PipelineInputAssemblyStateCreateFlags(),
@@ -969,22 +994,34 @@ void VgeExample::draw() {
   updateComputeUbo();
   updateGraphicsUbo();
 
+  //  compute recording and submitting
+  {
+    buildComputeCommandBuffers();
+    vk::PipelineStageFlags computeWaitDstStageMask(
+        vk::PipelineStageFlagBits::eComputeShader);
+    vk::SubmitInfo computeSubmitInfo(*graphics.semaphores[currentFrameIndex],
+                                     computeWaitDstStageMask,
+                                     *compute.cmdBuffers[currentFrameIndex],
+                                     *compute.semaphores[currentFrameIndex]);
+    compute.queue.submit(computeSubmitInfo);
+  }
+
   {
     // draw cmds recording or command buffers should be built already.
     buildCommandBuffers();
 
     std::vector<vk::PipelineStageFlags> graphicsWaitDstStageMasks{
-        /*vk::PipelineStageFlagBits::eVertexInput,*/
+        vk::PipelineStageFlagBits::eVertexInput,
         vk::PipelineStageFlagBits::eColorAttachmentOutput,
     };
 
     std::vector<vk::Semaphore> graphicsWaitSemaphores{
-        /**compute.semaphores[currentFrameIndex],*/
+        *compute.semaphores[currentFrameIndex],
         *presentCompleteSemaphores[currentFrameIndex],
     };
 
     std::vector<vk::Semaphore> graphicsSignalSemaphore{
-        /**graphics.semaphores[currentFrameIndex],*/
+        *graphics.semaphores[currentFrameIndex],
         *renderCompleteSemaphores[currentFrameIndex],
     };
 
@@ -1016,7 +1053,7 @@ void VgeExample::buildCommandBuffers() {
 
   // TODO: compute animation
   //  acquire barrier compute -> graphics
-  /*if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
+  if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
     std::vector<vk::BufferMemoryBarrier> bufferBarriers;
     for (const auto& animatedVerteBuffer :
          compute.animatedVertexBuffers[currentFrameIndex]) {
@@ -1030,7 +1067,7 @@ void VgeExample::buildCommandBuffers() {
         vk::PipelineStageFlagBits::eTopOfPipe,
         vk::PipelineStageFlagBits::eVertexInput, vk::DependencyFlags{}, nullptr,
         bufferBarriers, nullptr);
-  }*/
+  }
 
   // NOTE: no secondary cmd buffers
   drawCmdBuffers[currentFrameIndex].beginRenderPass(
@@ -1065,14 +1102,23 @@ void VgeExample::buildCommandBuffers() {
       if (!modelInstance.model) {
         continue;
       }
+
       // bind dynamic
       drawCmdBuffers[currentFrameIndex].bindDescriptorSets(
           vk::PipelineBindPoint::eGraphics, *graphics.pipelineLayout,
           1 /*set 1*/, {*dynamicUboDescriptorSets[currentFrameIndex]},
           alignedSizeDynamicUboElt * instanceIdx);
       // bind vertex buffer
+      vk::DeviceSize offset(0);
+      drawCmdBuffers[currentFrameIndex].bindVertexBuffers(
+          0,
+          compute.animatedVertexBuffers[currentFrameIndex][instanceIdx]
+              ->getBuffer(),
+          offset);
       // bind index buffer
-      modelInstance.model->bindBuffers(drawCmdBuffers[currentFrameIndex]);
+      modelInstance.model->bindIndexBufferOnly(
+          drawCmdBuffers[currentFrameIndex]);
+
       // draw indexed
       modelInstance.model->draw(currentFrameIndex,
                                 drawCmdBuffers[currentFrameIndex],
@@ -1123,7 +1169,7 @@ void VgeExample::buildCommandBuffers() {
   drawCmdBuffers[currentFrameIndex].endRenderPass();
 
   // release graphics -> compute
-  /*if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
+  if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
     std::vector<vk::BufferMemoryBarrier> bufferBarriers;
     for (const auto& animatedVerteBuffer :
          compute.animatedVertexBuffers[currentFrameIndex]) {
@@ -1138,10 +1184,100 @@ void VgeExample::buildCommandBuffers() {
         vk::PipelineStageFlagBits::eVertexInput,
         vk::PipelineStageFlagBits::eBottomOfPipe, vk::DependencyFlags{},
         nullptr, bufferBarriers, nullptr);
-  }*/
+  }
 
   // end command buffer
   drawCmdBuffers[currentFrameIndex].end();
+}
+
+void VgeExample::buildComputeCommandBuffers() {
+  compute.cmdBuffers[currentFrameIndex].begin({});
+
+  // no matching release at first
+  if (!compute.firstCompute[currentFrameIndex]) {
+    // acquire barrier graphics -> compute
+    if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
+      std::vector<vk::BufferMemoryBarrier> bufferBarriers;
+      for (const auto& animatedVerteBuffer :
+           compute.animatedVertexBuffers[currentFrameIndex]) {
+        bufferBarriers.emplace_back(
+            vk::AccessFlags{}, vk::AccessFlagBits::eShaderWrite,
+            graphics.queueFamilyIndex, compute.queueFamilyIndex,
+            animatedVerteBuffer->getBuffer(), 0ull,
+            animatedVerteBuffer->getBufferSize());
+      }
+      compute.cmdBuffers[currentFrameIndex].pipelineBarrier(
+          vk::PipelineStageFlagBits::eTopOfPipe,
+          vk::PipelineStageFlagBits::eComputeShader, vk::DependencyFlags{},
+          nullptr, bufferBarriers, nullptr);
+    }
+  }
+
+  // pre compute animation
+  {
+    compute.cmdBuffers[currentFrameIndex].bindPipeline(
+        vk::PipelineBindPoint::eCompute, *compute.pipelineModelAnimate);
+    for (auto i = 0; i < modelInstances.size(); i++) {
+      const auto& modelInstance = modelInstances[i];
+      // animate only gltf models (modelMatrix)
+      if (!modelInstance.model) {
+        continue;
+      }
+      // bind SSBO for particle attraction, input vertices
+      modelInstance.model->bindSSBO(compute.cmdBuffers[currentFrameIndex],
+                                    *compute.pipelineLayout, 1 /*set*/);
+
+      compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+          vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 2 /*set*/,
+          {*dynamicUboDescriptorSets[currentFrameIndex]},
+          alignedSizeDynamicUboElt * i);
+
+      // bind SSBO for skin matrix and animated vertices
+      compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+          vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 3 /*set*/,
+          *compute.skinDescriptorSets[currentFrameIndex][i], nullptr);
+      compute.cmdBuffers[currentFrameIndex].dispatch(
+          modelInstances[opts.bindingModel].model->getVertexCount() /
+                  sharedDataSize +
+              1,
+          1, 1);
+    }
+
+    // TODO: enable when use future compute
+    // memory barrier
+    // vk::BufferMemoryBarrier bufferBarrier(
+    //     vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eShaderRead,
+    //     VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+    //     compute.animatedVertexBuffers[currentFrameIndex][opts.bindingModel]
+    //         ->getBuffer(),
+    //     0ull,
+    //     compute.animatedVertexBuffers[currentFrameIndex][opts.bindingModel]
+    //         ->getBufferSize());
+    // compute.cmdBuffers[currentFrameIndex].pipelineBarrier(
+    //     vk::PipelineStageFlagBits::eComputeShader,
+    //     vk::PipelineStageFlagBits::eComputeShader, vk::DependencyFlags{},
+    //     nullptr, bufferBarrier, nullptr);
+  }
+
+  // release barrier
+  if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
+    std::vector<vk::BufferMemoryBarrier> bufferBarriers;
+    for (const auto& animatedVerteBuffer :
+         compute.animatedVertexBuffers[currentFrameIndex]) {
+      bufferBarriers.emplace_back(vk::AccessFlagBits::eShaderWrite,
+                                  vk::AccessFlags{}, compute.queueFamilyIndex,
+                                  graphics.queueFamilyIndex,
+                                  animatedVerteBuffer->getBuffer(), 0ull,
+                                  animatedVerteBuffer->getBufferSize());
+    }
+
+    compute.cmdBuffers[currentFrameIndex].pipelineBarrier(
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::PipelineStageFlagBits::eBottomOfPipe, vk::DependencyFlags{},
+        nullptr, bufferBarriers, nullptr);
+  }
+  compute.cmdBuffers[currentFrameIndex].end();
+  compute.firstCompute[currentFrameIndex] = false;
 }
 
 void VgeExample::viewChanged() {
@@ -1260,6 +1396,9 @@ void VgeExample::updateDynamicUbo() {
   {
     std::unordered_set<const vgeu::glTF::Model*> updatedSharedModelSet;
     for (auto& modelInstance : modelInstances) {
+      if (!modelInstance.model) {
+        continue;
+      }
       if (updatedSharedModelSet.find(modelInstance.model.get()) !=
           updatedSharedModelSet.end()) {
         continue;
@@ -1269,6 +1408,19 @@ void VgeExample::updateDynamicUbo() {
       modelInstance.model->updateAnimation(currentFrameIndex,
                                            modelInstance.animationIndex,
                                            modelInstance.animationTime, true);
+    }
+
+    // update animation ssbo
+    for (auto i = 0; i < modelInstances.size(); i++) {
+      const auto modelInstance = modelInstances[i];
+      if (!modelInstance.model) {
+        continue;
+      }
+      modelInstance.model->getSkinMatrices(compute.skinMatricesData[i]);
+      std::memcpy(
+          compute.skinMatricesBuffers[currentFrameIndex][i]->getMappedData(),
+          compute.skinMatricesData[i].data(),
+          compute.skinMatricesBuffers[currentFrameIndex][i]->getBufferSize());
     }
   }
 

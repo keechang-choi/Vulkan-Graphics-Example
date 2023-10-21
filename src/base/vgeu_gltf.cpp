@@ -1120,6 +1120,7 @@ void Model::draw(const uint32_t frameIndex,
     drawNode(frameIndex, node.get(), cmdBuffer, renderFlags, pipelineLayout,
              bindImageSet, bindSkinSet);
   }
+  buffersBound = false;
 }
 
 void Model::drawNode(const uint32_t frameIndex, const Node* node,
@@ -1170,6 +1171,14 @@ void Model::drawNode(const uint32_t frameIndex, const Node* node,
 void Model::bindBuffers(const vk::raii::CommandBuffer& cmdBuffer) {
   vk::DeviceSize offset(0);
   cmdBuffer.bindVertexBuffers(0, vertexBuffer->getBuffer(), offset);
+  if (indexBuffer.get()) {
+    cmdBuffer.bindIndexBuffer(indexBuffer->getBuffer(), 0,
+                              vk::IndexType::eUint32);
+  }
+  buffersBound = true;
+}
+
+void Model::bindIndexBufferOnly(const vk::raii::CommandBuffer& cmdBuffer) {
   if (indexBuffer.get()) {
     cmdBuffer.bindIndexBuffer(indexBuffer->getBuffer(), 0,
                               vk::IndexType::eUint32);

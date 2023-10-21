@@ -2,8 +2,9 @@
 
 layout (location = 0) in vec3 inPos;
 layout (location = 1) in vec3 inNormal;
-layout (location = 2) in vec2 inUV;
-layout (location = 3) in vec3 inColor;
+layout (location = 2) in vec4 inColor;
+layout (location = 3) in vec3 inTangent;
+layout (location = 4) in vec2 inUV;
 
 layout (set = 0, binding = 0) uniform GlobalUbo 
 {
@@ -33,7 +34,7 @@ void main()
 	outColor = modelUbo.modelColor;
 	outUV = inUV;
 	// TODO: animation pre-compute
-	mat4 worldTransform = modelUbo.modelMatrix;
+	mat4 worldTransform = mat4(1.0);
 	gl_Position = globalUbo.projection * globalUbo.view * worldTransform * vec4(inPos.xyz, 1.0);
 	
 	vec4 pos = modelUbo.modelMatrix * vec4(inPos, 1.0);

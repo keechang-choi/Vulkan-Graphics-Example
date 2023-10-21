@@ -283,6 +283,7 @@ class Model {
       float scale = 1.0f);
 
   void bindBuffers(const vk::raii::CommandBuffer& cmdBuffer);
+  void bindIndexBufferOnly(const vk::raii::CommandBuffer& cmdBuffer);
   void bindSSBO(const vk::raii::CommandBuffer& cmdBuffer,
                 vk::PipelineLayout pipelineLayout, uint32_t bindSet);
 

@@ -14,7 +14,9 @@ struct VertexIn{
 struct VertexOut{
 	vec4 pos; // w as skinIndex
 	vec4 normal; // w not used
+	vec4 color;
 	vec4 tangent;
+	vec2 uv;
 };
 
 struct MeshMatrices{
@@ -26,6 +28,12 @@ struct MeshMatrices{
 layout (std430, set = 1, binding = 0) readonly buffer VertexInSSBO{
 	VertexIn verticesIn[ ];
 };
+
+layout (set = 2, binding = 0) uniform ModelUbo 
+{
+	mat4 modelMatrix;
+	vec4 modelColor;
+} modelUbo;
 
 
 layout (std430, set = 3, binding = 0) readonly buffer SkinSSBO{
@@ -51,7 +59,11 @@ void main()
 	VertexOut vOut;
 	vOut.pos = vIn.pos;
 	vOut.normal = vIn.normal;
+	vOut.color = vIn.color;
 	vOut.tangent = vIn.tangent;
+	vOut.uv = vIn.uv;
+
+	mat4 transform = modelUbo.modelMatrix;
 	if(skinIndex >= 0){
 		MeshMatrices eachSkinData = meshMatrices[skinIndex];
 		vec4 inJointWeights = vIn.weight0;
@@ -60,13 +72,15 @@ void main()
 			inJointWeights.y * eachSkinData.jointMatrices[int(inJointIndices.y)] +
 			inJointWeights.z * eachSkinData.jointMatrices[int(inJointIndices.z)] +
 			inJointWeights.w * eachSkinData.jointMatrices[int(inJointIndices.w)];
-		mat4 transform = eachSkinData.nodeMatrix * skinMatrix;
-		vOut.pos = transform * vec4(vIn.pos.xyz, 1.0);
-		vOut.normal = normalize(inverse(transpose(transform)) * vec4(vIn.normal.xyz, 0.0));
-		float w = vIn.tangent.w;
-		vOut.tangent = normalize(transform * vec4(vIn.tangent.xyz, 0.0));
-		vOut.tangent.w = w;
+		transform = transform * eachSkinData.nodeMatrix * skinMatrix;
 	}
+
+	vOut.pos = transform * vec4(vIn.pos.xyz, 1.0);
+	vOut.normal = normalize(inverse(transpose(transform)) * vec4(vIn.normal.xyz, 0.0));
+	float w = vIn.tangent.w;
+	vOut.tangent = normalize(transform * vec4(vIn.tangent.xyz, 0.0));
+	vOut.tangent.w = w;
+	
 	verticesOut[index] = vOut;
 	
 

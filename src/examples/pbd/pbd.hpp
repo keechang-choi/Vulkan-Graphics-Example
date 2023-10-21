@@ -109,10 +109,13 @@ struct Options {
   float tailFadeOut = 2.0;
 };
 
+// NOTE: ssbo usage alignment
 struct AnimatedVertex {
-  glm::vec4 pos;
-  glm::vec4 normal;
-  glm::vec4 tangent;
+  alignas(16) glm::vec4 pos;
+  alignas(16) glm::vec4 normal;
+  alignas(16) glm::vec4 color;
+  alignas(16) glm::vec4 tangent;
+  alignas(8) glm::vec2 uv;
 };
 
 struct VertexInfos {
@@ -190,10 +193,12 @@ class VgeExample : public VgeBase {
       float tailTimer;
       uint32_t tailSize;
     } ubo;
+    std::vector<bool> firstCompute;
   } compute;
 
   void draw();
   void buildCommandBuffers();
+  void buildComputeCommandBuffers();
 
   void setupDynamicUbo();
   size_t padUniformBufferSize(size_t originalSize);
@@ -209,6 +214,8 @@ class VgeExample : public VgeBase {
 
   // NOTE: for simple Model
   VertexInfos simpleVertexInfos;
+  // for animated vertex
+  VertexInfos animatedVertexInfos;
   struct {
     // NOTE: movable element;
     uint32_t queueFamilyIndex;
