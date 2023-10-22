@@ -174,4 +174,8 @@ void setImageLayout(const vk::raii::CommandBuffer& commandBuffer,
                     uint32_t levelCount, vk::ImageLayout oldImageLayout,
                     vk::ImageLayout newImageLayout);
 
+// get aligned size of uniform/storage buffer
+size_t padBufferSize(const vk::raii::PhysicalDevice physicalDevice,
+                     size_t originalSize, bool isUniformType);
+
 }  // namespace vgeu

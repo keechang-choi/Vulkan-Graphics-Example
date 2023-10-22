@@ -201,7 +201,6 @@ class VgeExample : public VgeBase {
   void buildComputeCommandBuffers();
 
   void setupDynamicUbo();
-  size_t padUniformBufferSize(size_t originalSize);
   void updateGraphicsUbo();
   void updateComputeUbo();
   void updateDynamicUbo();

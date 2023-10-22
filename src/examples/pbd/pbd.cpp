@@ -139,7 +139,8 @@ void VgeExample::prepareCompute() {
     }
 
     // dynamic UBO
-    alignedSizeDynamicUboElt = padUniformBufferSize(sizeof(DynamicUboElt));
+    alignedSizeDynamicUboElt =
+        vgeu::padBufferSize(physicalDevice, sizeof(DynamicUboElt), true);
     dynamicUniformBuffers.reserve(MAX_CONCURRENT_FRAMES);
     for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
       dynamicUniformBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
@@ -505,6 +506,27 @@ void VgeExample::createStorageBuffers() {
                 /*VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT*/
                 VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
                     VMA_ALLOCATION_CREATE_MAPPED_BIT)));
+      }
+    }
+    // TEST: init value
+    size_t alignedSize =
+        vgeu::padBufferSize(physicalDevice, sizeof(AnimatedVertex), false);
+    for (auto i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      for (auto j = 0; j < modelInstances.size(); j++) {
+        const auto& modelInstance = modelInstances[j];
+        if (!modelInstance.model) continue;
+        std::vector<AnimatedVertex> animatedVertices;
+        for (const auto& v : modelInstance.model->tmpVertices) {
+          auto& animatedVertex = animatedVertices.emplace_back();
+          animatedVertex.pos = v.pos;
+          animatedVertex.normal = v.normal;
+          animatedVertex.color = v.color;
+          animatedVertex.tangent = v.tangent;
+          animatedVertex.uv = v.uv;
+        }
+        std::memcpy(compute.animatedVertexBuffers[i][j]->getMappedData(),
+                    animatedVertices.data(),
+                    compute.animatedVertexBuffers[i][j]->getBufferSize());
       }
     }
   }
@@ -1239,8 +1261,9 @@ void VgeExample::buildComputeCommandBuffers() {
   {
     compute.cmdBuffers[currentFrameIndex].bindPipeline(
         vk::PipelineBindPoint::eCompute, *compute.pipelineModelAnimate);
-    for (auto i = 0; i < modelInstances.size(); i++) {
-      const auto& modelInstance = modelInstances[i];
+    for (auto instanceIdx = 0; instanceIdx < modelInstances.size();
+         instanceIdx++) {
+      const auto& modelInstance = modelInstances[instanceIdx];
       // animate only gltf models (modelMatrix)
       if (!modelInstance.model) {
         continue;
@@ -1252,15 +1275,14 @@ void VgeExample::buildComputeCommandBuffers() {
       compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
           vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 2 /*set*/,
           {*dynamicUboDescriptorSets[currentFrameIndex]},
-          alignedSizeDynamicUboElt * i);
+          alignedSizeDynamicUboElt * instanceIdx);
 
       // bind SSBO for skin matrix and animated vertices
       compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
           vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 3 /*set*/,
-          *compute.skinDescriptorSets[currentFrameIndex][i], nullptr);
+          *compute.skinDescriptorSets[currentFrameIndex][instanceIdx], nullptr);
       compute.cmdBuffers[currentFrameIndex].dispatch(
-          modelInstances[opts.bindingModel].model->getVertexCount() /
-                  sharedDataSize +
+          modelInstances[instanceIdx].model->getVertexCount() / sharedDataSize +
               1,
           1, 1);
     }
@@ -1306,16 +1328,6 @@ void VgeExample::viewChanged() {
   // std::cout << "Call: viewChanged()" << std::endl;
   camera.setAspectRatio(static_cast<float>(width) / static_cast<float>(height));
   // NOTE: moved updating ubo into render() to use frameindex.
-}
-
-size_t VgeExample::padUniformBufferSize(size_t originalSize) {
-  size_t minUboAlignment =
-      physicalDevice.getProperties().limits.minUniformBufferOffsetAlignment;
-  size_t alignedSize = originalSize;
-  if (minUboAlignment > 0) {
-    alignedSize = (alignedSize + minUboAlignment - 1) & ~(minUboAlignment - 1);
-  }
-  return alignedSize;
 }
 
 // update UniformBuffers for currentFrameIndex
@@ -1414,7 +1426,6 @@ void VgeExample::updateDynamicUbo() {
                     0.1f * glm::radians(rotationVelocity) * animationTimer,
                     up) *
         dynamicUbo[instanceIndex].modelMatrix;
-    dynamicUbo[instanceIndex].modelMatrix = glm::mat4{1.f};
   }
   // update animation joint matrices for each shared model
   {
