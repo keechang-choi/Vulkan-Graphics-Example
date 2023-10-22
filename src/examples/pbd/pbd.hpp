@@ -82,16 +82,7 @@ struct SpecializationData {
 
 struct Options {
   int32_t numParticles{1024};
-  int32_t numAttractors{6};
-  std::vector<std::vector<float>> colors = {
-      {5.f / 255.f, 12.f / 255.f, 129.f / 255.f, 1.f},
-      {202.f / 255.f, 42.f / 255.f, 1.f / 255.f, 1.f},
-      {41.f / 255.f, 86.f / 255.f, 143.f / 255.f, 1.f},
-      {161.f / 255.f, 40.f / 255.f, 48.f / 255.f, 1.f},
-      {1.f / 255.f, 75.f / 255.f, 255.f / 255.f, 1.f},
-      {246.f / 255.f, 7.f / 255.f, 9.f / 255.f, 1.f}};
   float coefficientDeltaTime = 0.05f;
-  float rotationVelocity = 50.0f;
   float gravity = 0.02f;
   float power = 1.f;
   float soften = 0.001f;
@@ -100,8 +91,6 @@ struct Options {
   int32_t integrator = 1;
   float moveSpeed = 10.f;
   float lineWidth = 1.0f;
-  int32_t attractionType = 0;
-  int32_t bindingModel = 4;
   float pointSize[2] = {1.f, 128.f};
   int32_t desiredSharedDataSize = 256u;
   float animationSpeed = 0.5;

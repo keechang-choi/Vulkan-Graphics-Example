@@ -325,9 +325,6 @@ class Model {
   DescriptorBindingFlags descriptorBindingFlags =
       DescriptorBindingFlagBits::kImageBaseColor;
 
-  std::vector<Vertex> tmpVertices;
-  std::vector<uint32_t> tmpIndices;
-
  private:
   // load images from files
   void loadImages(tinygltf::Model& gltfModel);

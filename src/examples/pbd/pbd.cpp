@@ -503,30 +503,7 @@ void VgeExample::createStorageBuffers() {
                 vk::BufferUsageFlagBits::eStorageBuffer |
                     vk::BufferUsageFlagBits::eVertexBuffer,
                 VMA_MEMORY_USAGE_AUTO,
-                /*VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT*/
-                VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-                    VMA_ALLOCATION_CREATE_MAPPED_BIT)));
-      }
-    }
-    // TEST: init value
-    size_t alignedSize =
-        vgeu::padBufferSize(physicalDevice, sizeof(AnimatedVertex), false);
-    for (auto i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
-      for (auto j = 0; j < modelInstances.size(); j++) {
-        const auto& modelInstance = modelInstances[j];
-        if (!modelInstance.model) continue;
-        std::vector<AnimatedVertex> animatedVertices;
-        for (const auto& v : modelInstance.model->tmpVertices) {
-          auto& animatedVertex = animatedVertices.emplace_back();
-          animatedVertex.pos = v.pos;
-          animatedVertex.normal = v.normal;
-          animatedVertex.color = v.color;
-          animatedVertex.tangent = v.tangent;
-          animatedVertex.uv = v.uv;
-        }
-        std::memcpy(compute.animatedVertexBuffers[i][j]->getMappedData(),
-                    animatedVertices.data(),
-                    compute.animatedVertexBuffers[i][j]->getBufferSize());
+                VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT)));
       }
     }
   }
@@ -1029,28 +1006,7 @@ void VgeExample::draw() {
                                      *compute.semaphores[currentFrameIndex]);
     compute.queue.submit(computeSubmitInfo);
   }
-  // TEST
-  // compute.queue.waitIdle();
 
-  // uint32_t shipIdx = findInstances("dutchShipMedium")[0];
-  // const AnimatedVertex* avs = static_cast<AnimatedVertex*>(
-  //     compute.animatedVertexBuffers[currentFrameIndex][shipIdx]
-  //         ->getMappedData());
-  // for (auto i = 0; i < modelInstances[shipIdx].getVertexCount(); i++) {
-  //   if (!((avs[i].pos.x ==
-  //          modelInstances[shipIdx].model->tmpVertices[i].pos.x) &&
-  //         (avs[i].pos.y ==
-  //          modelInstances[shipIdx].model->tmpVertices[i].pos.y) &&
-  //         (avs[i].pos.z ==
-  //          modelInstances[shipIdx].model->tmpVertices[i].pos.z))) {
-  //     std::cout << "Diff at" << i << std::endl;
-  //     std::cout << "- animated: " << glm::to_string(avs[i].pos) << std::endl;
-  //     std::cout << "-   loaded: "
-  //               << glm::to_string(
-  //                      modelInstances[shipIdx].model->tmpVertices[i].pos)
-  //               << std::endl;
-  //   }
-  // }
   {
     // draw cmds recording or command buffers should be built already.
     buildCommandBuffers();
@@ -1558,15 +1514,6 @@ void VgeExample::onUpdateUIOverlay() {
         cameraController.moveSpeed = this->opts.moveSpeed;
       }
       uiOverlay->inputFloat("lineWidth", &opts.lineWidth, 0.1f, "%.3f");
-      // binding model for model attraction
-      for (auto i = 0; i < modelInstances.size(); i++) {
-        const auto& modelInstance = modelInstances[i];
-        uint32_t vertexCount = modelInstance.getVertexCount();
-        std::string name = modelInstance.name;
-
-        std::string caption = name + " / verts: " + std::to_string(vertexCount);
-        uiOverlay->radioButton(caption.c_str(), &opts.bindingModel, i);
-      }
 
       ImGui::TreePop();
     }
@@ -1574,25 +1521,9 @@ void VgeExample::onUpdateUIOverlay() {
       if (uiOverlay->button("Restart")) {
         restart = true;
       }
-      // attraction type
-      uiOverlay->radioButton("gravitational attraction", &opts.attractionType,
-                             0);
-      uiOverlay->radioButton("model attraction", &opts.attractionType, 1);
 
-      uiOverlay->sliderInt("numAttractors", &opts.numAttractors, 2, 6);
-      ImGui::DragInt("Drag numParticles", &opts.numParticles, 16.f,
-                     opts.numAttractors, kMaxNumParticles);
-      if (ImGui::TreeNodeEx("colors", ImGuiTreeNodeFlags_DefaultOpen)) {
-        for (size_t i = 0; i < opts.numAttractors; i++) {
-          std::string caption = "colors" + std::to_string(i);
-          uiOverlay->colorPicker(caption.c_str(), opts.colors[i].data());
-        }
-        ImGui::TreePop();
-      }
       uiOverlay->inputInt("desiredSharedDataSize", &opts.desiredSharedDataSize,
                           64);
-      uiOverlay->inputFloat("rotationVelocity", &opts.rotationVelocity,
-                            0.000001f, "%.6f");
       uiOverlay->inputInt("tailSize", &opts.tailSize, 1);
       if (ImGui::TreeNodeEx("integrator", ImGuiTreeNodeFlags_DefaultOpen)) {
         uiOverlay->radioButton("euler", &opts.integrator, 1);
@@ -1617,9 +1548,7 @@ void VgeExample::setOptions(const std::optional<Options>& opts) {
   if (opts.has_value()) {
     this->opts = opts.value();
     // overwrite cli args for restart run
-    numAttractors = static_cast<uint32_t>(this->opts.numAttractors);
     numParticles = static_cast<uint32_t>(this->opts.numParticles);
-    rotationVelocity = this->opts.rotationVelocity;
     tailSampleTime = this->opts.tailSampleTime;
     tailSize = static_cast<uint32_t>(this->opts.tailSize);
     integrator = static_cast<uint32_t>(this->opts.integrator);
@@ -1628,9 +1557,7 @@ void VgeExample::setOptions(const std::optional<Options>& opts) {
         static_cast<uint32_t>(this->opts.desiredSharedDataSize);
   } else {
     // save cli args for initial run
-    this->opts.numAttractors = static_cast<int32_t>(numAttractors);
     this->opts.numParticles = static_cast<int32_t>(numParticles);
-    this->opts.rotationVelocity = rotationVelocity;
     this->opts.gravity = gravity;
     this->opts.power = power;
     this->opts.soften = soften;

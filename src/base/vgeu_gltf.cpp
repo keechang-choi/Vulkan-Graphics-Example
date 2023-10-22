@@ -288,9 +288,6 @@ void Model::loadFromFile(std::string filename,
     loadNode(nullptr, node, scene.nodes[i], gltfModel, indices, vertices,
              scale);
   }
-  // TODO: test
-  tmpVertices = vertices;
-  tmpIndices = indices;
 
   if (gltfModel.animations.size() > 0) {
     loadAnimations(gltfModel);
