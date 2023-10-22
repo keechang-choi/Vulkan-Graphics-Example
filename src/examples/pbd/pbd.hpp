@@ -45,6 +45,8 @@ struct SimpleModel {
   bool isLines = false;
   std::unique_ptr<vgeu::VgeuBuffer> vertexBuffer;
   std::unique_ptr<vgeu::VgeuBuffer> indexBuffer;
+  // color.alpha=0.0 for checker board
+  // color.alpha=1.0 for no lighting
   void setNgon(uint32_t n, glm::vec4 color);
   void setLineList(const std::vector<glm::vec4>& positions,
                    const std::vector<uint32_t>& indices, glm::vec4 color);
@@ -65,6 +67,7 @@ struct ModelInstance {
 
 struct DynamicUboElt {
   glm::mat4 modelMatrix{1.f};
+  // color.alpha used for mix between color.rgb and original color
   glm::vec4 modelColor{0.f};
 };
 

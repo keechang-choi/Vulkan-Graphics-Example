@@ -455,7 +455,7 @@ void VgeExample::loadAssets() {
 
   std::shared_ptr<SimpleModel> quad = std::make_shared<SimpleModel>(
       device, globalAllocator->getAllocator(), queue, commandPool);
-  quad->setNgon(4, {0.5f, 0.5f, 0.5f, 1.f});
+  quad->setNgon(4, {0.5f, 0.5f, 0.5f, 0.f});
   {
     ModelInstance modelInstance{};
     modelInstance.simpleModel = quad;
@@ -463,17 +463,27 @@ void VgeExample::loadAssets() {
     addModelInstance(modelInstance);
   }
 
+  std::shared_ptr<SimpleModel> circle = std::make_shared<SimpleModel>(
+      device, globalAllocator->getAllocator(), queue, commandPool);
+  circle->setNgon(32, {1.0f, 1.0f, 1.0f, 1.f});
+  for (auto i = 0; i < 10; i++) {
+    ModelInstance modelInstance{};
+    modelInstance.simpleModel = circle;
+    modelInstance.name = "circle1-" + std::to_string(i);
+    addModelInstance(modelInstance);
+  }
+
   std::shared_ptr<SimpleModel> rectLines = std::make_shared<SimpleModel>(
       device, globalAllocator->getAllocator(), queue, commandPool);
+  std::vector<glm::vec4> positions{
+      {0.0f, 0.0f, 0.0f, 1.0f},
+      {1.0f, 0.0f, 0.0f, 1.0f},
+      {1.0f, 1.0f, 0.0f, 1.0f},
+      {0.0f, 1.0f, 0.0f, 1.0f},
+  };
+  std::vector<uint32_t> indices{0, 1, 1, 2, 2, 3, 3, 0};
+  rectLines->setLineList(positions, indices, {1.f, 1.f, 1.f, 1.f});
   {
-    std::vector<glm::vec4> positions{
-        {0.0f, 0.0f, 0.0f, 1.0f},
-        {1.0f, 0.0f, 0.0f, 1.0f},
-        {1.0f, 1.0f, 0.0f, 1.0f},
-        {0.0f, 1.0f, 0.0f, 1.0f},
-    };
-    std::vector<uint32_t> indices{0, 1, 1, 2, 2, 3, 3, 0};
-    rectLines->setLineList(positions, indices, {1.f, 1.f, 1.f, 1.f});
     ModelInstance modelInstance{};
     modelInstance.simpleModel = rectLines;
     modelInstance.name = "rectLines1";
@@ -755,16 +765,33 @@ void VgeExample::setupDynamicUbo() {
     // default
     dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
   }
-  float rectScale = 20.f;
+
+  float rectScale = 10.f;
   {
     size_t instanceIndex = findInstances("rectLines1")[0];
-    dynamicUbo[instanceIndex].modelMatrix =
-        glm::translate(glm::mat4{1.f}, glm::vec3{-rectScale / 2.f, 0.f, 0.f});
+    dynamicUbo[instanceIndex].modelMatrix = glm::translate(
+        glm::mat4{1.f}, glm::vec3{-quadScale - rectScale, 0.f, 0.f});
     dynamicUbo[instanceIndex].modelMatrix =
         glm::scale(dynamicUbo[instanceIndex].modelMatrix,
                    glm::vec3{rectScale, -rectScale, rectScale});
     // default
     dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
+  }
+  float circleScale = 0.5f;
+  for (auto i = 0; i < 10; i++) {
+    size_t instanceIndex = findInstances("circle1-" + std::to_string(i))[0];
+    dynamicUbo[instanceIndex].modelMatrix = glm::translate(
+        glm::mat4{1.f}, glm::vec3{-quadScale - rectScale + circleScale +
+                                      static_cast<float>(i) * rectScale /
+                                          static_cast<float>(10),
+                                  -rectScale / 2.f, 0.f});
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+                   glm::vec3{circleScale, circleScale, circleScale});
+    // default
+    dynamicUbo[instanceIndex].modelColor =
+        glm::vec4{static_cast<float>(i) / 10.f,
+                  1.f - static_cast<float>(i) / 10.f, 0.f, 1.f};
   }
 }
 
@@ -1331,7 +1358,7 @@ void VgeExample::updateGraphicsUbo() {
   graphics.globalUbo.view = camera.getView();
   graphics.globalUbo.projection = camera.getProjection();
   graphics.globalUbo.inverseView = camera.getInverseView();
-  graphics.globalUbo.lightPos = glm::vec4(-2.f, -4.f, -2.f, 0.f);
+  graphics.globalUbo.lightPos = glm::vec4(-5.f, -10.f, -10.f, 0.f);
   graphics.globalUbo.screenDim = glm::vec2{
       static_cast<float>(width),
       static_cast<float>(height),

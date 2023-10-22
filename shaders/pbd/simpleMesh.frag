@@ -10,10 +10,16 @@ layout (location = 4) in vec3 inLightVec;
 
 layout (location = 0) out vec4 outFragColor;
 
+layout (set = 1, binding = 0) uniform ModelUbo 
+{
+	mat4 modelMatrix;
+	vec4 modelColor;
+} modelUbo;
+
 const float checkBoardSize = 0.05;
 void main() 
 {
-	vec3 color = inColor.xyz;
+	vec3 color = mix(inColor.xyz, modelUbo.modelColor.xyz, modelUbo.modelColor.a);
 
 	// High ambient colors because mesh materials are pretty dark
 	vec3 ambient = color * vec3(0.3);
@@ -25,15 +31,21 @@ void main()
 	vec3 diffuse = max(dot(N, L), 0.0) * color;
 	// vec3 specular = pow(max(dot(R, V), 0.0), 64.0) * vec3(0.35);
 	vec3 specular = pow(max(dot(halfAngle, N), 0.0), 64.0) * vec3(0.35);
-	float alpha = 1.0;
+	float alpha = inColor.a;
 	vec4 outColor = vec4(ambient + diffuse + specular, alpha);	
 
-	vec2 modUV;
-	modUV.x = mod(inUV.x, checkBoardSize*2.0);
-	modUV.y = mod(inUV.y, checkBoardSize*2.0);
-	
-	if((modUV.x < checkBoardSize) ^^ (modUV.y < checkBoardSize)){
-		outColor = vec4(outColor.xyz, 0.1);
+	if(alpha == 0.0){
+		vec2 modUV;
+		modUV.x = mod(inUV.x, checkBoardSize*2.0);
+		modUV.y = mod(inUV.y, checkBoardSize*2.0);
+		if((modUV.x < checkBoardSize) ^^ (modUV.y < checkBoardSize)){
+			outColor = vec4(outColor.xyz, 0.1);
+		}else{
+			outColor = vec4(outColor.xyz, 1.0);
+		}
+	}
+	if(abs(1.0-alpha) < 1e-4){
+		outColor = vec4(color, 1.0);
 	}
 	outFragColor = outColor;
 }
