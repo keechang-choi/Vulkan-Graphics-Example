@@ -462,6 +462,23 @@ void VgeExample::loadAssets() {
     modelInstance.name = "quad1";
     addModelInstance(modelInstance);
   }
+
+  std::shared_ptr<SimpleModel> rectLines = std::make_shared<SimpleModel>(
+      device, globalAllocator->getAllocator(), queue, commandPool);
+  {
+    std::vector<glm::vec4> positions{
+        {0.0f, 0.0f, 0.0f, 1.0f},
+        {1.0f, 0.0f, 0.0f, 1.0f},
+        {1.0f, 1.0f, 0.0f, 1.0f},
+        {0.0f, 1.0f, 0.0f, 1.0f},
+    };
+    std::vector<uint32_t> indices{0, 1, 1, 2, 2, 3, 3, 0};
+    rectLines->setLineList(positions, indices, {1.f, 1.f, 1.f, 1.f});
+    ModelInstance modelInstance{};
+    modelInstance.simpleModel = rectLines;
+    modelInstance.name = "rectLines1";
+    addModelInstance(modelInstance);
+  }
 }
 
 void VgeExample::createStorageBuffers() {
@@ -738,6 +755,17 @@ void VgeExample::setupDynamicUbo() {
     // default
     dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
   }
+  float rectScale = 20.f;
+  {
+    size_t instanceIndex = findInstances("rectLines1")[0];
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::translate(glm::mat4{1.f}, glm::vec3{-rectScale / 2.f, 0.f, 0.f});
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+                   glm::vec3{rectScale, -rectScale, rectScale});
+    // default
+    dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
+  }
 }
 
 void VgeExample::createUniformBuffers() {
@@ -927,8 +955,8 @@ void VgeExample::createPipelines() {
   }
   {
     inputAssemblySCI.topology = vk::PrimitiveTopology::eLineList;
-    vertCode = vgeu::readFile(getShadersPath() + "/pbd/simpleMesh.vert.spv");
-    fragCode = vgeu::readFile(getShadersPath() + "/pbd/simpleMesh.frag.spv");
+    vertCode = vgeu::readFile(getShadersPath() + "/pbd/simpleLine.vert.spv");
+    fragCode = vgeu::readFile(getShadersPath() + "/pbd/simpleLine.frag.spv");
     // NOTE: after pipeline creation, shader modules can be destroyed.
     vertShaderModule = vgeu::createShaderModule(device, vertCode);
     fragShaderModule = vgeu::createShaderModule(device, fragCode);
@@ -1127,12 +1155,22 @@ void VgeExample::buildCommandBuffers() {
     }
   }
 
-  {
-    // simpleMesh
-    drawCmdBuffers[currentFrameIndex].bindPipeline(
-        vk::PipelineBindPoint::eGraphics, *graphics.pipelineSimpleMesh);
-    uint32_t instanceIdx = findInstances("quad1")[0];
+  for (auto instanceIdx = 0; instanceIdx < modelInstances.size();
+       instanceIdx++) {
     const auto& modelInstance = modelInstances[instanceIdx];
+    if (!modelInstance.simpleModel) {
+      continue;
+    }
+    if (modelInstance.simpleModel->isLines) {
+      drawCmdBuffers[currentFrameIndex].setLineWidth(opts.lineWidth);
+      // simpleLines
+      drawCmdBuffers[currentFrameIndex].bindPipeline(
+          vk::PipelineBindPoint::eGraphics, *graphics.pipelineSimpleLine);
+    } else {
+      // simpleMesh
+      drawCmdBuffers[currentFrameIndex].bindPipeline(
+          vk::PipelineBindPoint::eGraphics, *graphics.pipelineSimpleMesh);
+    }
     // bind dynamic
     drawCmdBuffers[currentFrameIndex].bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics, *graphics.pipelineLayout, 1 /*set 1*/,
@@ -1144,6 +1182,7 @@ void VgeExample::buildCommandBuffers() {
     drawCmdBuffers[currentFrameIndex].bindIndexBuffer(
         modelInstance.simpleModel->indexBuffer->getBuffer(), offset,
         vk::IndexType::eUint32);
+
     drawCmdBuffers[currentFrameIndex].drawIndexed(
         modelInstance.simpleModel->indexBuffer->getInstanceCount(), 1, 0, 0, 0);
   }
@@ -1544,6 +1583,7 @@ void VgeExample::onUpdateUIOverlay() {
     }
   }
 }
+
 void VgeExample::setOptions(const std::optional<Options>& opts) {
   if (opts.has_value()) {
     this->opts = opts.value();
@@ -1566,6 +1606,14 @@ void VgeExample::setOptions(const std::optional<Options>& opts) {
     this->opts.integrator = static_cast<int32_t>(integrator);
   }
 }
+
+SimpleModel::SimpleModel(const vk::raii::Device& device, VmaAllocator allocator,
+                         const vk::raii::Queue& transferQueue,
+                         const vk::raii::CommandPool& commandPool)
+    : device{device},
+      allocator{allocator},
+      transferQueue{transferQueue},
+      commandPool{commandPool} {}
 
 void SimpleModel::setNgon(uint32_t n, glm::vec4 color) {
   isLines = false;
@@ -1590,7 +1638,28 @@ void SimpleModel::setNgon(uint32_t n, glm::vec4 color) {
     indices.push_back(i + 1);
     indices.push_back(i + 2);
   }
+  createBuffers(vertices, indices);
+}
+void SimpleModel::setLineList(const std::vector<glm::vec4>& positions,
+                              const std::vector<uint32_t>& indices,
+                              glm::vec4 color) {
+  isLines = true;
+  std::vector<SimpleModel::Vertex> vertices;
+  for (const auto& pos : positions) {
+    auto& vert = vertices.emplace_back();
+    glm::vec4 normal{0.f};
+    glm::vec2 uv{0.f};
+    vert.pos = pos;
+    vert.normal = normal;
+    vert.color = color;
+    vert.uv = uv;
+  }
+  createBuffers(vertices, indices);
+}
 
+void SimpleModel::createBuffers(
+    const std::vector<SimpleModel::Vertex>& vertices,
+    const std::vector<uint32_t>& indices) {
   vertexBuffer = std::make_unique<vgeu::VgeuBuffer>(
       allocator, sizeof(SimpleModel::Vertex), vertices.size(),
       vk::BufferUsageFlagBits::eVertexBuffer |
@@ -1630,14 +1699,6 @@ void SimpleModel::setNgon(uint32_t n, glm::vec4 color) {
             vk::BufferCopy(0, 0, indexStagingBuffer.getBufferSize()));
       });
 }
-
-SimpleModel::SimpleModel(const vk::raii::Device& device, VmaAllocator allocator,
-                         const vk::raii::Queue& transferQueue,
-                         const vk::raii::CommandPool& commandPool)
-    : device{device},
-      allocator{allocator},
-      transferQueue{transferQueue},
-      commandPool{commandPool} {}
 
 uint32_t ModelInstance::getVertexCount() const {
   uint32_t vertexCount;

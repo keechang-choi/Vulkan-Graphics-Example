@@ -46,7 +46,10 @@ struct SimpleModel {
   std::unique_ptr<vgeu::VgeuBuffer> vertexBuffer;
   std::unique_ptr<vgeu::VgeuBuffer> indexBuffer;
   void setNgon(uint32_t n, glm::vec4 color);
-  void setLineStrip(const std::vector<glm::vec4> lineStrip, glm::vec4 color);
+  void setLineList(const std::vector<glm::vec4>& positions,
+                   const std::vector<uint32_t>& indices, glm::vec4 color);
+  void createBuffers(const std::vector<SimpleModel::Vertex>& vertices,
+                     const std::vector<uint32_t>& indices);
 };
 // NOTE: for current animation implementation,
 // each instance need its own uniformBuffers
