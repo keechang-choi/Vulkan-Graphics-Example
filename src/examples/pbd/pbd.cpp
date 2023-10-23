@@ -453,20 +453,11 @@ void VgeExample::loadAssets() {
     addModelInstance(modelInstance);
   }
 
-  std::shared_ptr<SimpleModel> quad = std::make_shared<SimpleModel>(
-      device, globalAllocator->getAllocator(), queue, commandPool);
-  quad->setNgon(4, {0.5f, 0.5f, 0.5f, 0.f});
-  {
-    ModelInstance modelInstance{};
-    modelInstance.simpleModel = quad;
-    modelInstance.name = "quad1";
-    addModelInstance(modelInstance);
-  }
-
   std::shared_ptr<SimpleModel> circle = std::make_shared<SimpleModel>(
       device, globalAllocator->getAllocator(), queue, commandPool);
   circle->setNgon(32, {1.0f, 1.0f, 1.0f, 1.f});
-  for (auto i = 0; i < 10; i++) {
+  simulationsParticles.push_back(std::vector<Particle>(10));
+  for (auto i = 0; i < simulationsParticles[0].size(); i++) {
     ModelInstance modelInstance{};
     modelInstance.simpleModel = circle;
     modelInstance.name = "circle1-" + std::to_string(i);
@@ -487,6 +478,22 @@ void VgeExample::loadAssets() {
     ModelInstance modelInstance{};
     modelInstance.simpleModel = rectLines;
     modelInstance.name = "rectLines1";
+    addModelInstance(modelInstance);
+  }
+
+  std::shared_ptr<SimpleModel> quad = std::make_shared<SimpleModel>(
+      device, globalAllocator->getAllocator(), queue, commandPool);
+  quad->setNgon(4, {0.5f, 0.5f, 0.5f, 0.f});
+  {
+    ModelInstance modelInstance{};
+    modelInstance.simpleModel = quad;
+    modelInstance.name = "quad1";
+    addModelInstance(modelInstance);
+  }
+  {
+    ModelInstance modelInstance{};
+    modelInstance.simpleModel = quad;
+    modelInstance.name = "quad2";
     addModelInstance(modelInstance);
   }
 }
@@ -765,6 +772,21 @@ void VgeExample::setupDynamicUbo() {
     // default
     dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
   }
+  {
+    size_t instanceIndex = findInstances("quad2")[0];
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::translate(glm::mat4{1.f}, glm::vec3{-quadScale * 1.5f, 0.f, 0.f});
+    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
+        dynamicUbo[instanceIndex].modelMatrix, glm::radians(45.f), up);
+    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
+        dynamicUbo[instanceIndex].modelMatrix, glm::radians(90.f), right);
+    dynamicUbo[instanceIndex].modelMatrix = glm::scale(
+        dynamicUbo[instanceIndex].modelMatrix,
+        glm::vec3{quadScale * 0.5f * sqrt(2.f), quadScale * 0.5f * sqrt(2.f),
+                  quadScale * 0.5f * sqrt(2.f)});
+    // default
+    dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
+  }
 
   float rectScale = 10.f;
   {
@@ -778,20 +800,26 @@ void VgeExample::setupDynamicUbo() {
     dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
   }
   float circleScale = 0.5f;
-  for (auto i = 0; i < 10; i++) {
+  for (auto i = 0; i < simulationsParticles[0].size(); i++) {
     size_t instanceIndex = findInstances("circle1-" + std::to_string(i))[0];
-    dynamicUbo[instanceIndex].modelMatrix = glm::translate(
-        glm::mat4{1.f}, glm::vec3{-quadScale - rectScale + circleScale +
-                                      static_cast<float>(i) * rectScale /
-                                          static_cast<float>(10),
-                                  -rectScale / 2.f, 0.f});
-    dynamicUbo[instanceIndex].modelMatrix =
-        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
-                   glm::vec3{circleScale, circleScale, circleScale});
+    simulationsParticles[0][i].pos = glm::vec4{
+        circleScale + static_cast<float>(i) * rectScale /
+                          static_cast<float>(simulationsParticles[0].size()),
+        -rectScale / 2.f, 0.f, circleScale - 0.03f * i};
+    simulationsParticles[0][i].vel = glm::vec4{1.0f, 0.f, 0.f, 0.f};
+    modelInstances[instanceIndex].transform.translation =
+        glm::vec3{-quadScale - rectScale, 0.f, 0.f};
+    modelInstances[instanceIndex].transform.scale =
+        glm::vec3{circleScale - 0.03f * i, circleScale - 0.03f * i,
+                  circleScale - 0.03f * i};
+
     // default
     dynamicUbo[instanceIndex].modelColor =
-        glm::vec4{static_cast<float>(i) / 10.f,
-                  1.f - static_cast<float>(i) / 10.f, 0.f, 1.f};
+        glm::vec4{static_cast<float>(i) /
+                      static_cast<float>(simulationsParticles[0].size()),
+                  1.f - static_cast<float>(i) /
+                            static_cast<float>(simulationsParticles[0].size()),
+                  0.f, 1.f};
   }
 }
 
@@ -1028,6 +1056,7 @@ void VgeExample::render() {
   if (!paused) {
     animationTime += frameTimer;
   }
+  simulate();
   draw();
   animationLastTime = animationTime;
 }
@@ -1449,6 +1478,18 @@ void VgeExample::updateDynamicUbo() {
                     up) *
         dynamicUbo[instanceIndex].modelMatrix;
   }
+
+  for (auto i = 0; i < simulationsParticles[0].size(); i++) {
+    size_t instanceIndex = findInstances("circle1-" + std::to_string(i))[0];
+
+    dynamicUbo[instanceIndex].modelMatrix = glm::translate(
+        glm::mat4{1.f}, modelInstances[instanceIndex].transform.translation +
+                            glm::vec3(simulationsParticles[0][i].pos));
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+                   modelInstances[instanceIndex].transform.scale);
+  }
+
   // update animation joint matrices for each shared model
   {
     std::unordered_set<const vgeu::glTF::Model*> updatedSharedModelSet;
@@ -1516,16 +1557,13 @@ void VgeExample::setupCommandLineParser(CLI::App& app) {
       ->capture_default_str();
   app.add_option("--numAttractors, --na", numAttractors, "number of attractors")
       ->capture_default_str();
-  app.add_option("--rotationVelocity, --rv", rotationVelocity,
-                 "initial y-axis rotation velocity )")
-      ->capture_default_str();
-  app.add_option("--gravity, -g", gravity,
+  app.add_option("--gravity, -g", opts.gravity,
                  "gravity constants / 500.0 for model attraction")
       ->capture_default_str();
-  app.add_option("--power, -p", power,
+  app.add_option("--power, -p", opts.power,
                  "power constants / 0.75 for model attraction")
       ->capture_default_str();
-  app.add_option("--soften, -s", soften,
+  app.add_option("--soften, -s", opts.soften,
                  "soften constants / 2.0 for model attraction")
       ->capture_default_str();
   app.add_option("--tailSize, --ts", tailSize, "tail size")
@@ -1625,12 +1663,48 @@ void VgeExample::setOptions(const std::optional<Options>& opts) {
   } else {
     // save cli args for initial run
     this->opts.numParticles = static_cast<int32_t>(numParticles);
-    this->opts.gravity = gravity;
-    this->opts.power = power;
-    this->opts.soften = soften;
     this->opts.tailSampleTime = tailSampleTime;
     this->opts.tailSize = static_cast<int32_t>(tailSize);
     this->opts.integrator = static_cast<int32_t>(integrator);
+  }
+}
+
+void VgeExample::simulate() {
+  float animationTimer =
+      (animationTime - animationLastTime) * opts.animationSpeed;
+  {
+    float rectScale = 10.f;
+    for (auto i = 0; i < simulationsParticles[0].size(); i++) {
+      simulationsParticles[0][i].vel.x += 0 * animationTimer;
+      // +y diriction
+      simulationsParticles[0][i].vel.y += opts.gravity * animationTimer;
+
+      simulationsParticles[0][i].pos.x +=
+          simulationsParticles[0][i].vel.x * animationTimer;
+      simulationsParticles[0][i].pos.y +=
+          simulationsParticles[0][i].vel.y * animationTimer;
+      // circle radius in w component
+      if (simulationsParticles[0][i].pos.x - simulationsParticles[0][i].pos.w <
+          0.0) {
+        simulationsParticles[0][i].pos.x = simulationsParticles[0][i].pos.w;
+        simulationsParticles[0][i].vel.x =
+            abs(simulationsParticles[0][i].vel.x);
+      }
+      if (simulationsParticles[0][i].pos.x + simulationsParticles[0][i].pos.w >
+          rectScale) {
+        simulationsParticles[0][i].pos.x =
+            rectScale - simulationsParticles[0][i].pos.w;
+        simulationsParticles[0][i].vel.x =
+            -abs(simulationsParticles[0][i].vel.x);
+      }
+      // world coordinates system
+      if (simulationsParticles[0][i].pos.y + simulationsParticles[0][i].pos.w >
+          0.0) {
+        simulationsParticles[0][i].pos.y = -simulationsParticles[0][i].pos.w;
+        simulationsParticles[0][i].vel.y =
+            -abs(simulationsParticles[0][i].vel.y);
+      }
+    }
   }
 }
 

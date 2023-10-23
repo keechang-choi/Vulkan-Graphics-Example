@@ -62,6 +62,8 @@ struct ModelInstance {
   bool isBone = false;
   int animationIndex = -1;
   float animationTime = 0.f;
+  // initial offset and scale
+  vgeu::TransformComponent transform;
   uint32_t getVertexCount() const;
 };
 
@@ -76,7 +78,6 @@ struct Particle {
   glm::vec4 vel;
   glm::vec4 pk[4];
   glm::vec4 vk[4];
-  glm::vec4 attractionWeight;
 };
 
 struct SpecializationData {
@@ -89,7 +90,7 @@ struct SpecializationData {
 struct Options {
   int32_t numParticles{1024};
   float coefficientDeltaTime = 0.05f;
-  float gravity = 0.02f;
+  float gravity = 10.f;
   float power = 1.f;
   float soften = 0.001f;
   int32_t tailSize = 0;
@@ -152,6 +153,7 @@ class VgeExample : public VgeBase {
   // compute resources
   void prepareCompute();
 
+  void simulate();
   struct {
     uint32_t queueFamilyIndex;
     std::vector<std::unique_ptr<vgeu::VgeuBuffer>> storageBuffers;
@@ -242,10 +244,6 @@ class VgeExample : public VgeBase {
   const uint32_t kMaxNumParticles = 1024u * 1024u * 4u;
   uint32_t numAttractors = 6u;
   uint32_t integrator = 1u;
-  float rotationVelocity = 50.f;
-  float gravity = 0.02f;
-  float power = 1.0f;
-  float soften = 0.001;
 
   // vertex buffer ->
   // NOTE: to use this data for vertex buffer,
@@ -269,5 +267,8 @@ class VgeExample : public VgeBase {
 
   uint32_t desiredSharedDataSize = 256u;
   uint32_t sharedDataSize;
+
+  // sim index x particle nums
+  std::vector<std::vector<Particle>> simulationsParticles;
 };
 }  // namespace vge
