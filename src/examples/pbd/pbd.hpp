@@ -97,7 +97,7 @@ struct Options {
   float tailSampleTime = 0.1;
   int32_t integrator = 1;
   float moveSpeed = 10.f;
-  float lineWidth = 1.0f;
+  float lineWidth = 2.0f;
   float pointSize[2] = {1.f, 128.f};
   int32_t desiredSharedDataSize = 256u;
   float animationSpeed = 0.5;

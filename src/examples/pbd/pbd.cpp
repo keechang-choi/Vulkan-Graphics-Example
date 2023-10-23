@@ -474,10 +474,10 @@ void VgeExample::loadAssets() {
   };
   std::vector<uint32_t> indices{0, 1, 1, 2, 2, 3, 3, 0};
   rectLines->setLineList(positions, indices, {1.f, 1.f, 1.f, 1.f});
-  {
+  for (auto i = 0; i < 4; i++) {
     ModelInstance modelInstance{};
     modelInstance.simpleModel = rectLines;
-    modelInstance.name = "rectLines1";
+    modelInstance.name = "rectLines" + std::to_string(i);
     addModelInstance(modelInstance);
   }
 
@@ -789,16 +789,18 @@ void VgeExample::setupDynamicUbo() {
   }
 
   float rectScale = 10.f;
-  {
-    size_t instanceIndex = findInstances("rectLines1")[0];
+  for (auto i = 0; i < 4; i++) {
+    size_t instanceIndex = findInstances("rectLines" + std::to_string(i))[0];
     dynamicUbo[instanceIndex].modelMatrix = glm::translate(
-        glm::mat4{1.f}, glm::vec3{-quadScale - rectScale, 0.f, 0.f});
+        glm::mat4{1.f}, glm::vec3{-quadScale - rectScale * (i % 2 + 1),
+                                  -rectScale * (i / 2), 0.f});
     dynamicUbo[instanceIndex].modelMatrix =
         glm::scale(dynamicUbo[instanceIndex].modelMatrix,
                    glm::vec3{rectScale, -rectScale, rectScale});
     // default
     dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
   }
+
   float circleScale = 0.5f;
   for (auto i = 0; i < simulationsParticles[0].size(); i++) {
     size_t instanceIndex = findInstances("circle1-" + std::to_string(i))[0];
@@ -808,7 +810,7 @@ void VgeExample::setupDynamicUbo() {
         -rectScale / 2.f, 0.f, circleScale - 0.03f * i};
     simulationsParticles[0][i].vel = glm::vec4{1.0f, 0.f, 0.f, 0.f};
     modelInstances[instanceIndex].transform.translation =
-        glm::vec3{-quadScale - rectScale, 0.f, 0.f};
+        glm::vec3{-quadScale - rectScale * 2, -rectScale, 0.f};
     modelInstances[instanceIndex].transform.scale =
         glm::vec3{circleScale - 0.03f * i, circleScale - 0.03f * i,
                   circleScale - 0.03f * i};
