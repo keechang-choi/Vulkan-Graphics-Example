@@ -76,8 +76,7 @@ struct DynamicUboElt {
 struct Particle {
   glm::vec4 pos;
   glm::vec4 vel;
-  glm::vec4 pk[4];
-  glm::vec4 vk[4];
+  glm::vec4 prevPos;
 };
 
 struct SpecializationData {
@@ -104,6 +103,9 @@ struct Options {
   float tailIntensity = 1.0f;
   float tailFadeOut = 2.0f;
   float restitution = 1.0f;
+  std::vector<int32_t> simulationsNumParticles{10, 50, 5};
+  std::vector<bool> enableSimulation{true, true, true};
+  int32_t numSubsteps = 1;
 };
 
 // NOTE: ssbo usage alignment
@@ -155,9 +157,10 @@ class VgeExample : public VgeBase {
   void prepareCompute();
 
   void simulate();
-  void handleBallCollision(uint32_t ballIndex1, uint32_t ballIndex2,
-                           float restitution);
-  void handleWallCollision(uint32_t ballIndex, glm::vec2 worldSize);
+  void handleBallCollision(uint32_t simulationIndex, uint32_t ballIndex1,
+                           uint32_t ballIndex2, float restitution);
+  void handleWallCollision(uint32_t simulationIndex, uint32_t ballIndex,
+                           glm::vec2 worldSize);
   struct {
     uint32_t queueFamilyIndex;
     std::vector<std::unique_ptr<vgeu::VgeuBuffer>> storageBuffers;
@@ -244,6 +247,7 @@ class VgeExample : public VgeBase {
 
   float animationTime = 0.f;
   float animationLastTime = 0.f;
+  uint32_t numParticles = 1;
   const uint32_t kMaxNumParticles = 1024u;
   uint32_t integrator = 1u;
 
@@ -273,6 +277,7 @@ class VgeExample : public VgeBase {
   // sim index x particle nums
   std::vector<std::vector<Particle>> simulationsParticles;
   float simulation2DSceneScale = 10.f;
-  uint32_t numParticles = 1;
+  std::vector<uint32_t> simulationsNumParticles{10, 50, 5};
+  const std::vector<uint32_t> kSimulationsMaxNumParticles{20, 1000, 30};
 };
 }  // namespace vge
