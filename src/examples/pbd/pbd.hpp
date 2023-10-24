@@ -94,15 +94,16 @@ struct Options {
   float power = 1.f;
   float soften = 0.001f;
   int32_t tailSize = 0;
-  float tailSampleTime = 0.1;
+  float tailSampleTime = 0.1f;
   int32_t integrator = 1;
   float moveSpeed = 10.f;
   float lineWidth = 2.0f;
   float pointSize[2] = {1.f, 128.f};
   int32_t desiredSharedDataSize = 256u;
-  float animationSpeed = 0.5;
-  float tailIntensity = 1.0;
-  float tailFadeOut = 2.0;
+  float animationSpeed = 0.5f;
+  float tailIntensity = 1.0f;
+  float tailFadeOut = 2.0f;
+  float restituition = 1.0f;
 };
 
 // NOTE: ssbo usage alignment
@@ -154,6 +155,9 @@ class VgeExample : public VgeBase {
   void prepareCompute();
 
   void simulate();
+  void handleBallCollision(uint32_t ballIndex1, uint32_t ballIndex2,
+                           float restitution);
+  void handleWallCollision(uint32_t ballIndex, glm::vec2 worldSize);
   struct {
     uint32_t queueFamilyIndex;
     std::vector<std::unique_ptr<vgeu::VgeuBuffer>> storageBuffers;
@@ -270,5 +274,6 @@ class VgeExample : public VgeBase {
 
   // sim index x particle nums
   std::vector<std::vector<Particle>> simulationsParticles;
+  float simulation2DSceneScale = 10.f;
 };
 }  // namespace vge

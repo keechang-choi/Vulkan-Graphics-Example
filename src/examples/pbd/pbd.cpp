@@ -456,11 +456,20 @@ void VgeExample::loadAssets() {
   std::shared_ptr<SimpleModel> circle = std::make_shared<SimpleModel>(
       device, globalAllocator->getAllocator(), queue, commandPool);
   circle->setNgon(32, {1.0f, 1.0f, 1.0f, 1.f});
+
   simulationsParticles.push_back(std::vector<Particle>(10));
   for (auto i = 0; i < simulationsParticles[0].size(); i++) {
     ModelInstance modelInstance{};
     modelInstance.simpleModel = circle;
     modelInstance.name = "circle1-" + std::to_string(i);
+    addModelInstance(modelInstance);
+  }
+
+  simulationsParticles.push_back(std::vector<Particle>(20));
+  for (auto i = 0; i < simulationsParticles[1].size(); i++) {
+    ModelInstance modelInstance{};
+    modelInstance.simpleModel = circle;
+    modelInstance.name = "circle2-" + std::to_string(i);
     addModelInstance(modelInstance);
   }
 
@@ -788,7 +797,7 @@ void VgeExample::setupDynamicUbo() {
     dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
   }
 
-  float rectScale = 10.f;
+  float rectScale = simulation2DSceneScale;
   for (auto i = 0; i < 4; i++) {
     size_t instanceIndex = findInstances("rectLines" + std::to_string(i))[0];
     dynamicUbo[instanceIndex].modelMatrix = glm::translate(
@@ -801,19 +810,20 @@ void VgeExample::setupDynamicUbo() {
     dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
   }
 
-  float circleScale = 0.5f;
   for (auto i = 0; i < simulationsParticles[0].size(); i++) {
+    float circleScale =
+        0.5f - 0.3f * static_cast<float>(i) /
+                   static_cast<float>(simulationsParticles[0].size());
     size_t instanceIndex = findInstances("circle1-" + std::to_string(i))[0];
     simulationsParticles[0][i].pos = glm::vec4{
         circleScale + static_cast<float>(i) * rectScale /
                           static_cast<float>(simulationsParticles[0].size()),
-        -rectScale / 2.f, 0.f, circleScale - 0.03f * i};
+        -rectScale / 2.f - circleScale, 0.f, circleScale};
     simulationsParticles[0][i].vel = glm::vec4{1.0f, 0.f, 0.f, 0.f};
     modelInstances[instanceIndex].transform.translation =
         glm::vec3{-quadScale - rectScale * 2, -rectScale, 0.f};
     modelInstances[instanceIndex].transform.scale =
-        glm::vec3{circleScale - 0.03f * i, circleScale - 0.03f * i,
-                  circleScale - 0.03f * i};
+        glm::vec3{circleScale, circleScale, circleScale};
 
     // default
     dynamicUbo[instanceIndex].modelColor =
@@ -821,6 +831,33 @@ void VgeExample::setupDynamicUbo() {
                       static_cast<float>(simulationsParticles[0].size()),
                   1.f - static_cast<float>(i) /
                             static_cast<float>(simulationsParticles[0].size()),
+                  0.f, 1.f};
+  }
+
+  std::default_random_engine rndEngine;
+  rndEngine.seed(1111);
+  std::uniform_real_distribution<float> uniformDist(0.f, 1.f);
+  for (auto i = 0; i < simulationsParticles[1].size(); i++) {
+    float radius = 0.1f + 0.2f * uniformDist(rndEngine);
+    float mass = glm::pi<float>() * radius * radius;
+    size_t instanceIndex = findInstances("circle2-" + std::to_string(i))[0];
+    simulationsParticles[1][i].pos =
+        glm::vec4{rectScale * uniformDist(rndEngine),
+                  -rectScale * uniformDist(rndEngine), 0.f, radius};
+    simulationsParticles[1][i].vel =
+        glm::vec4{-1.f + 2.f * uniformDist(rndEngine),
+                  -1.f + 2.f * uniformDist(rndEngine), 0.f, mass};
+    modelInstances[instanceIndex].transform.translation =
+        glm::vec3{-quadScale - rectScale, -rectScale, 0.f};
+    modelInstances[instanceIndex].transform.scale =
+        glm::vec3{radius, radius, radius};
+
+    // default
+    dynamicUbo[instanceIndex].modelColor =
+        glm::vec4{static_cast<float>(i) /
+                      static_cast<float>(simulationsParticles[1].size()),
+                  1.f - static_cast<float>(i) /
+                            static_cast<float>(simulationsParticles[1].size()),
                   0.f, 1.f};
   }
 }
@@ -1481,15 +1518,18 @@ void VgeExample::updateDynamicUbo() {
         dynamicUbo[instanceIndex].modelMatrix;
   }
 
-  for (auto i = 0; i < simulationsParticles[0].size(); i++) {
-    size_t instanceIndex = findInstances("circle1-" + std::to_string(i))[0];
+  for (auto i = 0; i < simulationsParticles.size(); i++) {
+    for (auto j = 0; j < simulationsParticles[i].size(); j++) {
+      size_t instanceIndex = findInstances("circle" + std::to_string(i + 1) +
+                                           "-" + std::to_string(j))[0];
 
-    dynamicUbo[instanceIndex].modelMatrix = glm::translate(
-        glm::mat4{1.f}, modelInstances[instanceIndex].transform.translation +
-                            glm::vec3(simulationsParticles[0][i].pos));
-    dynamicUbo[instanceIndex].modelMatrix =
-        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
-                   modelInstances[instanceIndex].transform.scale);
+      dynamicUbo[instanceIndex].modelMatrix = glm::translate(
+          glm::mat4{1.f}, modelInstances[instanceIndex].transform.translation +
+                              glm::vec3(simulationsParticles[i][j].pos));
+      dynamicUbo[instanceIndex].modelMatrix =
+          glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+                     modelInstances[instanceIndex].transform.scale);
+    }
   }
 
   // update animation joint matrices for each shared model
@@ -1674,8 +1714,8 @@ void VgeExample::setOptions(const std::optional<Options>& opts) {
 void VgeExample::simulate() {
   float animationTimer =
       (animationTime - animationLastTime) * opts.animationSpeed;
+  // 2d cannon ball
   {
-    float rectScale = 10.f;
     for (auto i = 0; i < simulationsParticles[0].size(); i++) {
       simulationsParticles[0][i].vel.x += 0 * animationTimer;
       // +y diriction
@@ -1693,9 +1733,9 @@ void VgeExample::simulate() {
             abs(simulationsParticles[0][i].vel.x);
       }
       if (simulationsParticles[0][i].pos.x + simulationsParticles[0][i].pos.w >
-          rectScale) {
+          simulation2DSceneScale) {
         simulationsParticles[0][i].pos.x =
-            rectScale - simulationsParticles[0][i].pos.w;
+            simulation2DSceneScale - simulationsParticles[0][i].pos.w;
         simulationsParticles[0][i].vel.x =
             -abs(simulationsParticles[0][i].vel.x);
       }
@@ -1707,6 +1747,95 @@ void VgeExample::simulate() {
             -abs(simulationsParticles[0][i].vel.y);
       }
     }
+  }
+  // 2d collision
+  {
+    for (auto i = 0; i < simulationsParticles[1].size(); i++) {
+      float mass = simulationsParticles[1][i].vel.w;
+      // +y diriction
+      glm::vec4 acc{0.f, 0.f, 0.f, 0.f};
+      simulationsParticles[1][i].vel += acc * animationTimer;
+      float radius = simulationsParticles[1][i].pos.w;
+      simulationsParticles[1][i].pos +=
+          simulationsParticles[1][i].vel * animationTimer;
+      simulationsParticles[1][i].pos.w = radius;
+      for (auto j = i + 1; j < simulationsParticles[1].size(); j++) {
+        handleBallCollision(i, j, opts.restituition);
+      }
+      handleWallCollision(
+          i, glm::vec2{simulation2DSceneScale, simulation2DSceneScale});
+    }
+  }
+}
+
+void VgeExample::handleBallCollision(uint32_t ballIndex1, uint32_t ballIndex2,
+                                     float restitution) {
+  auto& simulationParticles = simulationsParticles[1];
+  float r1 = simulationParticles[ballIndex1].pos.w;
+  float r2 = simulationParticles[ballIndex2].pos.w;
+
+  glm::vec3 p1(simulationParticles[ballIndex1].pos);
+  glm::vec3 p2(simulationParticles[ballIndex2].pos);
+
+  // p1 as origin
+  glm::vec3 dir = p2 - p1;
+  float d = glm::length(dir);
+  if (d == 0.0 || d > r1 + r2) {
+    return;
+  }
+  dir = glm::normalize(dir);
+  float corr = (r1 + r2 - d) / 2.f;
+  simulationParticles[ballIndex1].pos = glm::vec4(p1 - corr * dir, r1);
+  simulationParticles[ballIndex2].pos = glm::vec4(p2 + corr * dir, r2);
+
+  glm::vec3 v1(simulationParticles[ballIndex1].vel);
+  glm::vec3 v2(simulationParticles[ballIndex2].vel);
+
+  float projV1 = glm::dot(v1, dir);
+  float projV2 = glm::dot(v2, dir);
+
+  float m1 = simulationParticles[ballIndex1].vel.w;
+  float m2 = simulationParticles[ballIndex2].vel.w;
+  // coefficient of resititution:
+  // e = (v*2-v*1) / (v1-v2)
+  float newProjV1 =
+      (m1 * projV1 + m2 * projV2 - m2 * (projV1 - projV2) * restitution) /
+      (m1 + m2);
+  float newProjV2 =
+      (m1 * projV1 + m2 * projV2 + m1 * (projV1 - projV2) * restitution) /
+      (m1 + m2);
+
+  simulationParticles[ballIndex1].vel =
+      glm::vec4(v1 + (newProjV1 - projV1) * dir, m1);
+  simulationParticles[ballIndex2].vel =
+      glm::vec4(v2 + (newProjV2 - projV2) * dir, m2);
+}
+
+void VgeExample::handleWallCollision(uint32_t ballIndex, glm::vec2 worldSize) {
+  // circle radius in w component
+  float px = simulationsParticles[1][ballIndex].pos.x;
+  float py = simulationsParticles[1][ballIndex].pos.y;
+  float r = simulationsParticles[1][ballIndex].pos.w;
+  if (px - r < 0.0) {
+    simulationsParticles[1][ballIndex].pos.x = r;
+    simulationsParticles[1][ballIndex].vel.x =
+        abs(simulationsParticles[1][ballIndex].vel.x);
+  }
+  if (px + r > worldSize.x) {
+    simulationsParticles[1][ballIndex].pos.x = worldSize.x - r;
+    simulationsParticles[1][ballIndex].vel.x =
+        -abs(simulationsParticles[1][ballIndex].vel.x);
+  }
+  // world coordinates system
+  if (py + r > 0.0) {
+    simulationsParticles[1][ballIndex].pos.y = -r;
+    simulationsParticles[1][ballIndex].vel.y =
+        -abs(simulationsParticles[1][ballIndex].vel.y);
+  }
+  if (py - r < -worldSize.y) {
+    simulationsParticles[1][ballIndex].pos.y = -worldSize.y + r;
+    simulationsParticles[1][ballIndex].vel.y =
+        abs(simulationsParticles[1][ballIndex].vel.y);
   }
 }
 
