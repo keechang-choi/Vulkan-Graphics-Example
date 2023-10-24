@@ -88,7 +88,7 @@ struct SpecializationData {
 };
 
 struct Options {
-  int32_t numParticles{1024};
+  int32_t numParticles{1};
   float coefficientDeltaTime = 0.05f;
   float gravity = 10.f;
   float power = 1.f;
@@ -103,7 +103,7 @@ struct Options {
   float animationSpeed = 0.5f;
   float tailIntensity = 1.0f;
   float tailFadeOut = 2.0f;
-  float restituition = 1.0f;
+  float restitution = 1.0f;
 };
 
 // NOTE: ssbo usage alignment
@@ -244,9 +244,7 @@ class VgeExample : public VgeBase {
 
   float animationTime = 0.f;
   float animationLastTime = 0.f;
-  uint32_t numParticles = 1024u * 4u * 6u;
-  const uint32_t kMaxNumParticles = 1024u * 1024u * 4u;
-  uint32_t numAttractors = 6u;
+  const uint32_t kMaxNumParticles = 1024u;
   uint32_t integrator = 1u;
 
   // vertex buffer ->
@@ -275,5 +273,6 @@ class VgeExample : public VgeBase {
   // sim index x particle nums
   std::vector<std::vector<Particle>> simulationsParticles;
   float simulation2DSceneScale = 10.f;
+  uint32_t numParticles = 1;
 };
 }  // namespace vge

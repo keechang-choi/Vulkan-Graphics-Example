@@ -457,7 +457,7 @@ void VgeExample::loadAssets() {
       device, globalAllocator->getAllocator(), queue, commandPool);
   circle->setNgon(32, {1.0f, 1.0f, 1.0f, 1.f});
 
-  simulationsParticles.push_back(std::vector<Particle>(10));
+  simulationsParticles.push_back(std::vector<Particle>(numParticles));
   for (auto i = 0; i < simulationsParticles[0].size(); i++) {
     ModelInstance modelInstance{};
     modelInstance.simpleModel = circle;
@@ -465,7 +465,7 @@ void VgeExample::loadAssets() {
     addModelInstance(modelInstance);
   }
 
-  simulationsParticles.push_back(std::vector<Particle>(20));
+  simulationsParticles.push_back(std::vector<Particle>(numParticles));
   for (auto i = 0; i < simulationsParticles[1].size(); i++) {
     ModelInstance modelInstance{};
     modelInstance.simpleModel = circle;
@@ -812,8 +812,9 @@ void VgeExample::setupDynamicUbo() {
 
   for (auto i = 0; i < simulationsParticles[0].size(); i++) {
     float circleScale =
-        0.5f - 0.3f * static_cast<float>(i) /
-                   static_cast<float>(simulationsParticles[0].size());
+        (0.2f + 0.3f * static_cast<float>(i) /
+                    static_cast<float>(simulationsParticles[0].size())) *
+        rectScale / static_cast<float>(simulationsParticles[0].size());
     size_t instanceIndex = findInstances("circle1-" + std::to_string(i))[0];
     simulationsParticles[0][i].pos = glm::vec4{
         circleScale + static_cast<float>(i) * rectScale /
@@ -845,20 +846,20 @@ void VgeExample::setupDynamicUbo() {
         glm::vec4{rectScale * uniformDist(rndEngine),
                   -rectScale * uniformDist(rndEngine), 0.f, radius};
     simulationsParticles[1][i].vel =
-        glm::vec4{-1.f + 2.f * uniformDist(rndEngine),
-                  -1.f + 2.f * uniformDist(rndEngine), 0.f, mass};
+        glm::vec4{(-1.f + 2.f * uniformDist(rndEngine)) * 2.f,
+                  (-1.f + 2.f * uniformDist(rndEngine)) * 2.f, 0.f, mass};
     modelInstances[instanceIndex].transform.translation =
         glm::vec3{-quadScale - rectScale, -rectScale, 0.f};
     modelInstances[instanceIndex].transform.scale =
         glm::vec3{radius, radius, radius};
 
     // default
-    dynamicUbo[instanceIndex].modelColor =
-        glm::vec4{static_cast<float>(i) /
-                      static_cast<float>(simulationsParticles[1].size()),
-                  1.f - static_cast<float>(i) /
-                            static_cast<float>(simulationsParticles[1].size()),
-                  0.f, 1.f};
+    dynamicUbo[instanceIndex].modelColor = glm::vec4{
+        static_cast<float>(i) /
+            static_cast<float>(simulationsParticles[1].size()),
+        0.5f + 0.5 * (static_cast<float>(i) /
+                      static_cast<float>(simulationsParticles[1].size())),
+        0.5f, 1.f};
   }
 }
 
@@ -1588,29 +1589,7 @@ const std::vector<size_t>& VgeExample::findInstances(const std::string& name) {
 
 void VgeExample::setupCommandLineParser(CLI::App& app) {
   VgeBase::setupCommandLineParser(app);
-  app.add_option("--integrator, -i", integrator,
-                 "Integrator Type 1 euler, "
-                 "2 midpoint, "
-                 "4 rk-4, "
-                 "5 symplectic euler, "
-                 "6 verlet")
-      ->capture_default_str();
   app.add_option("--numParticles, --np", numParticles, "number of particles")
-      ->capture_default_str();
-  app.add_option("--numAttractors, --na", numAttractors, "number of attractors")
-      ->capture_default_str();
-  app.add_option("--gravity, -g", opts.gravity,
-                 "gravity constants / 500.0 for model attraction")
-      ->capture_default_str();
-  app.add_option("--power, -p", opts.power,
-                 "power constants / 0.75 for model attraction")
-      ->capture_default_str();
-  app.add_option("--soften, -s", opts.soften,
-                 "soften constants / 2.0 for model attraction")
-      ->capture_default_str();
-  app.add_option("--tailSize, --ts", tailSize, "tail size")
-      ->capture_default_str();
-  app.add_option("--tailSampleTime, --tst", tailSampleTime, "tail sample time")
       ->capture_default_str();
 }
 
@@ -1649,6 +1628,9 @@ void VgeExample::onUpdateUIOverlay() {
       ImGui::DragFloat2("Drag pointSize min/max", opts.pointSize, 1.f, 1.f,
                         128.f, "%.0f");
       uiOverlay->inputFloat("gravity", &opts.gravity, 0.001f, "%.3f");
+      ImGui::DragFloat("restitution", &opts.restitution, 0.01f, 0.0f, 1.0f,
+                       "%.2f");
+
       uiOverlay->inputFloat("power", &opts.power, 0.01f, "%.3f");
       uiOverlay->inputFloat("soften", &opts.soften, 0.0001f, "%.4f");
 
@@ -1667,25 +1649,11 @@ void VgeExample::onUpdateUIOverlay() {
       if (uiOverlay->button("Restart")) {
         restart = true;
       }
-
+      ImGui::DragInt("Drag numParticles", &opts.numParticles, 16.f, 1,
+                     kMaxNumParticles);
       uiOverlay->inputInt("desiredSharedDataSize", &opts.desiredSharedDataSize,
                           64);
       uiOverlay->inputInt("tailSize", &opts.tailSize, 1);
-      if (ImGui::TreeNodeEx("integrator", ImGuiTreeNodeFlags_DefaultOpen)) {
-        uiOverlay->radioButton("euler", &opts.integrator, 1);
-        ImGui::SameLine(150.0);
-        uiOverlay->radioButton("euler-symplectic", &opts.integrator, 5);
-
-        uiOverlay->radioButton("midpoint", &opts.integrator, 2);
-        ImGui::SameLine(150.0);
-        uiOverlay->radioButton("verlet", &opts.integrator, 6);
-
-        uiOverlay->radioButton("rk-4", &opts.integrator, 4);
-        ImGui::SameLine(150.0);
-        uiOverlay->radioButton("4th-symplectic", &opts.integrator, 8);
-        ImGui::TreePop();
-      }
-
       ImGui::TreePop();
     }
   }
@@ -1760,7 +1728,7 @@ void VgeExample::simulate() {
           simulationsParticles[1][i].vel * animationTimer;
       simulationsParticles[1][i].pos.w = radius;
       for (auto j = i + 1; j < simulationsParticles[1].size(); j++) {
-        handleBallCollision(i, j, opts.restituition);
+        handleBallCollision(i, j, opts.restitution);
       }
       handleWallCollision(
           i, glm::vec2{simulation2DSceneScale, simulation2DSceneScale});
