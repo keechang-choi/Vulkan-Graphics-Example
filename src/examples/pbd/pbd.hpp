@@ -107,6 +107,10 @@ struct Options {
   std::vector<bool> enableSimulation;
   bool computeModelAnimation{false};
   int32_t numSubsteps = 1;
+  std::vector<float> sim5lengths;
+  std::vector<float> sim5masses;
+  // deg
+  std::vector<float> sim5angles;
 };
 
 // NOTE: ssbo usage alignment
@@ -278,7 +282,7 @@ class VgeExample : public VgeBase {
   // sim index x particle nums
   std::vector<std::vector<Particle>> simulationsParticles;
   float simulation2DSceneScale = 10.f;
-  std::vector<uint32_t> simulationsNumParticles{10, 50, 5, 2};
-  const std::vector<uint32_t> kSimulationsMaxNumParticles{20, 1000, 30, 2};
+  std::vector<uint32_t> simulationsNumParticles{10, 50, 5, 2, 8};
+  const std::vector<uint32_t> kSimulationsMaxNumParticles{20, 1000, 30, 2, 8};
 };
 }  // namespace vge
