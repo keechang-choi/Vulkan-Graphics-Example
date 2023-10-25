@@ -1990,8 +1990,8 @@ void VgeExample::simulate() {
   if (opts.enableSimulation[3]) {
     uint32_t simulationIndex = 3;
     auto& simulationParticles = simulationsParticles[simulationIndex];
-    float wireRadius = simulation2DSceneScale * 0.25;
     double sdt = animationTimer / static_cast<float>(opts.numSubsteps);
+    float wireRadius = simulation2DSceneScale * 0.25;
     for (auto step = 0; step < opts.numSubsteps; step++) {
       {
         // pbd bead
@@ -2032,6 +2032,48 @@ void VgeExample::simulate() {
             wireRadius * sin(simulationParticles[i].prevPos.x);
         simulationParticles[i].pos.y =
             wireRadius * cos(simulationParticles[i].prevPos.x);
+      }
+    }
+  }
+  // 2d triple-pendulum analytic comparison
+  if (opts.enableSimulation[4]) {
+    uint32_t simulationIndex = 4;
+    auto& simulationParticles = simulationsParticles[simulationIndex];
+    size_t n = simulationParticles.size();
+    double sdt = animationTimer / static_cast<float>(opts.numSubsteps);
+    for (auto step = 0; step < opts.numSubsteps; step++) {
+      // start step
+      for (auto i = 1; i < n / 2; i++) {
+        glm::dvec4 acc{0.f, opts.gravity, 0.f, 0.f};
+        simulationParticles[i].vel += acc * sdt;
+        double length = simulationParticles[i].prevPos.w;
+        simulationParticles[i].prevPos = simulationParticles[i].pos;
+        simulationParticles[i].prevPos.w = length;
+        double radius = simulationParticles[i].pos.w;
+        simulationParticles[i].pos += simulationParticles[i].vel * sdt;
+        simulationParticles[i].pos.w = radius;
+      }
+      // keep on wire
+      for (auto i = 1; i < n / 2; i++) {
+        glm::dvec3 dp(simulationParticles[i].pos -
+                      simulationParticles[i - 1].pos);
+        double d = glm::length(dp);
+        double m0 = simulationParticles[i - 1].vel.w;
+        double m1 = simulationParticles[i].vel.w;
+        double w0 = m0 > 0.0 ? 1.0 / m0 : 0.0;
+        double w1 = m1 > 0.0 ? 1.0 / m1 : 0.0;
+        double length = simulationParticles[i].prevPos.w;
+        double corr = (length - d) / d / (w0 + w1);
+        simulationParticles[i - 1].pos -= glm::dvec4(w0 * corr * dp, 0.0);
+        simulationParticles[i].pos += glm::dvec4(w1 * corr * dp, 0.0);
+      }
+      // end step
+      for (auto i = 1; i < n / 2; i++) {
+        float mass = simulationParticles[i].vel.w;
+        // NOTE: divide by zero
+        simulationParticles[i].vel =
+            (simulationParticles[i].pos - simulationParticles[i].prevPos) / sdt;
+        simulationParticles[i].vel.w = mass;
       }
     }
   }
