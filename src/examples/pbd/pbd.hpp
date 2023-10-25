@@ -74,9 +74,9 @@ struct DynamicUboElt {
 };
 
 struct Particle {
-  glm::vec4 pos;
-  glm::vec4 vel;
-  glm::vec4 prevPos;
+  glm::dvec4 pos;
+  glm::dvec4 vel;
+  glm::dvec4 prevPos;
 };
 
 struct SpecializationData {
@@ -103,8 +103,9 @@ struct Options {
   float tailIntensity = 1.0f;
   float tailFadeOut = 2.0f;
   float restitution = 1.0f;
-  std::vector<int32_t> simulationsNumParticles{10, 50, 5};
-  std::vector<bool> enableSimulation{true, true, true};
+  std::vector<int32_t> simulationsNumParticles;
+  std::vector<bool> enableSimulation;
+  bool computeModelAnimation{false};
   int32_t numSubsteps = 1;
 };
 
@@ -277,7 +278,7 @@ class VgeExample : public VgeBase {
   // sim index x particle nums
   std::vector<std::vector<Particle>> simulationsParticles;
   float simulation2DSceneScale = 10.f;
-  std::vector<uint32_t> simulationsNumParticles{10, 50, 5};
-  const std::vector<uint32_t> kSimulationsMaxNumParticles{20, 1000, 30};
+  std::vector<uint32_t> simulationsNumParticles{10, 50, 5, 2};
+  const std::vector<uint32_t> kSimulationsMaxNumParticles{20, 1000, 30, 2};
 };
 }  // namespace vge

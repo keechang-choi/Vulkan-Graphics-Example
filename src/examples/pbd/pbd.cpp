@@ -69,7 +69,8 @@ VgeExample::~VgeExample() {}
 void VgeExample::initVulkan() {
   cameraController.moveSpeed = opts.moveSpeed;
   // camera setup
-  camera.setViewTarget(glm::vec3{0.f, -20.f, -20.f}, glm::vec3{0.f, 0.f, 0.f});
+  camera.setViewTarget(glm::vec3{30.f, -20.f, -20.f},
+                       glm::vec3{30.f, -10.f, 0.f});
   camera.setPerspectiveProjection(
       glm::radians(60.f),
       static_cast<float>(width) / (static_cast<float>(height)), 0.1f, 256.f);
@@ -484,6 +485,15 @@ void VgeExample::loadAssets() {
     addModelInstance(modelInstance);
   }
 
+  simulationsParticles.push_back(
+      std::vector<Particle>(simulationsNumParticles[3]));
+  for (auto i = 0; i < simulationsParticles[3].size(); i++) {
+    ModelInstance modelInstance{};
+    modelInstance.simpleModel = circle;
+    modelInstance.name = "circle4-" + std::to_string(i);
+    addModelInstance(modelInstance);
+  }
+
   std::shared_ptr<SimpleModel> rectLines = std::make_shared<SimpleModel>(
       device, globalAllocator->getAllocator(), queue, commandPool);
   {
@@ -496,7 +506,7 @@ void VgeExample::loadAssets() {
     std::vector<uint32_t> indices{0, 1, 1, 2, 2, 3, 3, 0};
     rectLines->setLineList(positions, indices, {1.f, 1.f, 1.f, 1.f});
   }
-  for (auto i = 0; i < 4; i++) {
+  for (auto i = 1; i <= 4; i++) {
     ModelInstance modelInstance{};
     modelInstance.simpleModel = rectLines;
     modelInstance.name = "rectLines" + std::to_string(i);
@@ -519,13 +529,12 @@ void VgeExample::loadAssets() {
     }
     circleLines->setLineList(positions, indices, {1.f, 1.f, 1.f, 1.f});
   }
-  {
+  for (auto i = 3; i <= 4; i++) {
     ModelInstance modelInstance{};
     modelInstance.simpleModel = circleLines;
-    modelInstance.name = "circleLines";
+    modelInstance.name = "circleLines" + std::to_string(i);
     addModelInstance(modelInstance);
   }
-
   std::shared_ptr<SimpleModel> quad = std::make_shared<SimpleModel>(
       device, globalAllocator->getAllocator(), queue, commandPool);
   quad->setNgon(4, {0.5f, 0.5f, 0.5f, 0.f});
@@ -820,7 +829,7 @@ void VgeExample::setupDynamicUbo() {
   {
     size_t instanceIndex = findInstances("quad2")[0];
     dynamicUbo[instanceIndex].modelMatrix =
-        glm::translate(glm::mat4{1.f}, glm::vec3{-quadScale * 1.5f, 0.f, 0.f});
+        glm::translate(glm::mat4{1.f}, glm::vec3{quadScale * 1.5f, 0.f, 0.f});
     dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
         dynamicUbo[instanceIndex].modelMatrix, glm::radians(45.f), up);
     dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
@@ -835,10 +844,11 @@ void VgeExample::setupDynamicUbo() {
 
   float rectScale = simulation2DSceneScale;
   for (auto i = 0; i < 4; i++) {
-    size_t instanceIndex = findInstances("rectLines" + std::to_string(i))[0];
+    size_t instanceIndex =
+        findInstances("rectLines" + std::to_string(i + 1))[0];
     dynamicUbo[instanceIndex].modelMatrix = glm::translate(
-        glm::mat4{1.f}, glm::vec3{-quadScale - rectScale * (i % 2 + 1),
-                                  -rectScale * (i / 2), 0.f});
+        glm::mat4{1.f},
+        glm::vec3{quadScale + rectScale * (i % 2), -rectScale * (i / 2), 0.f});
     dynamicUbo[instanceIndex].modelMatrix =
         glm::scale(dynamicUbo[instanceIndex].modelMatrix,
                    glm::vec3{rectScale, -rectScale, rectScale});
@@ -846,10 +856,21 @@ void VgeExample::setupDynamicUbo() {
     dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
   }
   {
-    size_t instanceIndex = findInstances("circleLines")[0];
+    size_t instanceIndex = findInstances("circleLines3")[0];
     dynamicUbo[instanceIndex].modelMatrix = glm::translate(
         glm::mat4{1.f},
-        glm::vec3{-quadScale - rectScale * 1.5f, -rectScale * 0.5f, 0.f});
+        glm::vec3{+quadScale + rectScale * 0.5f, -rectScale * 0.5f, 0.f});
+    dynamicUbo[instanceIndex].modelMatrix = glm::scale(
+        dynamicUbo[instanceIndex].modelMatrix,
+        glm::vec3{rectScale * 0.25, -rectScale * 0.25, rectScale * 0.25});
+    // default
+    dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
+  }
+  {
+    size_t instanceIndex = findInstances("circleLines4")[0];
+    dynamicUbo[instanceIndex].modelMatrix = glm::translate(
+        glm::mat4{1.f},
+        glm::vec3{+quadScale + rectScale * 1.5f, -rectScale * 0.5f, 0.f});
     dynamicUbo[instanceIndex].modelMatrix = glm::scale(
         dynamicUbo[instanceIndex].modelMatrix,
         glm::vec3{rectScale * 0.25, -rectScale * 0.25, rectScale * 0.25});
@@ -869,7 +890,7 @@ void VgeExample::setupDynamicUbo() {
         -rectScale / 2.f - circleScale, 0.f, circleScale};
     simulationsParticles[0][i].vel = glm::vec4{1.0f, 0.f, 0.f, 0.f};
     modelInstances[instanceIndex].transform.translation =
-        glm::vec3{-quadScale - rectScale * 2.f, -rectScale, 0.f};
+        glm::vec3{quadScale, -rectScale, 0.f};
     modelInstances[instanceIndex].transform.scale =
         glm::vec3{circleScale, circleScale, circleScale};
 
@@ -896,7 +917,7 @@ void VgeExample::setupDynamicUbo() {
         glm::vec4{(-1.f + 2.f * uniformDist(rndEngine)) * 2.f,
                   (-1.f + 2.f * uniformDist(rndEngine)) * 2.f, 0.f, mass};
     modelInstances[instanceIndex].transform.translation =
-        glm::vec3{-quadScale - rectScale, -rectScale, 0.f};
+        glm::vec3{+quadScale + rectScale, -rectScale, 0.f};
     modelInstances[instanceIndex].transform.scale =
         glm::vec3{radius, radius, radius};
 
@@ -920,7 +941,7 @@ void VgeExample::setupDynamicUbo() {
                   0.25f * rectScale * -sin(angle), 0.f, radius};
     simulationsParticles[2][i].vel = glm::vec4{0.f, 0.f, 0.f, mass};
     modelInstances[instanceIndex].transform.translation =
-        glm::vec3{-quadScale - rectScale * 1.5f, -rectScale * 0.5f, 0.f};
+        glm::vec3{quadScale + rectScale * 0.5f, -rectScale * 0.5f, 0.f};
     modelInstances[instanceIndex].transform.scale =
         glm::vec3{radius, radius, radius};
 
@@ -930,6 +951,30 @@ void VgeExample::setupDynamicUbo() {
                   (static_cast<float>(i) /
                    static_cast<float>(simulationsParticles[2].size())),
                   1.0f, 1.f};
+  }
+  for (auto i = 0; i < simulationsParticles[3].size(); i++) {
+    float radius = 0.3f;
+    float mass = glm::pi<float>() * radius * radius;
+    size_t instanceIndex = findInstances("circle4-" + std::to_string(i))[0];
+    float angle = glm::half_pi<float>();
+    // -cos(angle) -> y flip
+    simulationsParticles[3][i].pos =
+        glm::vec4{0.25f * rectScale * sin(angle),
+                  0.25f * rectScale * cos(angle), 0.f, radius};
+    simulationsParticles[3][i].vel = glm::vec4{0.f, 0.f, 0.f, mass};
+    simulationsParticles[3][i].prevPos =
+        glm::vec4{angle, 0.f /*angular velocity*/, 0.f, 0.f};
+
+    // z-fighting
+    modelInstances[instanceIndex].transform.translation =
+        glm::vec3{quadScale + rectScale * 1.5f, -rectScale * 0.5f,
+                  static_cast<float>(i) * 0.01f};
+    modelInstances[instanceIndex].transform.scale =
+        glm::vec3{radius, radius, radius};
+
+    // default
+    dynamicUbo[instanceIndex].modelColor = glm::vec4{
+        static_cast<float>(i % 2), 0.f, 1.0f - static_cast<float>(i % 2), 1.f};
   }
 }
 
@@ -1419,7 +1464,7 @@ void VgeExample::buildComputeCommandBuffers() {
   }
 
   // pre compute animation
-  {
+  if (opts.computeModelAnimation) {
     compute.cmdBuffers[currentFrameIndex].bindPipeline(
         vk::PipelineBindPoint::eCompute, *compute.pipelineModelAnimate);
     for (auto instanceIdx = 0; instanceIdx < modelInstances.size();
@@ -1703,7 +1748,10 @@ void VgeExample::onUpdateUIOverlay() {
 
       uiOverlay->inputFloat("power", &opts.power, 0.01f, "%.3f");
       uiOverlay->inputFloat("soften", &opts.soften, 0.0001f, "%.4f");
-
+      if (ImGui::RadioButton("computeModelAnimation",
+                             opts.computeModelAnimation)) {
+        opts.computeModelAnimation = !opts.computeModelAnimation;
+      }
       uiOverlay->inputFloat("animationSpeed", &opts.animationSpeed, 0.001f,
                             "%.3f");
 
@@ -1731,10 +1779,13 @@ void VgeExample::onUpdateUIOverlay() {
                      kMaxNumParticles);
       for (auto i = 0; i < opts.simulationsNumParticles.size(); i++) {
         std::string caption = "simulation" + std::to_string(i + 1);
-        ImGui::DragInt(
-            caption.c_str(), &opts.simulationsNumParticles[i],
-            static_cast<float>(kSimulationsMaxNumParticles[i]) / 100.f, 1,
-            kSimulationsMaxNumParticles[i]);
+        if (ImGui::DragInt(
+                caption.c_str(), &opts.simulationsNumParticles[i],
+                static_cast<float>(kSimulationsMaxNumParticles[i]) / 100.f, 1,
+                kSimulationsMaxNumParticles[i])) {
+          // fix 2-particle;
+          if (i == 3) opts.simulationsNumParticles[3] = 2;
+        }
       }
 
       uiOverlay->inputInt("desiredSharedDataSize", &opts.desiredSharedDataSize,
@@ -1766,15 +1817,18 @@ void VgeExample::setOptions(const std::optional<Options>& opts) {
     this->opts.tailSampleTime = tailSampleTime;
     this->opts.tailSize = static_cast<int32_t>(tailSize);
     this->opts.integrator = static_cast<int32_t>(integrator);
+    this->opts.simulationsNumParticles.resize(simulationsNumParticles.size());
+    this->opts.enableSimulation.resize(simulationsNumParticles.size());
     for (auto i = 0; i < simulationsNumParticles.size(); i++) {
       this->opts.simulationsNumParticles[i] =
           static_cast<int32_t>(simulationsNumParticles[i]);
+      this->opts.enableSimulation[i] = true;
     }
   }
 }
 
 void VgeExample::simulate() {
-  float animationTimer =
+  double animationTimer =
       (animationTime - animationLastTime) * opts.animationSpeed;
   // NOTE: initial case. not to divide by zero
   if (animationTimer == 0.0f) {
@@ -1806,7 +1860,7 @@ void VgeExample::simulate() {
     for (auto i = 0; i < simulationParticles.size(); i++) {
       float mass = simulationParticles[i].vel.w;
       // +y diriction
-      glm::vec4 acc{0.f, 0.f, 0.f, 0.f};
+      glm::dvec4 acc{0.f, 0.f, 0.f, 0.f};
       simulationParticles[i].vel += acc * animationTimer;
       float radius = simulationParticles[i].pos.w;
       simulationParticles[i].pos += simulationParticles[i].vel * animationTimer;
@@ -1825,11 +1879,11 @@ void VgeExample::simulate() {
     float wireRadius = simulation2DSceneScale * 0.25;
     uint32_t simulationIndex = 2;
     auto& simulationParticles = simulationsParticles[simulationIndex];
-    float sdt = animationTimer / static_cast<float>(opts.numSubsteps);
+    double sdt = animationTimer / static_cast<float>(opts.numSubsteps);
     for (auto step = 0; step < opts.numSubsteps; step++) {
       // start step
       for (auto i = 0; i < simulationParticles.size(); i++) {
-        glm::vec4 acc{0.f, opts.gravity, 0.f, 0.f};
+        glm::dvec4 acc{0.f, opts.gravity, 0.f, 0.f};
         simulationParticles[i].vel += acc * sdt;
         simulationParticles[i].prevPos = simulationParticles[i].pos;
         float radius = simulationParticles[i].pos.w;
@@ -1857,6 +1911,55 @@ void VgeExample::simulate() {
         for (auto j = i + 1; j < simulationParticles.size(); j++) {
           handleBallCollision(simulationIndex, i, j, opts.restitution);
         }
+      }
+    }
+  }
+  // 2d bead analytic comparison
+  if (opts.enableSimulation[3]) {
+    uint32_t simulationIndex = 3;
+    auto& simulationParticles = simulationsParticles[simulationIndex];
+    float wireRadius = simulation2DSceneScale * 0.25;
+    double sdt = animationTimer / static_cast<float>(opts.numSubsteps);
+    for (auto step = 0; step < opts.numSubsteps; step++) {
+      {
+        // pbd bead
+        int i = 0;
+        // start step
+        glm::dvec4 acc{0.f, opts.gravity, 0.f, 0.f};
+        simulationParticles[i].vel += acc * sdt;
+        simulationParticles[i].prevPos = simulationParticles[i].pos;
+        float radius = simulationParticles[i].pos.w;
+        simulationParticles[i].pos += simulationParticles[i].vel * sdt;
+        simulationParticles[i].pos.w = radius;
+
+        // keep on wire
+        glm::dvec3 dir(simulationParticles[i].pos);
+        float len = glm::length(dir);
+        if (len == 0.0) continue;
+        dir = glm::normalize(dir);
+        double lambda = wireRadius - len;
+        simulationParticles[i].pos += glm::dvec4(dir * lambda, 0.f);
+
+        // end step
+        float mass = simulationParticles[i].vel.w;
+        // NOTE: divide by zero
+        simulationParticles[i].vel =
+            (simulationParticles[i].pos - simulationParticles[i].prevPos) / sdt;
+        simulationParticles[i].vel.w = mass;
+      }
+      {
+        // analytic bead
+        // prevPos.x -> angle, prevPos.y -> angular Velocity
+        int i = 1;
+        float angularAcc =
+            -opts.gravity / wireRadius * sin(simulationParticles[i].prevPos.x);
+        simulationParticles[i].prevPos.y += angularAcc * sdt;
+        simulationParticles[i].prevPos.x +=
+            simulationParticles[i].prevPos.y * sdt;
+        simulationParticles[i].pos.x =
+            wireRadius * sin(simulationParticles[i].prevPos.x);
+        simulationParticles[i].pos.y =
+            wireRadius * cos(simulationParticles[i].prevPos.x);
       }
     }
   }
