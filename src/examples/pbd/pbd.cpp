@@ -2137,7 +2137,7 @@ void VgeExample::simulate() {
         }
         // end step
         for (auto i = 1; i < n / 2; i++) {
-          float mass = simulationParticles[i].vel.w;
+          double mass = simulationParticles[i].vel.w;
           // NOTE: divide by zero
           simulationParticles[i].vel =
               (simulationParticles[i].pos - simulationParticles[i].prevPos) /
@@ -2148,19 +2148,20 @@ void VgeExample::simulate() {
 
       {
         // analytic
-        float g = opts.gravity;
-        glm::vec3 m{simulationParticles[5].vel.w, simulationParticles[6].vel.w,
-                    simulationParticles[7].vel.w};
-        glm::vec3 l{simulationParticles[5].prevPos.w,
-                    simulationParticles[6].prevPos.w,
-                    simulationParticles[7].prevPos.w};
-        glm::vec3 t{simulationParticles[5].prevPos.x,
-                    simulationParticles[6].prevPos.x,
-                    simulationParticles[7].prevPos.x};
-        glm::vec3 w{simulationParticles[5].prevPos.y,
-                    simulationParticles[6].prevPos.y,
-                    simulationParticles[7].prevPos.y};
-        glm::mat3 a;
+        // https://github.com/matthias-research/pages/blob/master/tenMinutePhysics/06-pendulum.html
+        double g = opts.gravity;
+        glm::dvec3 m{simulationParticles[5].vel.w, simulationParticles[6].vel.w,
+                     simulationParticles[7].vel.w};
+        glm::dvec3 l{simulationParticles[5].prevPos.w,
+                     simulationParticles[6].prevPos.w,
+                     simulationParticles[7].prevPos.w};
+        glm::dvec3 t{simulationParticles[5].prevPos.x,
+                     simulationParticles[6].prevPos.x,
+                     simulationParticles[7].prevPos.x};
+        glm::dvec3 w{simulationParticles[5].prevPos.y,
+                     simulationParticles[6].prevPos.y,
+                     simulationParticles[7].prevPos.y};
+        glm::dmat3 a;
 
         a[0][0] = l[0] * l[0] * (m[0] + m[1] + m[2]);
         a[1][0] = m[1] * l[0] * l[1] * cos(t[0] - t[1]) +
@@ -2178,7 +2179,7 @@ void VgeExample::simulate() {
         // https://registry.khronos.org/OpenGL-Refpages/gl4/html/inverse.xhtml
         if (glm::determinant(a) == 0.0) continue;
 
-        glm::vec3 b;
+        glm::dvec3 b;
         b[0] = g * l[0] * m[0] * sin(t[0]) + g * l[0] * m[1] * sin(t[0]) +
                g * l[0] * m[2] * sin(t[0]) +
                m[1] * l[0] * l[1] * sin(t[0] - t[1]) * w[0] * w[1] +
@@ -2199,7 +2200,7 @@ void VgeExample::simulate() {
                m[2] * l[0] * l[2] * sin(t[2] - t[0]) * (w[0] - w[2]) * w[0] +
                m[2] * l[1] * l[2] * sin(t[2] - t[1]) * (w[1] - w[2]) * w[1];
 
-        glm::vec3 angularAcc = glm::inverse(a) * (-b);
+        glm::dvec3 angularAcc = glm::inverse(a) * (-b);
         for (auto i = 0; i < 3; i++) {
           simulationParticles[5 + i].prevPos.y += angularAcc[i] * sdt;
         }
@@ -2214,7 +2215,7 @@ void VgeExample::simulate() {
                              sin(simulationParticles[5 + i].prevPos.x),
                          simulationParticles[5 + i].prevPos.w *
                              cos(simulationParticles[5 + i].prevPos.x),
-                         0.f, 0.f};
+                         0.0, 0.0};
         }
       }
     }
