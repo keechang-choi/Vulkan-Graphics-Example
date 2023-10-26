@@ -513,6 +513,23 @@ void VgeExample::loadAssets() {
     modelInstance.name = "circleLines" + std::to_string(i);
     addModelInstance(modelInstance);
   }
+  std::shared_ptr<SimpleModel> singleLine = std::make_shared<SimpleModel>(
+      device, globalAllocator->getAllocator(), queue, commandPool);
+  {
+    std::vector<glm::vec4> positions{
+        {0.0f, 0.0f, 0.0f, 1.0f},
+        {0.0f, 0.0f, 1.0f, 1.0f},
+    };
+    std::vector<uint32_t> indices{0, 1};
+    singleLine->setLineList(positions, indices, {1.f, 1.f, 1.f, 1.f});
+  }
+  for (auto i = 0; i < simulationsParticles[4].size() - 2; i++) {
+    ModelInstance modelInstance{};
+    modelInstance.simpleModel = singleLine;
+    modelInstance.name = "singleLines5-" + std::to_string(i);
+    addModelInstance(modelInstance);
+  }
+
   std::shared_ptr<SimpleModel> quad = std::make_shared<SimpleModel>(
       device, globalAllocator->getAllocator(), queue, commandPool);
   quad->setNgon(4, {0.5f, 0.5f, 0.5f, 0.f});
@@ -852,6 +869,16 @@ void VgeExample::setupDynamicUbo() {
     dynamicUbo[instanceIndex].modelMatrix = glm::scale(
         dynamicUbo[instanceIndex].modelMatrix,
         glm::vec3{rectScale * 0.25, -rectScale * 0.25, rectScale * 0.25});
+    // default
+    dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
+  }
+  for (auto i = 0; i < simulationsParticles[4].size() - 2; i++) {
+    size_t instanceIndex =
+        findInstances("singleLines5-" + std::to_string(i))[0];
+    // not using initial translation
+    dynamicUbo[instanceIndex].modelMatrix = glm::translate(
+        glm::mat4{1.f},
+        glm::vec3{quadScale + rectScale * 2.5f, -rectScale * 1.5f, 0.f});
     // default
     dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
   }
@@ -1681,6 +1708,46 @@ void VgeExample::updateDynamicUbo() {
       dynamicUbo[instanceIndex].modelMatrix =
           glm::scale(dynamicUbo[instanceIndex].modelMatrix,
                      modelInstances[instanceIndex].transform.scale);
+    }
+  }
+  {
+    auto& simulationParticles = simulationsParticles[4];
+    int n = simulationParticles.size() - 2;
+    int halfN = n / 2;
+    size_t circleInstantceIndex = findInstances("circle5-0")[0];
+    glm::vec3 offset =
+        modelInstances[circleInstantceIndex].transform.translation;
+    // NOTE: not using scene graph hierarchy
+    glm::vec3 v0{0.f, 0.f, 1.0f};
+    float l0 = glm::length(v0);
+    for (auto i = 0; i < n; i++) {
+      size_t instanceIndex =
+          findInstances("singleLines5-" + std::to_string(i))[0];
+      int particleIndex = (i / halfN) * (halfN + 1) + i % halfN;
+      glm::vec3 p1{simulationParticles[particleIndex].pos};
+      glm::vec3 p2{simulationParticles[particleIndex + 1].pos};
+      glm::vec3 v1(p2 - p1);
+      glm::vec3 translation(p1);
+      glm::mat4 rotation{1.f};
+      float l1 = glm::length(v1);
+      float scale = l1 / l0;
+      if (l1 > 0.f) {
+        float theta = acos(glm::dot(v0, v1) / (l0 * l1));
+        glm::vec3 axis = glm::cross(v0, v1);
+        if (glm::length(axis) == 0.0) {
+          scale = theta > 1.5f ? -scale : scale;
+        } else {
+          axis = glm::normalize(axis);
+          rotation = glm::rotate(rotation, theta, axis);
+        }
+      }
+      dynamicUbo[instanceIndex].modelMatrix =
+          glm::translate(glm::mat4{1.f}, offset + translation);
+      dynamicUbo[instanceIndex].modelMatrix =
+          dynamicUbo[instanceIndex].modelMatrix * rotation;
+      dynamicUbo[instanceIndex].modelMatrix =
+          glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+                     glm::vec3{scale, scale, scale});
     }
   }
 
