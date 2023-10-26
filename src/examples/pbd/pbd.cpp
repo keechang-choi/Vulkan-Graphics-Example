@@ -2109,38 +2109,113 @@ void VgeExample::simulate() {
     size_t n = simulationParticles.size();
     double sdt = animationTimer / static_cast<float>(opts.numSubsteps);
     for (auto step = 0; step < opts.numSubsteps; step++) {
-      // start step
-      for (auto i = 1; i < n / 2; i++) {
-        glm::dvec4 acc{0.f, opts.gravity, 0.f, 0.f};
-        simulationParticles[i].vel += acc * sdt;
-        double length = simulationParticles[i].prevPos.w;
-        simulationParticles[i].prevPos = simulationParticles[i].pos;
-        simulationParticles[i].prevPos.w = length;
-        double radius = simulationParticles[i].pos.w;
-        simulationParticles[i].pos += simulationParticles[i].vel * sdt;
-        simulationParticles[i].pos.w = radius;
+      {
+        // start step
+        for (auto i = 1; i < n / 2; i++) {
+          glm::dvec4 acc{0.f, opts.gravity, 0.f, 0.f};
+          simulationParticles[i].vel += acc * sdt;
+          double length = simulationParticles[i].prevPos.w;
+          simulationParticles[i].prevPos = simulationParticles[i].pos;
+          simulationParticles[i].prevPos.w = length;
+          double radius = simulationParticles[i].pos.w;
+          simulationParticles[i].pos += simulationParticles[i].vel * sdt;
+          simulationParticles[i].pos.w = radius;
+        }
+        // keep on wire
+        for (auto i = 1; i < n / 2; i++) {
+          glm::dvec3 dp(simulationParticles[i].pos -
+                        simulationParticles[i - 1].pos);
+          double d = glm::length(dp);
+          double m0 = simulationParticles[i - 1].vel.w;
+          double m1 = simulationParticles[i].vel.w;
+          double w0 = m0 > 0.0 ? 1.0 / m0 : 0.0;
+          double w1 = m1 > 0.0 ? 1.0 / m1 : 0.0;
+          double length = simulationParticles[i].prevPos.w;
+          double corr = (length - d) / d / (w0 + w1);
+          simulationParticles[i - 1].pos -= glm::dvec4(w0 * corr * dp, 0.0);
+          simulationParticles[i].pos += glm::dvec4(w1 * corr * dp, 0.0);
+        }
+        // end step
+        for (auto i = 1; i < n / 2; i++) {
+          float mass = simulationParticles[i].vel.w;
+          // NOTE: divide by zero
+          simulationParticles[i].vel =
+              (simulationParticles[i].pos - simulationParticles[i].prevPos) /
+              sdt;
+          simulationParticles[i].vel.w = mass;
+        }
       }
-      // keep on wire
-      for (auto i = 1; i < n / 2; i++) {
-        glm::dvec3 dp(simulationParticles[i].pos -
-                      simulationParticles[i - 1].pos);
-        double d = glm::length(dp);
-        double m0 = simulationParticles[i - 1].vel.w;
-        double m1 = simulationParticles[i].vel.w;
-        double w0 = m0 > 0.0 ? 1.0 / m0 : 0.0;
-        double w1 = m1 > 0.0 ? 1.0 / m1 : 0.0;
-        double length = simulationParticles[i].prevPos.w;
-        double corr = (length - d) / d / (w0 + w1);
-        simulationParticles[i - 1].pos -= glm::dvec4(w0 * corr * dp, 0.0);
-        simulationParticles[i].pos += glm::dvec4(w1 * corr * dp, 0.0);
-      }
-      // end step
-      for (auto i = 1; i < n / 2; i++) {
-        float mass = simulationParticles[i].vel.w;
-        // NOTE: divide by zero
-        simulationParticles[i].vel =
-            (simulationParticles[i].pos - simulationParticles[i].prevPos) / sdt;
-        simulationParticles[i].vel.w = mass;
+
+      {
+        // analytic
+        float g = opts.gravity;
+        glm::vec3 m{simulationParticles[5].vel.w, simulationParticles[6].vel.w,
+                    simulationParticles[7].vel.w};
+        glm::vec3 l{simulationParticles[5].prevPos.w,
+                    simulationParticles[6].prevPos.w,
+                    simulationParticles[7].prevPos.w};
+        glm::vec3 t{simulationParticles[5].prevPos.x,
+                    simulationParticles[6].prevPos.x,
+                    simulationParticles[7].prevPos.x};
+        glm::vec3 w{simulationParticles[5].prevPos.y,
+                    simulationParticles[6].prevPos.y,
+                    simulationParticles[7].prevPos.y};
+        glm::mat3 a;
+
+        a[0][0] = l[0] * l[0] * (m[0] + m[1] + m[2]);
+        a[1][0] = m[1] * l[0] * l[1] * cos(t[0] - t[1]) +
+                  m[2] * l[0] * l[1] * cos(t[0] - t[1]);
+        a[2][0] = m[2] * l[0] * l[2] * cos(t[0] - t[2]);
+
+        a[0][1] = (m[1] + m[2]) * l[0] * l[1] * cos(t[1] - t[0]);
+        a[1][1] = l[1] * l[1] * (m[1] + m[2]);
+        a[2][1] = m[2] * l[1] * l[2] * cos(t[1] - t[2]);
+
+        a[0][2] = m[2] * l[0] * l[2] * cos(t[0] - t[2]);
+        a[1][2] = m[2] * l[1] * l[2] * cos(t[1] - t[2]);
+        a[2][2] = m[2] * l[2] * l[2];
+
+        // https://registry.khronos.org/OpenGL-Refpages/gl4/html/inverse.xhtml
+        if (glm::determinant(a) == 0.0) continue;
+
+        glm::vec3 b;
+        b[0] = g * l[0] * m[0] * sin(t[0]) + g * l[0] * m[1] * sin(t[0]) +
+               g * l[0] * m[2] * sin(t[0]) +
+               m[1] * l[0] * l[1] * sin(t[0] - t[1]) * w[0] * w[1] +
+               m[2] * l[0] * l[2] * sin(t[0] - t[2]) * w[0] * w[2] +
+               m[2] * l[0] * l[1] * sin(t[0] - t[1]) * w[0] * w[1] +
+               m[1] * l[0] * l[1] * sin(t[1] - t[0]) * (w[0] - w[1]) * w[1] +
+               m[2] * l[0] * l[1] * sin(t[1] - t[0]) * (w[0] - w[1]) * w[1] +
+               m[2] * l[0] * l[2] * sin(t[2] - t[0]) * (w[0] - w[2]) * w[2];
+        b[1] = g * l[1] * m[1] * sin(t[1]) + g * l[1] * m[2] * sin(t[1]) +
+               w[0] * w[1] * l[0] * l[1] * sin(t[1] - t[0]) * (m[1] + m[2]) +
+               m[2] * l[1] * l[2] * sin(t[1] - t[2]) * w[1] * w[2] +
+               (m[1] + m[2]) * l[0] * l[1] * sin(t[1] - t[0]) * (w[0] - w[1]) *
+                   w[0] +
+               m[2] * l[1] * l[2] * sin(t[2] - t[1]) * (w[1] - w[2]) * w[2];
+        b[2] = m[2] * g * l[2] * sin(t[2]) -
+               m[2] * l[1] * l[2] * sin(t[1] - t[2]) * w[1] * w[2] -
+               m[2] * l[0] * l[2] * sin(t[0] - t[2]) * w[0] * w[2] +
+               m[2] * l[0] * l[2] * sin(t[2] - t[0]) * (w[0] - w[2]) * w[0] +
+               m[2] * l[1] * l[2] * sin(t[2] - t[1]) * (w[1] - w[2]) * w[1];
+
+        glm::vec3 angularAcc = glm::inverse(a) * (-b);
+        for (auto i = 0; i < 3; i++) {
+          simulationParticles[5 + i].prevPos.y += angularAcc[i] * sdt;
+        }
+        for (auto i = 0; i < 3; i++) {
+          simulationParticles[5 + i].prevPos.x +=
+              simulationParticles[5 + i].prevPos.y * sdt;
+        }
+        for (auto i = 0; i < 3; i++) {
+          simulationParticles[5 + i].pos =
+              simulationParticles[4 + i].pos +
+              glm::dvec4{simulationParticles[5 + i].prevPos.w *
+                             sin(simulationParticles[5 + i].prevPos.x),
+                         simulationParticles[5 + i].prevPos.w *
+                             cos(simulationParticles[5 + i].prevPos.x),
+                         0.f, 0.f};
+        }
       }
     }
   }
