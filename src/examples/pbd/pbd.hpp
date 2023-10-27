@@ -93,7 +93,7 @@ struct Options {
   float power = 1.f;
   float soften = 0.001f;
   int32_t tailSize = 0;
-  float tailSampleTime = 0.1f;
+  float tailSampleTime = 0.05f;
   int32_t integrator = 1;
   float moveSpeed = 10.f;
   float lineWidth = 2.0f;
@@ -101,7 +101,7 @@ struct Options {
   int32_t desiredSharedDataSize = 256u;
   float animationSpeed = 0.5f;
   float tailIntensity = 1.0f;
-  float tailFadeOut = 2.0f;
+  float tailFadeOut = 1.0f;
   float restitution = 1.0f;
   std::vector<int32_t> simulationsNumParticles;
   std::vector<bool> enableSimulation;
@@ -151,6 +151,7 @@ class VgeExample : public VgeBase {
   void createVertexSCI();
   void createStorageBuffers();
   void createUniformBuffers();
+  void createTailBuffers();
 
   // graphics resources
   void prepareGraphics();
@@ -213,7 +214,7 @@ class VgeExample : public VgeBase {
   void updateGraphicsUbo();
   void updateComputeUbo();
   void updateDynamicUbo();
-  void updateTailData();
+  void updateTailBuffer();
 
   void addModelInstance(const ModelInstance& newInstance);
   const std::vector<size_t>& findInstances(const std::string& name);
@@ -266,12 +267,12 @@ class VgeExample : public VgeBase {
   std::vector<TailElt> tailData;
   std::vector<std::unique_ptr<vgeu::VgeuBuffer>> tailBuffers;
   std::vector<uint32_t> tailIndices;
-  std::unique_ptr<vgeu::VgeuBuffer> tailIndexBuffer;
+  std::vector<std::unique_ptr<vgeu::VgeuBuffer>> tailIndexBuffers;
+  int tailFrontIndex = 0;
 
   vk::raii::Pipeline tailPipeline = nullptr;
   float tailTimer = -1.f;
-  size_t tailSize = 0;
-  float tailSampleTime = 0.05f;
+  size_t tailSize = 100;
   VertexInfos tailVertexInfos;
 
   Options opts{};
