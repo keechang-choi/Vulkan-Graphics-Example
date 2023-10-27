@@ -1002,7 +1002,6 @@ void VgeExample::setupDynamicUbo() {
     uint32_t simulationIndex = 4;
     auto& simulationParticles = simulationsParticles[simulationIndex];
     size_t n = simulationParticles.size();
-    size_t halfN = n / 2;
     for (auto i = 0; i < n; i++) {
       size_t instanceIndex =
           findInstances("circle" + std::to_string(simulationIndex + 1) + "-" +
@@ -1010,21 +1009,22 @@ void VgeExample::setupDynamicUbo() {
       // z-fighting
       modelInstances[instanceIndex].transform.translation =
           glm::vec3{quadScale + rectScale * 2.5f, -rectScale * 1.5f,
-                    static_cast<float>(i / halfN) * 0.01f};
+                    static_cast<float>(i < 4) * 0.01f};
       dynamicUbo[instanceIndex].modelColor =
-          glm::vec4{static_cast<float>(i / halfN), 0.f,
-                    1.0f - static_cast<float>(i / halfN), 1.f};
-      if (i % halfN == 0) {
+          glm::vec4{static_cast<float>(i < 4), 0.f,
+                    1.0f - static_cast<float>(i < 4), 1.f};
+      if (i == 0 || i == 4) {
         // fixed starting point
         // all particle member values are zero.
         modelInstances[instanceIndex].transform.scale =
             glm::vec3{0.f, 0.f, 0.f};
         continue;
       }
-      float mass = opts.sim5masses[i % halfN - 1];
+      int optionIndex = i < 4 ? i - 1 : i - 5;
+      float mass = opts.sim5masses[optionIndex];
       float radius = 0.5f * sqrt(mass);
-      float angle = glm::radians<float>(opts.sim5angles[i % halfN - 1]);
-      float length = opts.sim5lengths[i % halfN - 1];
+      float angle = glm::radians<float>(opts.sim5angles[optionIndex]);
+      float length = opts.sim5lengths[optionIndex];
       // -cos(angle) -> y flip
       simulationParticles[i].pos =
           simulationParticles[i - 1].pos +
@@ -1713,7 +1713,6 @@ void VgeExample::updateDynamicUbo() {
   {
     auto& simulationParticles = simulationsParticles[4];
     int n = simulationParticles.size() - 2;
-    int halfN = n / 2;
     size_t circleInstantceIndex = findInstances("circle5-0")[0];
     glm::vec3 offset =
         modelInstances[circleInstantceIndex].transform.translation;
@@ -1723,7 +1722,7 @@ void VgeExample::updateDynamicUbo() {
     for (auto i = 0; i < n; i++) {
       size_t instanceIndex =
           findInstances("singleLines5-" + std::to_string(i))[0];
-      int particleIndex = (i / halfN) * (halfN + 1) + i % halfN;
+      int particleIndex = (i < 3) ? i : i + 1;
       glm::vec3 p1{simulationParticles[particleIndex].pos};
       glm::vec3 p2{simulationParticles[particleIndex + 1].pos};
       glm::vec3 v1(p2 - p1);
@@ -1884,27 +1883,46 @@ void VgeExample::onUpdateUIOverlay() {
         std::string caption = "simulation" + std::to_string(i + 1);
         if (ImGui::DragInt(
                 caption.c_str(), &opts.simulationsNumParticles[i],
-                static_cast<float>(kSimulationsMaxNumParticles[i]) / 100.f, 1,
+                static_cast<float>(kSimulationsMaxNumParticles[i]) / 100.f,
+                kSimulationsMinNumParticles[i],
                 kSimulationsMaxNumParticles[i])) {
           // fix 2-particle;
-          if (i == 3 || i == 4) {
+          // min == max => no clamp, (i==3)
+          if (kSimulationsMinNumParticles[i] ==
+              kSimulationsMaxNumParticles[i]) {
             opts.simulationsNumParticles[i] = kSimulationsMaxNumParticles[i];
+          }
+          if (i == 4) {
+            this->opts.sim5lengths.resize(opts.simulationsNumParticles[4] - 5);
+            this->opts.sim5masses.resize(opts.simulationsNumParticles[4] - 5);
+            this->opts.sim5angles.resize(opts.simulationsNumParticles[4] - 5);
+            for (auto i = 0; i < this->opts.sim5lengths.size(); i++) {
+              this->opts.sim5lengths[i] =
+                  4.5f / static_cast<float>(this->opts.sim5lengths.size());
+              this->opts.sim5masses[i] =
+                  (3.f / static_cast<float>(this->opts.sim5lengths.size())) *
+                  (3.f / static_cast<float>(this->opts.sim5lengths.size()));
+              this->opts.sim5angles[i] = 180.f;
+            }
+            this->opts.sim5angles[0] = 90.f;
           }
         }
       }
-      if (ImGui::TreeNodeEx("simulation5", ImGuiTreeNodeFlags_DefaultOpen)) {
+      ImGui::Spacing();
+      // NOTE: caption duplication
+      if (ImGui::TreeNode("simulation5 Options")) {
         for (auto i = 0; i < opts.sim5lengths.size(); i++) {
           std::string caption = "sim5lengths" + std::to_string(i);
           ImGui::DragFloat(caption.c_str(), &opts.sim5lengths[i], 0.01f, 0.0f,
                            1.0f, "%.2f");
         }
-        ImGui::Separator();
+        ImGui::Spacing();
         for (auto i = 0; i < opts.sim5masses.size(); i++) {
           std::string caption = "sim5masses" + std::to_string(i);
           ImGui::DragFloat(caption.c_str(), &opts.sim5masses[i], 0.01f, 0.0f,
                            1.0f, "%.2f");
         }
-        ImGui::Separator();
+        ImGui::Spacing();
         for (auto i = 0; i < opts.sim5angles.size(); i++) {
           std::string caption = "sim5angles" + std::to_string(i);
           ImGui::DragFloat(caption.c_str(), &opts.sim5angles[i], 0.1f, 0.0f,
@@ -1912,7 +1930,7 @@ void VgeExample::onUpdateUIOverlay() {
         }
         ImGui::TreePop();
       }
-
+      ImGui::Spacing();
       uiOverlay->inputInt("tailSize", &opts.tailSize, 1);
       uiOverlay->inputInt("desiredSharedDataSize", &opts.desiredSharedDataSize,
                           64);
@@ -1953,12 +1971,15 @@ void VgeExample::setOptions(const std::optional<Options>& opts) {
       }
     }
     {
-      this->opts.sim5lengths.resize(simulationsNumParticles[4] / 2 - 1);
-      this->opts.sim5masses.resize(simulationsNumParticles[4] / 2 - 1);
-      this->opts.sim5angles.resize(simulationsNumParticles[4] / 2 - 1);
+      this->opts.sim5lengths.resize(simulationsNumParticles[4] - 5);
+      this->opts.sim5masses.resize(simulationsNumParticles[4] - 5);
+      this->opts.sim5angles.resize(simulationsNumParticles[4] - 5);
       for (auto i = 0; i < this->opts.sim5lengths.size(); i++) {
-        this->opts.sim5lengths[i] = 1.5f;
-        this->opts.sim5masses[i] = 1.0f;
+        this->opts.sim5lengths[i] =
+            4.5f / static_cast<float>(this->opts.sim5lengths.size());
+        this->opts.sim5masses[i] =
+            (3.f / static_cast<float>(this->opts.sim5lengths.size())) *
+            (3.f / static_cast<float>(this->opts.sim5lengths.size()));
         this->opts.sim5angles[i] = 180.f;
       }
       this->opts.sim5angles[0] = 90.f;
@@ -2111,7 +2132,7 @@ void VgeExample::simulate() {
     for (auto step = 0; step < opts.numSubsteps; step++) {
       {
         // start step
-        for (auto i = 1; i < n / 2; i++) {
+        for (auto i = 5; i < n; i++) {
           glm::dvec4 acc{0.f, opts.gravity, 0.f, 0.f};
           simulationParticles[i].vel += acc * sdt;
           double length = simulationParticles[i].prevPos.w;
@@ -2122,7 +2143,7 @@ void VgeExample::simulate() {
           simulationParticles[i].pos.w = radius;
         }
         // keep on wire
-        for (auto i = 1; i < n / 2; i++) {
+        for (auto i = 5; i < n; i++) {
           glm::dvec3 dp(simulationParticles[i].pos -
                         simulationParticles[i - 1].pos);
           double d = glm::length(dp);
@@ -2136,7 +2157,7 @@ void VgeExample::simulate() {
           simulationParticles[i].pos += glm::dvec4(w1 * corr * dp, 0.0);
         }
         // end step
-        for (auto i = 1; i < n / 2; i++) {
+        for (auto i = 5; i < n; i++) {
           double mass = simulationParticles[i].vel.w;
           // NOTE: divide by zero
           simulationParticles[i].vel =
@@ -2150,17 +2171,17 @@ void VgeExample::simulate() {
         // analytic
         // https://github.com/matthias-research/pages/blob/master/tenMinutePhysics/06-pendulum.html
         double g = opts.gravity;
-        glm::dvec3 m{simulationParticles[5].vel.w, simulationParticles[6].vel.w,
-                     simulationParticles[7].vel.w};
-        glm::dvec3 l{simulationParticles[5].prevPos.w,
-                     simulationParticles[6].prevPos.w,
-                     simulationParticles[7].prevPos.w};
-        glm::dvec3 t{simulationParticles[5].prevPos.x,
-                     simulationParticles[6].prevPos.x,
-                     simulationParticles[7].prevPos.x};
-        glm::dvec3 w{simulationParticles[5].prevPos.y,
-                     simulationParticles[6].prevPos.y,
-                     simulationParticles[7].prevPos.y};
+        glm::dvec3 m{simulationParticles[1].vel.w, simulationParticles[2].vel.w,
+                     simulationParticles[3].vel.w};
+        glm::dvec3 l{simulationParticles[1].prevPos.w,
+                     simulationParticles[2].prevPos.w,
+                     simulationParticles[3].prevPos.w};
+        glm::dvec3 t{simulationParticles[1].prevPos.x,
+                     simulationParticles[2].prevPos.x,
+                     simulationParticles[3].prevPos.x};
+        glm::dvec3 w{simulationParticles[1].prevPos.y,
+                     simulationParticles[2].prevPos.y,
+                     simulationParticles[3].prevPos.y};
         glm::dmat3 a;
 
         a[0][0] = l[0] * l[0] * (m[0] + m[1] + m[2]);
@@ -2202,19 +2223,19 @@ void VgeExample::simulate() {
 
         glm::dvec3 angularAcc = glm::inverse(a) * (-b);
         for (auto i = 0; i < 3; i++) {
-          simulationParticles[5 + i].prevPos.y += angularAcc[i] * sdt;
+          simulationParticles[1 + i].prevPos.y += angularAcc[i] * sdt;
         }
         for (auto i = 0; i < 3; i++) {
-          simulationParticles[5 + i].prevPos.x +=
-              simulationParticles[5 + i].prevPos.y * sdt;
+          simulationParticles[1 + i].prevPos.x +=
+              simulationParticles[1 + i].prevPos.y * sdt;
         }
         for (auto i = 0; i < 3; i++) {
-          simulationParticles[5 + i].pos =
-              simulationParticles[4 + i].pos +
-              glm::dvec4{simulationParticles[5 + i].prevPos.w *
-                             sin(simulationParticles[5 + i].prevPos.x),
-                         simulationParticles[5 + i].prevPos.w *
-                             cos(simulationParticles[5 + i].prevPos.x),
+          simulationParticles[1 + i].pos =
+              simulationParticles[i].pos +
+              glm::dvec4{simulationParticles[1 + i].prevPos.w *
+                             sin(simulationParticles[1 + i].prevPos.x),
+                         simulationParticles[1 + i].prevPos.w *
+                             cos(simulationParticles[1 + i].prevPos.x),
                          0.0, 0.0};
         }
       }
