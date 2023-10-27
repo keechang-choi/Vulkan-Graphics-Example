@@ -599,18 +599,16 @@ void VgeExample::createTailBuffers() {
     if (tailSize > 0) {
       uint32_t simulationIndex = 4;
       const auto& simulationParticles = simulationsParticles[4];
-      size_t circleInstantceIndex = findInstances("circle5-0")[0];
-      glm::vec3 offset =
-          modelInstances[circleInstantceIndex].transform.translation;
       tailData.resize(simulationParticles.size() * tailSize);
       for (size_t i = 0; i < simulationParticles.size(); i++) {
         size_t instanceIndex =
             findInstances("circle" + std::to_string(simulationIndex + 1) + "-" +
                           std::to_string(i))[0];
+        glm::vec3 offset = modelInstances[instanceIndex].transform.translation;
         glm::vec3 color(dynamicUbo[instanceIndex].modelColor);
-        uint8_t r = static_cast<uint8_t>(color.r * 255.f);
-        uint8_t g = static_cast<uint8_t>(color.g * 255.f);
-        uint8_t b = static_cast<uint8_t>(color.b * 255.f);
+        uint8_t r = static_cast<uint8_t>(floor(color.r * 255.f));
+        uint8_t g = static_cast<uint8_t>(floor(color.g * 255.f));
+        uint8_t b = static_cast<uint8_t>(floor(color.b * 255.f));
         float w = ::packColor(r, g, b);
         for (size_t j = 0; j < tailSize; j++) {
           tailData[i * tailSize + j].pos = {
@@ -1013,8 +1011,9 @@ void VgeExample::setupDynamicUbo() {
           glm::vec3{quadScale + rectScale * 2.5f, -rectScale * 1.5f,
                     static_cast<float>(i < 4) * 0.01f};
       dynamicUbo[instanceIndex].modelColor =
-          glm::vec4{static_cast<float>(i < 4), 0.f,
-                    1.0f - static_cast<float>(i < 4), 1.f};
+          glm::vec4{static_cast<float>(i < 4) * 0.6f + 0.1f,
+                    0.1f + 0.6f * static_cast<float>(i) / static_cast<float>(n),
+                    0.1f + 0.6f * static_cast<float>(i >= 4), 1.f};
       if (i == 0 || i == 4) {
         // fixed starting point
         // all particle member values are zero.
@@ -1252,6 +1251,13 @@ void VgeExample::createPipelines() {
     // primitive restart enabled
     inputAssemblySCI.topology = vk::PrimitiveTopology::eLineList;
     rasterizationSCI.polygonMode = vk::PolygonMode::eFill;
+    vk::PipelineColorBlendAttachmentState colorBlendAttachmentState(
+        true, vk::BlendFactor::eOne, vk::BlendFactor::eOne, vk::BlendOp::eAdd,
+        vk::BlendFactor::eSrcAlpha, vk::BlendFactor::eDstAlpha,
+        vk::BlendOp::eAdd,
+        vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+            vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA);
+    colorBlendSCI.setAttachments(colorBlendAttachmentState);
     vertCode = vgeu::readFile(getShadersPath() + "/pbd/tail.vert.spv");
     fragCode = vgeu::readFile(getShadersPath() + "/pbd/tail.frag.spv");
     // NOTE: after pipeline creation, shader modules can be destroyed.
@@ -1716,13 +1722,15 @@ void VgeExample::updateDynamicUbo() {
   {
     auto& simulationParticles = simulationsParticles[4];
     int n = simulationParticles.size() - 2;
-    size_t circleInstantceIndex = findInstances("circle5-0")[0];
-    glm::vec3 offset =
-        modelInstances[circleInstantceIndex].transform.translation;
+
     // NOTE: not using scene graph hierarchy
     glm::vec3 v0{0.f, 0.f, 1.0f};
     float l0 = glm::length(v0);
     for (auto i = 0; i < n; i++) {
+      size_t circleInstantceIndex =
+          findInstances("circle5-" + std::to_string(i))[0];
+      glm::vec3 offset =
+          modelInstances[circleInstantceIndex].transform.translation;
       size_t instanceIndex =
           findInstances("singleLines5-" + std::to_string(i))[0];
       int particleIndex = (i < 3) ? i : i + 1;
@@ -1826,37 +1834,15 @@ void VgeExample::updateTailBuffer() {
     uint32_t simulationIndex = 4;
     const auto& simulationParticles = simulationsParticles[4];
     size_t circleInstantceIndex = findInstances("circle5-0")[0];
-    glm::vec3 offset =
-        modelInstances[circleInstantceIndex].transform.translation;
     for (size_t i = 0; i < simulationParticles.size(); i++) {
+      size_t circleInstantceIndex =
+          findInstances("circle5-" + std::to_string(i))[0];
+      glm::vec3 offset =
+          modelInstances[circleInstantceIndex].transform.translation;
       float color = tailData[i * tailSize + tailFrontIndex].pos.w;
       glm::vec4 packedTailElt(glm::vec3(simulationParticles[i].pos) + offset,
                               color);
       tailData[i * tailSize + tailFrontIndex].pos = packedTailElt;
-
-      // int copyStart =
-      //     (tailSize + tailFrontIndex + 1 - MAX_CONCURRENT_FRAMES) % tailSize;
-      // if (copyStart <= tailFrontIndex) {
-      //   std::memcpy(static_cast<TailElt*>(
-      //                   tailBuffers[currentFrameIndex]->getMappedData()) +
-      //                   (i * tailSize + copyStart),
-      //               &tailData[i * tailSize + copyStart],
-      //               sizeof(TailElt) * MAX_CONCURRENT_FRAMES);
-      // } else {
-      //   // separate two copy
-      //   // 0 ~ tailFrontIndex
-      //   std::memcpy(static_cast<TailElt*>(
-      //                   tailBuffers[currentFrameIndex]->getMappedData()) +
-      //                   (i * tailSize + 0),
-      //               &tailData[i * tailSize + 0],
-      //               sizeof(TailElt) * (tailFrontIndex + 1));
-      //   // copyStart ~ tailSize-1
-      //   std::memcpy(static_cast<TailElt*>(
-      //                   tailBuffers[currentFrameIndex]->getMappedData()) +
-      //                   (i * tailSize + copyStart),
-      //               &tailData[i * tailSize + copyStart],
-      //               sizeof(TailElt) * (tailSize - copyStart));
-      // }
     }
 
     // index update
@@ -1872,6 +1858,7 @@ void VgeExample::updateTailBuffer() {
 
     tailFrontIndex = (tailFrontIndex + 1) % tailSize;
   }
+  // NOTE: update each frame, need to improve for large size
   std::memcpy(tailBuffers[currentFrameIndex]->getMappedData(), tailData.data(),
               sizeof(TailElt) * tailData.size());
   std::memcpy(tailIndexBuffers[currentFrameIndex]->getMappedData(),
@@ -2222,7 +2209,11 @@ void VgeExample::simulate() {
         }
       }
 
-      {
+      if (opts.simulationsNumParticles[4] != 8) {
+        for (auto i = 0; i < 3; i++) {
+          simulationParticles[1 + i].pos = glm::dvec4{0.0};
+        }
+      } else {
         // analytic
         // https://github.com/matthias-research/pages/blob/master/tenMinutePhysics/06-pendulum.html
         double g = opts.gravity;

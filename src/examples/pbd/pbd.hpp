@@ -93,7 +93,7 @@ struct Options {
   float power = 1.f;
   float soften = 0.001f;
   int32_t tailSize = 0;
-  float tailSampleTime = 0.05f;
+  float tailSampleTime = 0.01f;
   int32_t integrator = 1;
   float moveSpeed = 10.f;
   float lineWidth = 2.0f;
