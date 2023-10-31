@@ -111,6 +111,7 @@ struct Options {
   std::vector<float> sim5masses;
   // deg
   std::vector<float> sim5angles;
+  bool lastTailOnly{false};
 };
 
 // NOTE: ssbo usage alignment

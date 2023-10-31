@@ -1012,7 +1012,7 @@ void VgeExample::setupDynamicUbo() {
                     static_cast<float>(i < 4) * 0.01f};
       dynamicUbo[instanceIndex].modelColor =
           glm::vec4{static_cast<float>(i < 4) * 0.6f + 0.1f,
-                    0.1f + 0.6f * static_cast<float>(i) / static_cast<float>(n),
+                    0.1f + 0.9f * static_cast<float>(i) / static_cast<float>(n),
                     0.1f + 0.6f * static_cast<float>(i >= 4), 1.f};
       if (i == 0 || i == 4) {
         // fixed starting point
@@ -1479,8 +1479,16 @@ void VgeExample::buildCommandBuffers() {
     drawCmdBuffers[currentFrameIndex].bindIndexBuffer(
         tailIndexBuffers[currentFrameIndex]->getBuffer(), 0,
         vk::IndexType::eUint32);
-    drawCmdBuffers[currentFrameIndex].drawIndexed(
-        tailIndexBuffers[currentFrameIndex]->getInstanceCount(), 1, 0, 0, 0);
+    if (opts.lastTailOnly) {
+      drawCmdBuffers[currentFrameIndex].drawIndexed(
+          tailSize * 2, 1, (simulationsParticles[4].size() - 1) * tailSize * 2,
+          0, 0);
+      drawCmdBuffers[currentFrameIndex].drawIndexed(tailSize * 2, 1,
+                                                    (3) * tailSize * 2, 0, 0);
+    } else {
+      drawCmdBuffers[currentFrameIndex].drawIndexed(
+          tailIndexBuffers[currentFrameIndex]->getInstanceCount(), 1, 0, 0, 0);
+    }
   }
 
   // UI overlay draw
@@ -1976,6 +1984,9 @@ void VgeExample::onUpdateUIOverlay() {
       }
       ImGui::Spacing();
       uiOverlay->inputInt("tailSize", &opts.tailSize, 1);
+      if (ImGui::RadioButton("lastTailOnly", opts.lastTailOnly)) {
+        opts.lastTailOnly = !opts.lastTailOnly;
+      }
       uiOverlay->inputInt("desiredSharedDataSize", &opts.desiredSharedDataSize,
                           64);
       ImGui::TreePop();
