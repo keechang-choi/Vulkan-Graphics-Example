@@ -1932,7 +1932,11 @@ void VgeExample::onUpdateUIOverlay() {
                 kSimulationsMaxNumParticles[i])) {
           // fix 2-particle;
           // min == max => no clamp, (i==3)
-          if (kSimulationsMinNumParticles[i] ==
+          if (kSimulationsMinNumParticles[i] >
+              opts.simulationsNumParticles[i]) {
+            opts.simulationsNumParticles[i] = kSimulationsMinNumParticles[i];
+          }
+          if (opts.simulationsNumParticles[i] >
               kSimulationsMaxNumParticles[i]) {
             opts.simulationsNumParticles[i] = kSimulationsMaxNumParticles[i];
           }
@@ -2209,7 +2213,7 @@ void VgeExample::simulate() {
         }
       }
 
-      if (opts.simulationsNumParticles[4] != 8) {
+      if (simulationParticles.size() != 8) {
         for (auto i = 0; i < 3; i++) {
           simulationParticles[1 + i].pos = glm::dvec4{0.0};
         }
