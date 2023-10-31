@@ -1248,9 +1248,9 @@ void VgeExample::createPipelines() {
         tailVertexInfos.bindingDescriptions);
     vertexInputSCI.setVertexAttributeDescriptions(
         tailVertexInfos.attributeDescriptions);
-    // primitive restart enabled
     inputAssemblySCI.topology = vk::PrimitiveTopology::eLineList;
     rasterizationSCI.polygonMode = vk::PolygonMode::eFill;
+    depthStencilSCI.setDepthTestEnable(false);
     vk::PipelineColorBlendAttachmentState colorBlendAttachmentState(
         true, vk::BlendFactor::eOne, vk::BlendFactor::eOne, vk::BlendOp::eAdd,
         vk::BlendFactor::eSrcAlpha, vk::BlendFactor::eDstAlpha,
