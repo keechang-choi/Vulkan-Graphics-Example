@@ -45,6 +45,9 @@ struct SimpleModel {
   bool isLines = false;
   std::unique_ptr<vgeu::VgeuBuffer> vertexBuffer;
   std::unique_ptr<vgeu::VgeuBuffer> indexBuffer;
+  std::vector<Vertex> vertices;
+  std::vector<uint32_t> indices;
+
   // color.alpha=0.0 for checker board
   // color.alpha=1.0 for no lighting
   void setNgon(uint32_t n, glm::vec4 color);
@@ -53,6 +56,47 @@ struct SimpleModel {
   void createBuffers(const std::vector<SimpleModel::Vertex>& vertices,
                      const std::vector<uint32_t>& indices);
 };
+
+class SoftBody2D {
+ public:
+  // triangle list
+  SoftBody2D(const std::vector<SimpleModel::Vertex>& vertices,
+             const std::vector<uint32_t>& indices);
+  void updateBuffers(uint32_t currentFrameIndex);
+  const std::unique_ptr<vgeu::VgeuBuffer>& getVertexBuffer(
+      uint32_t currentFrameIndex);
+  const std::unique_ptr<vgeu::VgeuBuffer>& getIndexBuffer();
+  void preSolve(float dt, glm::vec3 gravity);
+  void solve(float dt, float edgeCompliance, float areaCompliance);
+  void postSolve(float dt);
+  void startGrab(glm::vec3 pos);
+  void moveGrabbed(glm::vec3 pos);
+  void endGrab(glm::vec3 pos, glm::vec3 vel);
+
+ private:
+  // mapped buffer
+  std::vector<std::unique_ptr<vgeu::VgeuBuffer>> vertexBuffers;
+  std::unique_ptr<vgeu::VgeuBuffer> indexBuffer;
+  std::vector<SimpleModel::Vertex> vertices;
+  std::vector<uint32_t> indices;
+  std::vector<glm::vec3> prevPos;
+  std::vector<glm::vec3> vel;
+  uint32_t numTriangles;
+  std::vector<uint32_t> triIds;
+  std::vector<uint32_t> edgeIds;
+  std::vector<float> restArea;
+  std::vector<float> endgeLengths;
+  std::vector<float> invMass;
+
+  int grabId = -1;
+  // store prev mass value, since grabbed mass would be inf.
+  float grabInvMass = 0.0;
+
+  float getArea(uint32_t triId);
+  void solveEdges(float dt, float compliance);
+  void solveAreas(float dt, float compliance);
+};
+
 // NOTE: for current animation implementation,
 // each instance need its own uniformBuffers
 struct ModelInstance {

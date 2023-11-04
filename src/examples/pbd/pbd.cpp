@@ -2410,6 +2410,8 @@ void SimpleModel::setNgon(uint32_t n, glm::vec4 color) {
     indices.push_back(i + 1);
     indices.push_back(i + 2);
   }
+  this->vertices = vertices;
+  this->indices = indices;
   createBuffers(vertices, indices);
 }
 void SimpleModel::setLineList(const std::vector<glm::vec4>& positions,
