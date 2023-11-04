@@ -2387,10 +2387,26 @@ SimpleModel::SimpleModel(const vk::raii::Device& device, VmaAllocator allocator,
       transferQueue{transferQueue},
       commandPool{commandPool} {}
 
-void SimpleModel::setNgon(uint32_t n, glm::vec4 color) {
+void SimpleModel::setNgon(uint32_t n, glm::vec4 color, bool useCenter) {
   isLines = false;
   std::vector<SimpleModel::Vertex> vertices;
   std::vector<uint32_t> indices;
+  if (useCenter) {
+    auto& vert = vertices.emplace_back();
+    // n triangles
+    for (auto i = 1; i <= n; i++) {
+      indices.push_back(0);
+      indices.push_back(i);
+      indices.push_back((i + 1) % n);
+    }
+  } else {
+    // n-2 triangles
+    for (auto i = 0; i < n - 2; i++) {
+      indices.push_back(0);
+      indices.push_back(i + 1);
+      indices.push_back(i + 2);
+    }
+  }
   for (auto i = 0; i < n; i++) {
     auto& vert = vertices.emplace_back();
     glm::vec4 pos{0.f};
@@ -2404,11 +2420,6 @@ void SimpleModel::setNgon(uint32_t n, glm::vec4 color) {
     vert.normal = normal;
     vert.color = color;
     vert.uv = uv;
-  }
-  for (auto i = 0; i < n - 2; i++) {
-    indices.push_back(0);
-    indices.push_back(i + 1);
-    indices.push_back(i + 2);
   }
   this->vertices = vertices;
   this->indices = indices;
@@ -2481,6 +2492,52 @@ uint32_t ModelInstance::getVertexCount() const {
   else
     vertexCount = simpleModel->vertexBuffer->getInstanceCount();
   return vertexCount;
+}
+
+SoftBody2D::SoftBody2D(const std::vector<SimpleModel::Vertex>& vertices,
+                       const std::vector<uint32_t>& indices)
+    : vertices{vertices}, indices{indices} {
+  numParticles = vertices.size();
+  // triange list
+  numTris = indices.size() / 3;
+  prevPos.resize(numParticles);
+  vel.resize(numParticles);
+  triIds.resize(numTris * 3);
+  for (auto i = 0; i < numTris; i++) {
+    triIds[i * 3] = indices[i * 3];
+    triIds[i * 3 + 1] = indices[i * 3 + 1];
+    triIds[i * 3 + 2] = indices[i * 3 + 2];
+  }
+  edgeIds.resize(numTris * 3 * 2);
+  for (auto i = 0; i < numTris; i++) {
+    for (auto j = 0; j < 3; j++) {
+      edgeIds[i * 6 + j * 2] = indices[i * 3 + j];
+      edgeIds[i * 6 + j * 2 + 1] = indices[i * 3 + (j + 1) % 3];
+    }
+  }
+  restArea.resize(numTris);
+  edgeLength.resize(edgeIds.size() / 2);
+  invMass.resize(numParticles);
+
+  grabId = -1;
+  grabInvMass = 0.f;
+}
+float SoftBody2D::getTriArea(uint32_t triId) {
+  uint32_t id0 = triIds[triId * 3];
+  uint32_t id1 = triIds[triId * 3 + 1];
+  uint32_t id2 = triIds[triId * 3 + 2];
+
+  glm::vec3 v0(vertices[id1].pos - vertices[id0].pos);
+  glm::vec3 v1(vertices[id2].pos - vertices[id0].pos);
+  float area = glm::length(glm::cross(v0, v1)) * 0.5f;
+  return area;
+}
+void SoftBody2D::initPhysics() {
+  for (auto i = 0; i < numTris; i++) {
+    float area = getTriArea(i);
+    float pInvMass = area > 0.f ? 1.f / (area / 3.f) : 0.f;
+    // TODO: check ngon w, wo center point
+  }
 }
 }  // namespace vge
 

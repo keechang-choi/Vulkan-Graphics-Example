@@ -50,13 +50,14 @@ struct SimpleModel {
 
   // color.alpha=0.0 for checker board
   // color.alpha=1.0 for no lighting
-  void setNgon(uint32_t n, glm::vec4 color);
+  void setNgon(uint32_t n, glm::vec4 color, bool useCenter);
   void setLineList(const std::vector<glm::vec4>& positions,
                    const std::vector<uint32_t>& indices, glm::vec4 color);
   void createBuffers(const std::vector<SimpleModel::Vertex>& vertices,
                      const std::vector<uint32_t>& indices);
 };
 
+// https://github.com/matthias-research/pages/blob/master/tenMinutePhysics/10-softBodies.html
 class SoftBody2D {
  public:
   // triangle list
@@ -79,20 +80,22 @@ class SoftBody2D {
   std::unique_ptr<vgeu::VgeuBuffer> indexBuffer;
   std::vector<SimpleModel::Vertex> vertices;
   std::vector<uint32_t> indices;
+  uint32_t numParticles;
   std::vector<glm::vec3> prevPos;
   std::vector<glm::vec3> vel;
-  uint32_t numTriangles;
+  uint32_t numTris;
   std::vector<uint32_t> triIds;
   std::vector<uint32_t> edgeIds;
   std::vector<float> restArea;
-  std::vector<float> endgeLengths;
+  std::vector<float> edgeLength;
   std::vector<float> invMass;
 
-  int grabId = -1;
+  int grabId;
   // store prev mass value, since grabbed mass would be inf.
-  float grabInvMass = 0.0;
+  float grabInvMass;
 
-  float getArea(uint32_t triId);
+  float getTriArea(uint32_t triId);
+  void initPhysics();
   void solveEdges(float dt, float compliance);
   void solveAreas(float dt, float compliance);
 };
