@@ -50,7 +50,7 @@ struct SimpleModel {
 
   // color.alpha=0.0 for checker board
   // color.alpha=1.0 for no lighting
-  void setNgon(uint32_t n, glm::vec4 color, bool useCenter);
+  void setNgon(uint32_t n, glm::vec4 color, bool useCenter = false);
   void setLineList(const std::vector<glm::vec4>& positions,
                    const std::vector<uint32_t>& indices, glm::vec4 color);
   void createBuffers(const std::vector<SimpleModel::Vertex>& vertices,
