@@ -543,8 +543,8 @@ void VgeExample::loadAssets() {
     int n = simulationsNumParticles[5];
     for (auto i = 0; i < n; i++) {
       float circleScale =
-          (0.2f + 0.3f * static_cast<float>(i) / static_cast<float>(n)) *
-          rectScale / static_cast<float>(n);
+          (5.f - 3.f * static_cast<float>(i) / static_cast<float>(n)) *
+          rectScale / 10.f / sqrt(static_cast<float>(n));
 
       glm::mat4 transform{1.f};
       transform = glm::translate(
