@@ -6,6 +6,7 @@
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
+#include <glm/gtx/euler_angles.hpp>
 
 namespace vgeu {
 struct TransformComponent {
@@ -16,7 +17,13 @@ struct TransformComponent {
   // translation mat * Ry * Rx * Rz * scale mat
   // tait-bryan angles with YXZ
   // https://en.wikipedia.org/wiki/Euler_angles#Rotation_matrix
-  glm::mat4 mat4();
+  glm::mat4 mat4() const {
+    glm::mat4 m{1.f};
+    m = glm::translate(m, translation);
+    m = m * glm::eulerAngleYXZ(rotation.y, rotation.x, rotation.z);
+    m = glm::scale(m, scale);
+    return m;
+  }
   glm::mat3 normalMatrix();
 };
 class KeyBoardMovementController {

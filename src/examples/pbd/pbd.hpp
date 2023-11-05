@@ -62,18 +62,20 @@ class SoftBody2D {
  public:
   // triangle list
   SoftBody2D(const std::vector<SimpleModel::Vertex>& vertices,
-             const std::vector<uint32_t>& indices, glm::mat4 transform,
+             const std::vector<uint32_t>& indices,
+             const vgeu::TransformComponent transform,
              const uint32_t framesInFlight, VmaAllocator allocator);
   void updateBuffer(uint32_t currentFrameIndex);
   const std::unique_ptr<vgeu::VgeuBuffer>& getVertexBuffer(
       uint32_t currentFrameIndex);
   const std::unique_ptr<vgeu::VgeuBuffer>& getIndexBuffer();
-  void preSolve(float dt, glm::vec3 gravity);
-  void solve(float dt, float edgeCompliance, float areaCompliance);
-  void postSolve(float dt);
-  void startGrab(glm::vec3 pos);
-  void moveGrabbed(glm::vec3 pos);
-  void endGrab(glm::vec3 pos, glm::vec3 vel);
+  void preSolve(const float dt, const glm::vec3 gravity, const float rectScale);
+  void solve(const float dt, const float edgeCompliance,
+             const float areaCompliance);
+  void postSolve(const float dt);
+  void startGrab(const glm::vec3 pos);
+  void moveGrabbed(const glm::vec3 pos);
+  void endGrab(const glm::vec3 pos, const glm::vec3 vel);
 
  private:
   // mapped buffer
@@ -90,6 +92,7 @@ class SoftBody2D {
   std::vector<float> restArea;
   std::vector<float> edgeLength;
   std::vector<float> invMass;
+  float radius;
 
   int grabId;
   // store prev mass value, since grabbed mass would be inf.
@@ -167,6 +170,8 @@ struct Options {
   // deg
   std::vector<float> sim5angles;
   bool lastTailOnly{false};
+  // save camera view. not configurable by pannel
+  glm::mat4 cameraView{1.f};
 };
 
 // NOTE: ssbo usage alignment

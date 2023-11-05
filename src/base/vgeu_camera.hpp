@@ -23,7 +23,10 @@ class VgeuCamera {
   void setViewTarget(glm::vec3 position, glm::vec3 target,
                      glm::vec3 up = glm::vec3{0.f, -1.f, 0.f});
   void setViewYXZ(glm::vec3 position, glm::vec3 rotation);
-
+  void setViewMatrix(glm::mat4 viewMatrix) {
+    this->viewMatrix = viewMatrix;
+    inverseViewMatrix = glm::inverse(viewMatrix);
+  }
   const glm::mat4& getProjection() const { return projectionMatrix; }
   const glm::mat4& getView() const { return viewMatrix; }
   const glm::mat4& getInverseView() const { return inverseViewMatrix; }

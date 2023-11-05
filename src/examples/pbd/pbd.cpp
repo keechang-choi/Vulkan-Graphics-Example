@@ -70,8 +70,12 @@ VgeExample::~VgeExample() {}
 void VgeExample::initVulkan() {
   cameraController.moveSpeed = opts.moveSpeed;
   // camera setup
-  camera.setViewTarget(glm::vec3{30.f, -20.f, -20.f},
-                       glm::vec3{30.f, -10.f, 0.f});
+  if (glm::isIdentity(opts.cameraView, 1e-6f)) {
+    camera.setViewTarget(glm::vec3{30.f, -20.f, -20.f},
+                         glm::vec3{30.f, -10.f, 0.f});
+  } else {
+    camera.setViewMatrix(opts.cameraView);
+  }
   camera.setPerspectiveProjection(
       glm::radians(60.f),
       static_cast<float>(width) / (static_cast<float>(height)), 0.1f, 256.f);
@@ -546,12 +550,14 @@ void VgeExample::loadAssets() {
           (2.f + 2.f * static_cast<float>(i) / static_cast<float>(n)) *
           rectScale / 10.f / sqrt(static_cast<float>(n));
 
-      glm::mat4 transform{1.f};
-      transform = glm::translate(
-          transform, glm::vec3{rectScale * uniformDist(rndEngine),
-                               -rectScale * uniformDist(rndEngine), 0.f});
-      transform = glm::scale(transform,
-                             glm::vec3{circleScale, -circleScale, circleScale});
+      vgeu::TransformComponent transform;
+      transform.translation =
+          glm::vec3{std::clamp(rectScale * uniformDist(rndEngine), circleScale,
+                               rectScale - circleScale),
+                    std::clamp(-rectScale * uniformDist(rndEngine),
+                               -rectScale + circleScale, -circleScale),
+                    0.f};
+      transform.scale = glm::vec3{circleScale, -circleScale, circleScale};
 
       ModelInstance modelInstance{};
       modelInstance.softBody2D = std::make_unique<SoftBody2D>(
@@ -2037,6 +2043,7 @@ void VgeExample::onUpdateUIOverlay() {
     }
     if (ImGui::TreeNodeEx("Initializers", ImGuiTreeNodeFlags_DefaultOpen)) {
       if (uiOverlay->button("Restart")) {
+        opts.cameraView = camera.getView();
         restart = true;
       }
       ImGui::DragInt("Drag numParticles", &opts.numParticles, 16.f, 1,
@@ -2412,6 +2419,24 @@ void VgeExample::simulate() {
       }
     }
   }
+  // 2d softBody
+  {
+    size_t n = simulationsNumParticles[5];
+    glm::vec3 gravity{0.f, 10.f, 0.f};
+    float rectScale = 10.f;
+    for (auto i = 0; i < n; i++) {
+      size_t instanceIndex = findInstances("softCircle" + std::to_string(i))[0];
+      auto& modelInstance = modelInstances[instanceIndex];
+      auto& softBody2D = modelInstance.softBody2D;
+      double sdt = animationTimer / static_cast<float>(opts.numSubsteps);
+      for (auto step = 0; step < opts.numSubsteps; step++) {
+        softBody2D->preSolve(sdt, gravity, rectScale);
+        softBody2D->solve(sdt, 100.f, 0.f);
+        softBody2D->postSolve(sdt);
+      }
+      softBody2D->updateBuffer(currentFrameIndex);
+    }
+  }
 }
 
 void VgeExample::handleBallCollision(uint32_t simulationIndex,
@@ -2611,14 +2636,15 @@ uint32_t ModelInstance::getVertexCount() const {
 
 SoftBody2D::SoftBody2D(const std::vector<SimpleModel::Vertex>& vertices,
                        const std::vector<uint32_t>& indices,
-                       glm::mat4 transform, const uint32_t framesInFlight,
-                       VmaAllocator allocator)
+                       const vgeu::TransformComponent transform,
+                       const uint32_t framesInFlight, VmaAllocator allocator)
     : vertices{vertices}, indices{indices} {
   numParticles = vertices.size();
   // apply transform;
-  if (!glm::isIdentity(transform, 1e-6f)) {
+  glm::mat4 transformMat = transform.mat4();
+  if (!glm::isIdentity(transformMat, 1e-6f)) {
     for (auto i = 0; i < numParticles; i++) {
-      this->vertices[i].pos = transform * this->vertices[i].pos;
+      this->vertices[i].pos = transformMat * this->vertices[i].pos;
     }
   }
   // triange list
@@ -2669,6 +2695,8 @@ SoftBody2D::SoftBody2D(const std::vector<SimpleModel::Vertex>& vertices,
     updateBuffer(i);
   }
 
+  radius = transform.scale.x;
+
   initPhysics();
 }
 
@@ -2714,21 +2742,51 @@ const std::unique_ptr<vgeu::VgeuBuffer>& SoftBody2D::getIndexBuffer() {
   return indexBuffer;
 }
 
-void SoftBody2D::preSolve(float dt, glm::vec3 gravity) {}
+void SoftBody2D::preSolve(const float dt, const glm::vec3 gravity,
+                          const float rectScale) {
+  for (auto i = 0; i < numParticles; i++) {
+    if (invMass[i] == 0.f) continue;
+    vel[i] += gravity * dt;
+    prevPos[i] = glm::vec3(vertices[i].pos);
+    vertices[i].pos += glm::vec4(vel[i], 0.f) * dt;
+    glm::vec3 correctedPos(prevPos[i]);
+    if (vertices[i].pos.y > 0.f) {
+      correctedPos.y = 0.f;
+      vertices[i].pos = glm::vec4(correctedPos, 1.f);
+    }
+    if (vertices[i].pos.x < 0.f) {
+      correctedPos.x = 0.f;
+      vertices[i].pos = glm::vec4(correctedPos, 1.f);
+    }
+    if (vertices[i].pos.x > rectScale) {
+      correctedPos.x = rectScale;
+      vertices[i].pos = glm::vec4(correctedPos, 1.f);
+    }
+  }
+}
 
-void SoftBody2D::solve(float dt, float edgeCompliance, float areaCompliance) {}
+void SoftBody2D::solve(const float dt, const float edgeCompliance,
+                       const float areaCompliance) {
+  solveEdges(edgeCompliance, dt);
+  solveAreas(areaCompliance, dt);
+}
 
-void SoftBody2D::solveEdges(float dt, float compliance) {}
+void SoftBody2D::solveEdges(const float dt, const float compliance) {}
 
-void SoftBody2D::solveAreas(float dt, float compliance) {}
+void SoftBody2D::solveAreas(const float dt, const float compliance) {}
 
-void SoftBody2D::postSolve(float dt) {}
+void SoftBody2D::postSolve(const float dt) {
+  for (auto i = 0; i < numParticles; i++) {
+    if (invMass[i] == 0.f) continue;
+    vel[i] = (glm::vec3(vertices[i].pos) - prevPos[i]) / dt;
+  }
+}
 
-void SoftBody2D::startGrab(glm::vec3 pos) {}
+void SoftBody2D::startGrab(const glm::vec3 pos) {}
 
-void SoftBody2D::moveGrabbed(glm::vec3 pos) {}
+void SoftBody2D::moveGrabbed(const glm::vec3 pos) {}
 
-void SoftBody2D::endGrab(glm::vec3 pos, glm::vec3 vel) {}
+void SoftBody2D::endGrab(const glm::vec3 pos, const glm::vec3 vel) {}
 }  // namespace vge
 
 VULKAN_EXAMPLE_MAIN()
