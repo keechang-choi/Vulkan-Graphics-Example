@@ -4,6 +4,7 @@
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
+#include <glm/gtx/matrix_query.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <glm/gtx/string_cast.hpp>
 
@@ -375,7 +376,7 @@ void VgeExample::loadAssets() {
     modelInstance.model = fox;
     modelInstance.name = "fox0";
     modelInstance.animationIndex = 0;
-    addModelInstance(modelInstance);
+    addModelInstance(std::move(modelInstance));
   }
 
   std::shared_ptr<vgeu::glTF::Model> fox1;
@@ -390,7 +391,7 @@ void VgeExample::loadAssets() {
     modelInstance.model = fox1;
     modelInstance.name = "fox1";
     modelInstance.animationIndex = 2;
-    addModelInstance(modelInstance);
+    addModelInstance(std::move(modelInstance));
   }
 
   // NOTE: different animation to fox1
@@ -406,7 +407,7 @@ void VgeExample::loadAssets() {
     modelInstance.model = fox2;
     modelInstance.name = "fox2";
     modelInstance.animationIndex = -1;
-    addModelInstance(modelInstance);
+    addModelInstance(std::move(modelInstance));
   }
 
   std::shared_ptr<vgeu::glTF::Model> fox3;
@@ -421,7 +422,7 @@ void VgeExample::loadAssets() {
     modelInstance.model = fox3;
     modelInstance.name = "fox3";
     modelInstance.animationIndex = 1;
-    addModelInstance(modelInstance);
+    addModelInstance(std::move(modelInstance));
   }
 
   std::shared_ptr<vgeu::glTF::Model> apple;
@@ -435,7 +436,7 @@ void VgeExample::loadAssets() {
     ModelInstance modelInstance{};
     modelInstance.model = apple;
     modelInstance.name = "apple1";
-    addModelInstance(modelInstance);
+    addModelInstance(std::move(modelInstance));
   }
 
   std::shared_ptr<vgeu::glTF::Model> dutchShipMedium;
@@ -452,7 +453,7 @@ void VgeExample::loadAssets() {
     ModelInstance modelInstance{};
     modelInstance.model = dutchShipMedium;
     modelInstance.name = "dutchShipMedium";
-    addModelInstance(modelInstance);
+    addModelInstance(std::move(modelInstance));
   }
 
   std::shared_ptr<SimpleModel> circle = std::make_shared<SimpleModel>(
@@ -461,6 +462,7 @@ void VgeExample::loadAssets() {
 
   for (auto simulationIndex = 0;
        simulationIndex < simulationsNumParticles.size(); simulationIndex++) {
+    if (simulationIndex == 5) continue;
     simulationsParticles.push_back(
         std::vector<Particle>(simulationsNumParticles[simulationIndex]));
     for (auto i = 0; i < simulationsParticles[simulationIndex].size(); i++) {
@@ -468,7 +470,7 @@ void VgeExample::loadAssets() {
       modelInstance.simpleModel = circle;
       modelInstance.name = "circle" + std::to_string(simulationIndex + 1) +
                            "-" + std::to_string(i);
-      addModelInstance(modelInstance);
+      addModelInstance(std::move(modelInstance));
     }
   }
 
@@ -488,7 +490,7 @@ void VgeExample::loadAssets() {
     ModelInstance modelInstance{};
     modelInstance.simpleModel = rectLines;
     modelInstance.name = "rectLines" + std::to_string(i);
-    addModelInstance(modelInstance);
+    addModelInstance(std::move(modelInstance));
   }
 
   std::shared_ptr<SimpleModel> circleLines = std::make_shared<SimpleModel>(
@@ -512,7 +514,7 @@ void VgeExample::loadAssets() {
     ModelInstance modelInstance{};
     modelInstance.simpleModel = circleLines;
     modelInstance.name = "circleLines" + std::to_string(i);
-    addModelInstance(modelInstance);
+    addModelInstance(std::move(modelInstance));
   }
   std::shared_ptr<SimpleModel> singleLine = std::make_shared<SimpleModel>(
       device, globalAllocator->getAllocator(), queue, commandPool);
@@ -528,7 +530,36 @@ void VgeExample::loadAssets() {
     ModelInstance modelInstance{};
     modelInstance.simpleModel = singleLine;
     modelInstance.name = "singleLines5-" + std::to_string(i);
-    addModelInstance(modelInstance);
+    addModelInstance(std::move(modelInstance));
+  }
+
+  // softBody2d
+  {
+    std::default_random_engine rndEngine;
+    rndEngine.seed(1111);
+    std::uniform_real_distribution<float> uniformDist(0.f, 1.f);
+
+    float rectScale = 10.f;
+    int n = simulationsNumParticles[5];
+    for (auto i = 0; i < n; i++) {
+      float circleScale =
+          (0.2f + 0.3f * static_cast<float>(i) / static_cast<float>(n)) *
+          rectScale / static_cast<float>(n);
+
+      glm::mat4 transform{1.f};
+      transform = glm::translate(
+          transform, glm::vec3{rectScale * uniformDist(rndEngine),
+                               -rectScale * uniformDist(rndEngine), 0.f});
+      transform = glm::scale(transform,
+                             glm::vec3{circleScale, -circleScale, circleScale});
+
+      ModelInstance modelInstance{};
+      modelInstance.softBody2D = std::make_unique<SoftBody2D>(
+          circle->vertices, circle->indices, transform, MAX_CONCURRENT_FRAMES,
+          globalAllocator->getAllocator());
+      modelInstance.name = "softCircle" + std::to_string(i);
+      addModelInstance(std::move(modelInstance));
+    }
   }
 
   std::shared_ptr<SimpleModel> quad = std::make_shared<SimpleModel>(
@@ -538,13 +569,13 @@ void VgeExample::loadAssets() {
     ModelInstance modelInstance{};
     modelInstance.simpleModel = quad;
     modelInstance.name = "quad1";
-    addModelInstance(modelInstance);
+    addModelInstance(std::move(modelInstance));
   }
   {
     ModelInstance modelInstance{};
     modelInstance.simpleModel = quad;
     modelInstance.name = "quad2";
-    addModelInstance(modelInstance);
+    addModelInstance(std::move(modelInstance));
   }
 }
 
@@ -1040,6 +1071,21 @@ void VgeExample::setupDynamicUbo() {
           glm::vec3{radius, radius, radius};
     }
   }
+
+  {
+    // softCircle
+    size_t n = simulationsNumParticles[5];
+    for (auto i = 0; i < n; i++) {
+      size_t instanceIndex = findInstances("softCircle" + std::to_string(i))[0];
+      // coordinate offset only
+      modelInstances[instanceIndex].transform.translation =
+          glm::vec3{+quadScale + 3.f * rectScale, -rectScale, 0.f};
+      dynamicUbo[instanceIndex].modelColor = glm::vec4{
+          static_cast<float>(i) / static_cast<float>(n),
+          0.5f + 0.5 * (static_cast<float>(i) / static_cast<float>(n)), 0.5f,
+          1.f};
+    }
+  }
 }
 
 void VgeExample::createUniformBuffers() {
@@ -1468,6 +1514,38 @@ void VgeExample::buildCommandBuffers() {
         modelInstance.simpleModel->indexBuffer->getInstanceCount(), 1, 0, 0, 0);
   }
 
+  // soft Body
+  for (auto instanceIdx = 0; instanceIdx < modelInstances.size();
+       instanceIdx++) {
+    const auto& modelInstance = modelInstances[instanceIdx];
+    if (!modelInstance.softBody2D) {
+      continue;
+    }
+
+    // simpleMesh
+    drawCmdBuffers[currentFrameIndex].bindPipeline(
+        vk::PipelineBindPoint::eGraphics, *graphics.pipelineSimpleMesh);
+
+    // bind dynamic
+    drawCmdBuffers[currentFrameIndex].bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics, *graphics.pipelineLayout, 1 /*set 1*/,
+        {*dynamicUboDescriptorSets[currentFrameIndex]},
+        alignedSizeDynamicUboElt * instanceIdx);
+    vk::DeviceSize offset(0);
+    drawCmdBuffers[currentFrameIndex].bindVertexBuffers(
+        0,
+        modelInstance.softBody2D->getVertexBuffer(currentFrameIndex)
+            ->getBuffer(),
+        offset);
+    drawCmdBuffers[currentFrameIndex].bindIndexBuffer(
+        modelInstance.softBody2D->getIndexBuffer()->getBuffer(), offset,
+        vk::IndexType::eUint32);
+
+    drawCmdBuffers[currentFrameIndex].drawIndexed(
+        modelInstance.softBody2D->getIndexBuffer()->getInstanceCount(), 1, 0, 0,
+        0);
+  }
+
   // tail
   if (tailSize > 0) {
     drawCmdBuffers[currentFrameIndex].setLineWidth(opts.lineWidth);
@@ -1769,6 +1847,15 @@ void VgeExample::updateDynamicUbo() {
     }
   }
 
+  {
+    int n = simulationsNumParticles[5];
+    for (auto i = 0; i < n; i++) {
+      size_t instanceIndex = findInstances("softCircle" + std::to_string(i))[0];
+      dynamicUbo[instanceIndex].modelMatrix = glm::translate(
+          glm::mat4{1.f}, modelInstances[instanceIndex].transform.translation);
+    }
+  }
+
   // update animation joint matrices for each shared model
   {
     std::unordered_set<const vgeu::glTF::Model*> updatedSharedModelSet;
@@ -1789,7 +1876,7 @@ void VgeExample::updateDynamicUbo() {
 
     // update animation ssbo
     for (auto i = 0; i < modelInstances.size(); i++) {
-      const auto modelInstance = modelInstances[i];
+      const auto& modelInstance = modelInstances[i];
       if (!modelInstance.model) {
         continue;
       }
@@ -1810,10 +1897,33 @@ void VgeExample::updateDynamicUbo() {
   }
 }
 
-void VgeExample::addModelInstance(const ModelInstance& newInstance) {
+ModelInstance::ModelInstance(ModelInstance&& other) {
+  model = other.model;
+  simpleModel = other.simpleModel;
+  softBody2D = std::move(other.softBody2D);
+  name = other.name;
+  isBone = other.isBone;
+  animationIndex = other.animationIndex;
+  animationTime = other.animationTime;
+  transform = other.transform;
+}
+
+ModelInstance& ModelInstance::operator=(ModelInstance&& other) {
+  model = other.model;
+  simpleModel = other.simpleModel;
+  softBody2D = std::move(other.softBody2D);
+  name = other.name;
+  isBone = other.isBone;
+  animationIndex = other.animationIndex;
+  animationTime = other.animationTime;
+  transform = other.transform;
+  return *this;
+}
+
+void VgeExample::addModelInstance(ModelInstance&& newInstance) {
   size_t instanceIdx;
   instanceIdx = modelInstances.size();
-  modelInstances.push_back(newInstance);
+  modelInstances.push_back(std::move(newInstance));
   instanceMap[newInstance.name].push_back(instanceIdx);
 }
 
@@ -2414,6 +2524,7 @@ void SimpleModel::setNgon(uint32_t n, glm::vec4 color, bool useCenter) {
                 static_cast<float>(i));
     pos.y = sin(glm::two_pi<float>() / static_cast<float>(n) *
                 static_cast<float>(i));
+    pos.w = 1.f;
     glm::vec4 normal{0.f, 0.f, 1.f, 0.f};
     glm::vec2 uv{(pos.x + 1.f) / 2.f, (pos.y + 1.f) / 2.f};
     vert.pos = pos;
@@ -2489,15 +2600,27 @@ uint32_t ModelInstance::getVertexCount() const {
   uint32_t vertexCount;
   if (model)
     vertexCount = model->getVertexCount();
-  else
+  else if (simpleModel)
     vertexCount = simpleModel->vertexBuffer->getInstanceCount();
+  else if (softBody2D)
+    vertexCount = softBody2D->getVertexBuffer(0)->getInstanceCount();
+  else
+    assert(false && "not defined ModelInstance type");
   return vertexCount;
 }
 
 SoftBody2D::SoftBody2D(const std::vector<SimpleModel::Vertex>& vertices,
-                       const std::vector<uint32_t>& indices)
+                       const std::vector<uint32_t>& indices,
+                       glm::mat4 transform, const uint32_t framesInFlight,
+                       VmaAllocator allocator)
     : vertices{vertices}, indices{indices} {
   numParticles = vertices.size();
+  // apply transform;
+  if (!glm::isIdentity(transform, 1e-6f)) {
+    for (auto i = 0; i < numParticles; i++) {
+      this->vertices[i].pos = transform * this->vertices[i].pos;
+    }
+  }
   // triange list
   numTris = indices.size() / 3;
   prevPos.resize(numParticles);
@@ -2521,7 +2644,34 @@ SoftBody2D::SoftBody2D(const std::vector<SimpleModel::Vertex>& vertices,
 
   grabId = -1;
   grabInvMass = 0.f;
+
+  // create Buffers
+  vertexBuffers.reserve(framesInFlight);
+  for (auto i = 0; i < framesInFlight; i++) {
+    vertexBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
+        allocator, sizeof(SimpleModel::Vertex), numParticles,
+        vk::BufferUsageFlagBits::eVertexBuffer, VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT |
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT));
+  }
+  // NOTE: possible to be mapped memory, not using index update
+  indexBuffer = std::make_unique<vgeu::VgeuBuffer>(
+      allocator, sizeof(uint32_t), indices.size(),
+      vk::BufferUsageFlagBits::eIndexBuffer, VMA_MEMORY_USAGE_AUTO,
+      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+          VMA_ALLOCATION_CREATE_MAPPED_BIT |
+          VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
+  std::memcpy(indexBuffer->getMappedData(), indices.data(),
+              indexBuffer->getBufferSize());
+
+  for (auto i = 0; i < framesInFlight; i++) {
+    updateBuffer(i);
+  }
+
+  initPhysics();
 }
+
 float SoftBody2D::getTriArea(uint32_t triId) {
   uint32_t id0 = triIds[triId * 3];
   uint32_t id1 = triIds[triId * 3 + 1];
@@ -2532,13 +2682,53 @@ float SoftBody2D::getTriArea(uint32_t triId) {
   float area = glm::length(glm::cross(v0, v1)) * 0.5f;
   return area;
 }
+
 void SoftBody2D::initPhysics() {
   for (auto i = 0; i < numTris; i++) {
     float area = getTriArea(i);
     float pInvMass = area > 0.f ? 1.f / (area / 3.f) : 0.f;
     // TODO: check ngon w, wo center point
+    invMass[triIds[3 * i]] += pInvMass;
+    invMass[triIds[3 * i + 1]] += pInvMass;
+    invMass[triIds[3 * i + 2]] += pInvMass;
+  }
+  for (auto i = 0; i < edgeLength.size(); i++) {
+    uint32_t id0 = edgeIds[2 * i];
+    uint32_t id1 = edgeIds[2 * i + 1];
+    edgeLength[i] = glm::length(vertices[id0].pos - vertices[id1].pos);
   }
 }
+
+void SoftBody2D::updateBuffer(uint32_t currentFrameIndex) {
+  std::memcpy(vertexBuffers[currentFrameIndex]->getMappedData(),
+              vertices.data(),
+              vertexBuffers[currentFrameIndex]->getBufferSize());
+}
+
+const std::unique_ptr<vgeu::VgeuBuffer>& SoftBody2D::getVertexBuffer(
+    uint32_t currentFrameIndex) {
+  return vertexBuffers[currentFrameIndex];
+}
+
+const std::unique_ptr<vgeu::VgeuBuffer>& SoftBody2D::getIndexBuffer() {
+  return indexBuffer;
+}
+
+void SoftBody2D::preSolve(float dt, glm::vec3 gravity) {}
+
+void SoftBody2D::solve(float dt, float edgeCompliance, float areaCompliance) {}
+
+void SoftBody2D::solveEdges(float dt, float compliance) {}
+
+void SoftBody2D::solveAreas(float dt, float compliance) {}
+
+void SoftBody2D::postSolve(float dt) {}
+
+void SoftBody2D::startGrab(glm::vec3 pos) {}
+
+void SoftBody2D::moveGrabbed(glm::vec3 pos) {}
+
+void SoftBody2D::endGrab(glm::vec3 pos, glm::vec3 vel) {}
 }  // namespace vge
 
 VULKAN_EXAMPLE_MAIN()

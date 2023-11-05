@@ -62,8 +62,9 @@ class SoftBody2D {
  public:
   // triangle list
   SoftBody2D(const std::vector<SimpleModel::Vertex>& vertices,
-             const std::vector<uint32_t>& indices);
-  void updateBuffers(uint32_t currentFrameIndex);
+             const std::vector<uint32_t>& indices, glm::mat4 transform,
+             const uint32_t framesInFlight, VmaAllocator allocator);
+  void updateBuffer(uint32_t currentFrameIndex);
   const std::unique_ptr<vgeu::VgeuBuffer>& getVertexBuffer(
       uint32_t currentFrameIndex);
   const std::unique_ptr<vgeu::VgeuBuffer>& getIndexBuffer();
@@ -105,6 +106,7 @@ class SoftBody2D {
 struct ModelInstance {
   std::shared_ptr<vgeu::glTF::Model> model;
   std::shared_ptr<SimpleModel> simpleModel;
+  std::unique_ptr<SoftBody2D> softBody2D;
   std::string name;
   bool isBone = false;
   int animationIndex = -1;
@@ -112,6 +114,12 @@ struct ModelInstance {
   // initial offset and scale
   vgeu::TransformComponent transform;
   uint32_t getVertexCount() const;
+  // TODO: delete copy constructor and assignment operator,
+  ModelInstance(){};
+  ModelInstance(const ModelInstance& o) = delete;
+  ModelInstance& operator=(const ModelInstance& other) = delete;
+  ModelInstance(ModelInstance&& other);
+  ModelInstance& operator=(ModelInstance&& other);
 };
 
 struct DynamicUboElt {
@@ -264,7 +272,7 @@ class VgeExample : public VgeBase {
   void updateDynamicUbo();
   void updateTailBuffer();
 
-  void addModelInstance(const ModelInstance& newInstance);
+  void addModelInstance(ModelInstance&& newInstance);
   const std::vector<size_t>& findInstances(const std::string& name);
 
   void setOptions(const std::optional<Options>& opts);
@@ -331,8 +339,9 @@ class VgeExample : public VgeBase {
   // sim index x particle nums
   std::vector<std::vector<Particle>> simulationsParticles;
   float simulation2DSceneScale = 10.f;
-  std::vector<uint32_t> simulationsNumParticles{10, 50, 5, 2, 8};
-  const std::vector<uint32_t> kSimulationsMinNumParticles{1, 1, 1, 2, 6};
-  const std::vector<uint32_t> kSimulationsMaxNumParticles{20, 1000, 30, 2, 105};
+  std::vector<uint32_t> simulationsNumParticles{10, 50, 5, 2, 8, 1};
+  const std::vector<uint32_t> kSimulationsMinNumParticles{1, 1, 1, 2, 6, 1};
+  const std::vector<uint32_t> kSimulationsMaxNumParticles{20, 1000, 30,
+                                                          2,  105,  1024};
 };
 }  // namespace vge
