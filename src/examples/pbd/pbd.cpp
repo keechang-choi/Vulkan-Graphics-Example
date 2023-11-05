@@ -2108,6 +2108,15 @@ void VgeExample::onUpdateUIOverlay() {
       if (ImGui::RadioButton("lastTailOnly", opts.lastTailOnly)) {
         opts.lastTailOnly = !opts.lastTailOnly;
       }
+      if (ImGui::TreeNode("simulation6 Options")) {
+        uiOverlay->inputFloat("edgeCompliance", &opts.edgeCompliance, 0.01f,
+                              "%.2f");
+        uiOverlay->inputFloat("areaCompliance", &opts.areaCompliance, 0.01f,
+                              "%.2f");
+
+        ImGui::TreePop();
+      }
+      ImGui::Spacing();
       uiOverlay->inputInt("desiredSharedDataSize", &opts.desiredSharedDataSize,
                           64);
       ImGui::TreePop();
@@ -2431,7 +2440,7 @@ void VgeExample::simulate() {
       double sdt = animationTimer / static_cast<float>(opts.numSubsteps);
       for (auto step = 0; step < opts.numSubsteps; step++) {
         softBody2D->preSolve(sdt, gravity, rectScale);
-        softBody2D->solve(sdt, 100.f, 0.f);
+        softBody2D->solve(sdt, opts.edgeCompliance, opts.areaCompliance);
         softBody2D->postSolve(sdt);
       }
       softBody2D->updateBuffer(currentFrameIndex);
@@ -2771,9 +2780,33 @@ void SoftBody2D::solve(const float dt, const float edgeCompliance,
   solveAreas(areaCompliance, dt);
 }
 
-void SoftBody2D::solveEdges(const float dt, const float compliance) {}
+void SoftBody2D::solveEdges(const float dt, const float compliance) {
+  float alpha = compliance / dt / dt;
+  for (auto i = 0; i < edgeLength.size(); i++) {
+    uint32_t id0 = edgeIds[2 * i];
+    uint32_t id1 = edgeIds[2 * i + 1];
+    float w0 = invMass[id0];
+    float w1 = invMass[id1];
+    float w = w0 + w1;
+    if (w == 0.f) continue;
+    glm::vec3 grad(vertices[id0].pos - vertices[id1].pos);
+    float len = glm::length(grad);
+    if (len == 0.f) continue;
+    grad /= len;
+    float restLen = edgeLength[i];
+    float C = len - restLen;
+    float s = -C / (w + alpha);
+    vertices[id0].pos += glm::vec4(grad * s * w0, 0.f);
+    vertices[id1].pos -= glm::vec4(grad * s * w1, 0.f);
+  }
+}
 
-void SoftBody2D::solveAreas(const float dt, const float compliance) {}
+void SoftBody2D::solveAreas(const float dt, const float compliance) {
+  float alpha = compliance / dt / dt;
+  for (auto i = 0; i < numTris; i++) {
+    float w = 0.f;
+  }
+}
 
 void SoftBody2D::postSolve(const float dt) {
   for (auto i = 0; i < numParticles; i++) {

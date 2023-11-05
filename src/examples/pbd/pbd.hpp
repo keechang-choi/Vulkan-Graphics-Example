@@ -172,6 +172,8 @@ struct Options {
   bool lastTailOnly{false};
   // save camera view. not configurable by pannel
   glm::mat4 cameraView{1.f};
+  float edgeCompliance = 100.f;
+  float areaCompliance = 0.f;
 };
 
 // NOTE: ssbo usage alignment
