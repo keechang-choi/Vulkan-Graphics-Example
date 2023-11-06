@@ -87,11 +87,13 @@ class SoftBody2D {
   std::vector<glm::vec3> prevPos;
   std::vector<glm::vec3> vel;
   uint32_t numTris;
+  // consecutive triangle vertex indices
   std::vector<uint32_t> triIds;
+  // consecutive triangle edge vertex indices
   std::vector<uint32_t> edgeIds;
-  std::vector<float> restArea;
-  std::vector<float> edgeLength;
-  std::vector<float> invMass;
+  std::vector<float> restAreas;
+  std::vector<float> edgeLengths;
+  std::vector<float> invMasses;
   float radius;
 
   int grabId;
@@ -164,7 +166,7 @@ struct Options {
   std::vector<int32_t> simulationsNumParticles;
   std::vector<bool> enableSimulation;
   bool computeModelAnimation{false};
-  int32_t numSubsteps = 1;
+  int32_t numSubsteps = 10;
   std::vector<float> sim5lengths;
   std::vector<float> sim5masses;
   // deg
@@ -172,8 +174,8 @@ struct Options {
   bool lastTailOnly{false};
   // save camera view. not configurable by pannel
   glm::mat4 cameraView{1.f};
-  float edgeCompliance = 100.f;
-  float areaCompliance = 0.f;
+  float edgeCompliance = 0.1f;
+  float areaCompliance = 0.1f;
 };
 
 // NOTE: ssbo usage alignment
