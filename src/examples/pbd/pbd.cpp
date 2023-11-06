@@ -537,6 +537,9 @@ void VgeExample::loadAssets() {
     addModelInstance(std::move(modelInstance));
   }
 
+  std::shared_ptr<SimpleModel> centerCircle = std::make_shared<SimpleModel>(
+      device, globalAllocator->getAllocator(), queue, commandPool);
+  centerCircle->setNgon(6, {1.0f, 1.0f, 1.0f, 1.f}, true);
   // softBody2d
   {
     std::default_random_engine rndEngine;
@@ -561,8 +564,8 @@ void VgeExample::loadAssets() {
 
       ModelInstance modelInstance{};
       modelInstance.softBody2D = std::make_unique<SoftBody2D>(
-          circle->vertices, circle->indices, transform, MAX_CONCURRENT_FRAMES,
-          globalAllocator->getAllocator());
+          centerCircle->vertices, centerCircle->indices, transform,
+          MAX_CONCURRENT_FRAMES, globalAllocator->getAllocator());
       modelInstance.name = "softCircle" + std::to_string(i);
       addModelInstance(std::move(modelInstance));
     }
@@ -2109,10 +2112,10 @@ void VgeExample::onUpdateUIOverlay() {
         opts.lastTailOnly = !opts.lastTailOnly;
       }
       if (ImGui::TreeNode("simulation6 Options")) {
-        uiOverlay->inputFloat("edgeCompliance", &opts.edgeCompliance, 0.01f,
-                              "%.2f");
-        uiOverlay->inputFloat("areaCompliance", &opts.areaCompliance, 0.01f,
-                              "%.2f");
+        uiOverlay->inputFloat("edgeCompliance", &opts.edgeCompliance, 0.001f,
+                              "%.3f");
+        uiOverlay->inputFloat("areaCompliance", &opts.areaCompliance, 0.001f,
+                              "%.3f");
 
         ImGui::TreePop();
       }
@@ -2537,11 +2540,18 @@ void SimpleModel::setNgon(uint32_t n, glm::vec4 color, bool useCenter) {
   std::vector<uint32_t> indices;
   if (useCenter) {
     auto& vert = vertices.emplace_back();
+    glm::vec4 pos{0.f, 0.f, 0.f, 1.f};
+    glm::vec4 normal{0.f, 0.f, 1.f, 0.f};
+    glm::vec2 uv{(pos.x + 1.f) / 2.f, (pos.y + 1.f) / 2.f};
+    vert.pos = pos;
+    vert.normal = normal;
+    vert.color = color;
+    vert.uv = uv;
     // n triangles
     for (auto i = 1; i <= n; i++) {
       indices.push_back(0);
       indices.push_back(i);
-      indices.push_back((i + 1) % n);
+      indices.push_back(i % n + 1);
     }
   } else {
     // n-2 triangles
@@ -2776,8 +2786,8 @@ void SoftBody2D::preSolve(const float dt, const glm::vec3 gravity,
 
 void SoftBody2D::solve(const float dt, const float edgeCompliance,
                        const float areaCompliance) {
-  solveEdges(edgeCompliance, dt);
-  solveAreas(areaCompliance, dt);
+  solveEdges(dt, edgeCompliance);
+  solveAreas(dt, areaCompliance);
 }
 
 void SoftBody2D::solveEdges(const float dt, const float compliance) {
