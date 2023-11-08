@@ -540,8 +540,28 @@ void VgeExample::loadAssets() {
   std::shared_ptr<SimpleModel> centerCircle = std::make_shared<SimpleModel>(
       device, globalAllocator->getAllocator(), queue, commandPool);
   centerCircle->setNgon(6, {1.0f, 1.0f, 1.0f, 1.f}, true);
+
   // softBody2d
   {
+    std::vector<vgeu::glTF::Vertex> modelVertices;
+    std::vector<uint32_t> indices;
+    vgeu::glTF::Model circleExtraPoints(device, globalAllocator->getAllocator(),
+                                        queue, commandPool,
+                                        MAX_CONCURRENT_FRAMES);
+    circleExtraPoints.loadFromFile(
+        getAssetsPath() + "/models/circleExtraInnerPoints.gltf",
+        glTFLoadingFlags, 1.f, &modelVertices, &indices);
+
+    std::vector<SimpleModel::Vertex> vertices(modelVertices.size());
+    for (auto i = 0; i < modelVertices.size(); i++) {
+      vertices[i].pos = modelVertices[i].pos;
+      // NOTE: saved w as -1  in loading.
+      vertices[i].pos.w = 1.f;
+      vertices[i].normal = modelVertices[i].normal;
+      vertices[i].color = modelVertices[i].color;
+      vertices[i].uv = modelVertices[i].uv;
+    }
+
     std::default_random_engine rndEngine;
     rndEngine.seed(1111);
     std::uniform_real_distribution<float> uniformDist(0.f, 1.f);
@@ -560,13 +580,14 @@ void VgeExample::loadAssets() {
                     std::clamp(-rectScale * uniformDist(rndEngine),
                                -rectScale + circleScale, -circleScale),
                     0.f};
+      transform.rotation = glm::vec3{-glm::half_pi<float>(), 0.f, 0.f};
       // NOTE: consider axis direction for cross product
       transform.scale = glm::vec3{circleScale, +circleScale, circleScale};
 
       ModelInstance modelInstance{};
       modelInstance.softBody2D = std::make_unique<SoftBody2D>(
-          centerCircle->vertices, centerCircle->indices, transform,
-          MAX_CONCURRENT_FRAMES, globalAllocator->getAllocator());
+          vertices, indices, transform, MAX_CONCURRENT_FRAMES,
+          globalAllocator->getAllocator());
       modelInstance.name = "softCircle" + std::to_string(i);
       addModelInstance(std::move(modelInstance));
     }
@@ -2729,8 +2750,10 @@ float SoftBody2D::getTriArea(uint32_t triId) {
   glm::vec3 v1(vertices[id2].pos - vertices[id0].pos);
   glm::vec3 e{0.f, 0.f, 1.f};
   float area = 0.5f * glm::dot(glm::cross(v0, v1), e);
-  std::cout << "Triangle " + std::to_string(triId) + ": " + std::to_string(area)
-            << std::endl;
+  // std::cout << "Triangle " + std::to_string(triId) + ": " +
+  // std::to_string(area)
+  //           << std::endl;
+  assert(area != 0.f && "zero area calculated");
   return area;
 }
 

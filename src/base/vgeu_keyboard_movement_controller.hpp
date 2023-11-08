@@ -12,6 +12,7 @@ namespace vgeu {
 struct TransformComponent {
   glm::vec3 translation{};
   glm::vec3 scale{1.f, 1.f, 1.f};
+  // YXZ Euler-Angle
   glm::vec3 rotation{};
 
   // translation mat * Ry * Rx * Rz * scale mat

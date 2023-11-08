@@ -254,7 +254,9 @@ Model::Model(const vk::raii::Device& device, VmaAllocator allocator,
 Model::~Model() {}
 
 void Model::loadFromFile(std::string filename,
-                         FileLoadingFlags fileLoadingFlags, float scale) {
+                         FileLoadingFlags fileLoadingFlags, float scale,
+                         std::vector<Vertex>* outVertices,
+                         std::vector<uint32_t>* outIndices) {
   tinygltf::Model gltfModel;
   tinygltf::TinyGLTF gltfContext;
   if (fileLoadingFlags & FileLoadingFlagBits::kDontLoadImages) {
@@ -273,8 +275,20 @@ void Model::loadFromFile(std::string filename,
     throw std::runtime_error("failed to open file: " + filename);
   }
 
-  std::vector<Vertex> vertices;
-  std::vector<uint32_t> indices;
+  std::vector<Vertex> localVertices;
+  std::vector<uint32_t> localIndices;
+  // ptr technique, or we can use ternary  operator.
+  std::vector<Vertex>* verticesPtr = &localVertices;
+  std::vector<uint32_t>* indicesPtr = &localIndices;
+  if (outVertices != nullptr) {
+    verticesPtr = outVertices;
+  }
+  if (outIndices != nullptr) {
+    indicesPtr = outIndices;
+  }
+
+  std::vector<Vertex>& vertices = *verticesPtr;
+  std::vector<uint32_t>& indices = *indicesPtr;
 
   if (!(fileLoadingFlags & FileLoadingFlagBits::kDontLoadImages)) {
     loadImages(gltfModel);

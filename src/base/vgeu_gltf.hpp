@@ -280,7 +280,8 @@ class Model {
   void loadFromFile(
       std::string filename,
       FileLoadingFlags fileLoadingFlags = FileLoadingFlagBits::kNone,
-      float scale = 1.0f);
+      float scale = 1.0f, std::vector<Vertex>* outVertices = nullptr,
+      std::vector<uint32_t>* outIndices = nullptr);
 
   void bindBuffers(const vk::raii::CommandBuffer& cmdBuffer);
   void bindIndexBufferOnly(const vk::raii::CommandBuffer& cmdBuffer);
