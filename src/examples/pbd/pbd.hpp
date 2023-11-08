@@ -69,10 +69,11 @@ class SoftBody2D {
   const std::unique_ptr<vgeu::VgeuBuffer>& getVertexBuffer(
       uint32_t currentFrameIndex);
   const std::unique_ptr<vgeu::VgeuBuffer>& getIndexBuffer();
-  void preSolve(const float dt, const glm::vec3 gravity, const float rectScale);
-  void solve(const float dt, const float edgeCompliance,
-             const float areaCompliance);
-  void postSolve(const float dt);
+  void preSolve(const double dt, const glm::dvec3 gravity,
+                const double rectScale);
+  void solve(const double dt, const double edgeCompliance,
+             const double areaCompliance);
+  void postSolve(const double dt);
   void startGrab(const glm::vec3 pos);
   void moveGrabbed(const glm::vec3 pos);
   void endGrab(const glm::vec3 pos, const glm::vec3 vel);
@@ -84,26 +85,26 @@ class SoftBody2D {
   std::vector<SimpleModel::Vertex> vertices;
   std::vector<uint32_t> indices;
   uint32_t numParticles;
-  std::vector<glm::vec3> prevPos;
-  std::vector<glm::vec3> vel;
+  std::vector<glm::dvec3> prevPos;
+  std::vector<glm::dvec3> vel;
   uint32_t numTris;
   // consecutive triangle vertex indices
   std::vector<uint32_t> triIds;
   // consecutive triangle edge vertex indices
   std::vector<uint32_t> edgeIds;
-  std::vector<float> restAreas;
-  std::vector<float> edgeLengths;
-  std::vector<float> invMasses;
-  float radius;
+  std::vector<double> restAreas;
+  std::vector<double> edgeLengths;
+  std::vector<double> invMasses;
+  double radius;
 
   int grabId;
   // store prev mass value, since grabbed mass would be inf.
-  float grabInvMass;
+  double grabInvMass;
 
-  float getTriArea(uint32_t triId);
+  double getTriArea(uint32_t triId);
   void initPhysics();
-  void solveEdges(float dt, float compliance);
-  void solveAreas(float dt, float compliance);
+  void solveEdges(const double dt, double compliance);
+  void solveAreas(const double dt, double compliance);
 };
 
 // NOTE: for current animation implementation,

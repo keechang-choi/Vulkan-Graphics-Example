@@ -2682,8 +2682,8 @@ SoftBody2D::SoftBody2D(const std::vector<SimpleModel::Vertex>& vertices,
     : vertices{vertices}, indices{indices} {
   numParticles = vertices.size();
   // apply transform;
-  glm::mat4 transformMat = transform.mat4();
-  if (!glm::isIdentity(transformMat, 1e-6f)) {
+  glm::dmat4 transformMat = transform.mat4();
+  if (!glm::isIdentity(transformMat, 1e-6)) {
     for (auto i = 0; i < numParticles; i++) {
       this->vertices[i].pos = transformMat * this->vertices[i].pos;
     }
@@ -2741,15 +2741,15 @@ SoftBody2D::SoftBody2D(const std::vector<SimpleModel::Vertex>& vertices,
   initPhysics();
 }
 
-float SoftBody2D::getTriArea(uint32_t triId) {
+double SoftBody2D::getTriArea(uint32_t triId) {
   uint32_t id0 = triIds[triId * 3];
   uint32_t id1 = triIds[triId * 3 + 1];
   uint32_t id2 = triIds[triId * 3 + 2];
 
-  glm::vec3 v0(vertices[id1].pos - vertices[id0].pos);
-  glm::vec3 v1(vertices[id2].pos - vertices[id0].pos);
-  glm::vec3 e{0.f, 0.f, 1.f};
-  float area = 0.5f * glm::dot(glm::cross(v0, v1), e);
+  glm::dvec3 v0(vertices[id1].pos - vertices[id0].pos);
+  glm::dvec3 v1(vertices[id2].pos - vertices[id0].pos);
+  glm::dvec3 e{0.f, 0.f, 1.f};
+  double area = 0.5f * glm::dot(glm::cross(v0, v1), e);
   // std::cout << "Triangle " + std::to_string(triId) + ": " +
   // std::to_string(area)
   //           << std::endl;
@@ -2759,9 +2759,9 @@ float SoftBody2D::getTriArea(uint32_t triId) {
 
 void SoftBody2D::initPhysics() {
   for (auto i = 0; i < numTris; i++) {
-    float area = getTriArea(i);
+    double area = getTriArea(i);
     restAreas[i] = area;
-    float pinvMasses = area > 0.f ? 1.f / (area / 3.f) : 0.f;
+    double pinvMasses = area > 0.f ? 1.f / (area / 3.f) : 0.f;
     // TODO: check ngon w, wo center point
     invMasses[triIds[3 * i]] += pinvMasses;
     invMasses[triIds[3 * i + 1]] += pinvMasses;
@@ -2789,68 +2789,68 @@ const std::unique_ptr<vgeu::VgeuBuffer>& SoftBody2D::getIndexBuffer() {
   return indexBuffer;
 }
 
-void SoftBody2D::preSolve(const float dt, const glm::vec3 gravity,
-                          const float rectScale) {
+void SoftBody2D::preSolve(const double dt, const glm::dvec3 gravity,
+                          const double rectScale) {
   for (auto i = 0; i < numParticles; i++) {
     if (invMasses[i] == 0.f) continue;
     vel[i] += gravity * dt;
-    prevPos[i] = glm::vec3(vertices[i].pos);
-    vertices[i].pos += glm::vec4(vel[i], 0.f) * dt;
+    prevPos[i] = glm::dvec3(vertices[i].pos);
+    vertices[i].pos += glm::dvec4(vel[i], 0.f) * dt;
     glm::vec3 correctedPos(prevPos[i]);
     if (vertices[i].pos.y > 0.f) {
       correctedPos.y = 0.f;
-      vertices[i].pos = glm::vec4(correctedPos, 1.f);
+      vertices[i].pos = glm::dvec4(correctedPos, 1.f);
     }
     if (vertices[i].pos.y < -rectScale) {
       correctedPos.y = -rectScale;
-      vertices[i].pos = glm::vec4(correctedPos, 1.f);
+      vertices[i].pos = glm::dvec4(correctedPos, 1.f);
     }
     if (vertices[i].pos.x < 0.f) {
       correctedPos.x = 0.f;
-      vertices[i].pos = glm::vec4(correctedPos, 1.f);
+      vertices[i].pos = glm::dvec4(correctedPos, 1.f);
     }
     if (vertices[i].pos.x > rectScale) {
       correctedPos.x = rectScale;
-      vertices[i].pos = glm::vec4(correctedPos, 1.f);
+      vertices[i].pos = glm::dvec4(correctedPos, 1.f);
     }
   }
 }
 
-void SoftBody2D::solve(const float dt, const float edgeCompliance,
-                       const float areaCompliance) {
+void SoftBody2D::solve(const double dt, const double edgeCompliance,
+                       const double areaCompliance) {
   solveEdges(dt, edgeCompliance);
   solveAreas(dt, areaCompliance);
 }
 
-void SoftBody2D::solveEdges(const float dt, const float compliance) {
-  float alpha = compliance / dt / dt;
+void SoftBody2D::solveEdges(const double dt, const double compliance) {
+  double alpha = compliance / dt / dt;
   for (auto i = 0; i < edgeLengths.size(); i++) {
     uint32_t id0 = edgeIds[2 * i];
     uint32_t id1 = edgeIds[2 * i + 1];
-    float w0 = invMasses[id0];
-    float w1 = invMasses[id1];
-    float w = w0 + w1;
+    double w0 = invMasses[id0];
+    double w1 = invMasses[id1];
+    double w = w0 + w1;
     if (w == 0.f) continue;
-    glm::vec3 grad(vertices[id0].pos - vertices[id1].pos);
-    float len = glm::length(grad);
+    glm::dvec3 grad(vertices[id0].pos - vertices[id1].pos);
+    double len = glm::length(grad);
     if (len == 0.f) continue;
     grad /= len;
-    float restLen = edgeLengths[i];
-    float C = len - restLen;
-    float s = -C / (w + alpha);
-    vertices[id0].pos += glm::vec4(grad * s * w0, 0.f);
-    vertices[id1].pos -= glm::vec4(grad * s * w1, 0.f);
+    double restLen = edgeLengths[i];
+    double C = len - restLen;
+    double s = -C / (w + alpha);
+    vertices[id0].pos += glm::dvec4(grad * s * w0, 0.f);
+    vertices[id1].pos -= glm::dvec4(grad * s * w1, 0.f);
   }
 }
 
-void SoftBody2D::solveAreas(const float dt, const float compliance) {
-  float alpha = compliance / dt / dt;
+void SoftBody2D::solveAreas(const double dt, const double compliance) {
+  double alpha = compliance / dt / dt;
   // TODO: check alpha value and increase precision to double.
   // TODO: plot area against compliance to check compliance
-  glm::vec3 e3{0.f, 0.f, 1.f};
-  std::vector<glm::vec3> grads(3);
+  glm::dvec3 e3{0.f, 0.f, 1.f};
+  std::vector<glm::dvec3> grads(3);
   for (auto i = 0; i < numTris; i++) {
-    float w = 0.f;
+    double w = 0.f;
     for (auto j = 0; j < 3; j++) {
       uint32_t id0 = triIds[i * 3 + j];
       uint32_t id1 = triIds[i * 3 + (j + 1) % 3];
@@ -2860,22 +2860,22 @@ void SoftBody2D::solveAreas(const float dt, const float compliance) {
       w += invMasses[id0] * glm::dot(grads[j], grads[j]);
     }
     if (w == 0.f) continue;
-    float area = getTriArea(i);
-    float restArea = restAreas[i];
-    float C = area - restArea;
-    float s = -C / (w + alpha);
+    double area = getTriArea(i);
+    double restArea = restAreas[i];
+    double C = area - restArea;
+    double s = -C / (w + alpha);
     for (auto j = 0; j < 3; j++) {
       uint32_t id0 = triIds[i * 3 + j];
-      float w0 = invMasses[id0];
-      vertices[id0].pos += glm::vec4(grads[j] * s * w0, 0.f);
+      double w0 = invMasses[id0];
+      vertices[id0].pos += glm::dvec4(grads[j] * s * w0, 0.f);
     }
   }
 }
 
-void SoftBody2D::postSolve(const float dt) {
+void SoftBody2D::postSolve(const double dt) {
   for (auto i = 0; i < numParticles; i++) {
     if (invMasses[i] == 0.f) continue;
-    vel[i] = (glm::vec3(vertices[i].pos) - prevPos[i]) / dt;
+    vel[i] = (glm::dvec3(vertices[i].pos) - prevPos[i]) / dt;
   }
 }
 
