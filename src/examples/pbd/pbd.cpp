@@ -2686,6 +2686,8 @@ SoftBody2D::SoftBody2D(const std::vector<SimpleModel::Vertex>& vertices,
   if (!glm::isIdentity(transformMat, 1e-6)) {
     for (auto i = 0; i < numParticles; i++) {
       this->vertices[i].pos = transformMat * this->vertices[i].pos;
+      // for calculation error
+      this->vertices[i].pos.z = 0.f;
     }
   }
   // triange list
@@ -2735,8 +2737,6 @@ SoftBody2D::SoftBody2D(const std::vector<SimpleModel::Vertex>& vertices,
   for (auto i = 0; i < framesInFlight; i++) {
     updateBuffer(i);
   }
-
-  radius = transform.scale.x;
 
   initPhysics();
 }

@@ -95,7 +95,6 @@ class SoftBody2D {
   std::vector<double> restAreas;
   std::vector<double> edgeLengths;
   std::vector<double> invMasses;
-  double radius;
 
   int grabId;
   // store prev mass value, since grabbed mass would be inf.
