@@ -1114,7 +1114,7 @@ void VgeExample::setupDynamicUbo() {
       dynamicUbo[instanceIndex].modelColor = glm::vec4{
           static_cast<float>(i) / static_cast<float>(n),
           0.5f + 0.5 * (static_cast<float>(i) / static_cast<float>(n)), 0.5f,
-          1.f};
+          3.f};
     }
   }
 }
@@ -1318,6 +1318,23 @@ void VgeExample::createPipelines() {
         vk::PipelineShaderStageCreateFlags(),
         vk::ShaderStageFlagBits::eFragment, *fragShaderModule, "main", nullptr);
     graphics.pipelineSimpleLine =
+        vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
+  }
+  {
+    inputAssemblySCI.topology = vk::PrimitiveTopology::eTriangleList;
+    rasterizationSCI.polygonMode = vk::PolygonMode::eLine;
+    vertCode = vgeu::readFile(getShadersPath() + "/pbd/simpleLine.vert.spv");
+    fragCode = vgeu::readFile(getShadersPath() + "/pbd/simpleLine.frag.spv");
+    // NOTE: after pipeline creation, shader modules can be destroyed.
+    vertShaderModule = vgeu::createShaderModule(device, vertCode);
+    fragShaderModule = vgeu::createShaderModule(device, fragCode);
+    shaderStageCIs[0] = vk::PipelineShaderStageCreateInfo(
+        vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eVertex,
+        *vertShaderModule, "main", nullptr);
+    shaderStageCIs[1] = vk::PipelineShaderStageCreateInfo(
+        vk::PipelineShaderStageCreateFlags(),
+        vk::ShaderStageFlagBits::eFragment, *fragShaderModule, "main", nullptr);
+    graphics.pipelineWireMesh =
         vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
   }
   {
@@ -1553,10 +1570,6 @@ void VgeExample::buildCommandBuffers() {
       continue;
     }
 
-    // simpleMesh
-    drawCmdBuffers[currentFrameIndex].bindPipeline(
-        vk::PipelineBindPoint::eGraphics, *graphics.pipelineSimpleMesh);
-
     // bind dynamic
     drawCmdBuffers[currentFrameIndex].bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics, *graphics.pipelineLayout, 1 /*set 1*/,
@@ -1572,6 +1585,16 @@ void VgeExample::buildCommandBuffers() {
         modelInstance.softBody2D->getIndexBuffer()->getBuffer(), offset,
         vk::IndexType::eUint32);
 
+    // simpleMesh
+    drawCmdBuffers[currentFrameIndex].bindPipeline(
+        vk::PipelineBindPoint::eGraphics, *graphics.pipelineSimpleMesh);
+    drawCmdBuffers[currentFrameIndex].drawIndexed(
+        modelInstance.softBody2D->getIndexBuffer()->getInstanceCount(), 1, 0, 0,
+        0);
+
+    // WireMesh
+    drawCmdBuffers[currentFrameIndex].bindPipeline(
+        vk::PipelineBindPoint::eGraphics, *graphics.pipelineWireMesh);
     drawCmdBuffers[currentFrameIndex].drawIndexed(
         modelInstance.softBody2D->getIndexBuffer()->getInstanceCount(), 1, 0, 0,
         0);

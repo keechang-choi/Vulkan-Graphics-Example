@@ -19,7 +19,9 @@ layout (set = 1, binding = 0) uniform ModelUbo
 const float checkBoardSize = 0.05;
 void main() 
 {
-	vec3 color = mix(inColor.xyz, modelUbo.modelColor.xyz, modelUbo.modelColor.a);
+	float modelColorAlpha = modelUbo.modelColor.a;
+	modelColorAlpha = clamp(modelColorAlpha, 0.0, 1.0);
+	vec3 color = mix(inColor.xyz, modelUbo.modelColor.xyz, modelColorAlpha);
 
 	// High ambient colors because mesh materials are pretty dark
 	vec3 ambient = color * vec3(0.3);

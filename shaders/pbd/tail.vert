@@ -8,6 +8,7 @@ layout (set = 0, binding = 0) uniform GlobalUbo
     mat4 view;
 	mat4 inverseView;
 	vec4 lightPos;
+    vec4 softBodyInfo;
 	vec4 tailInfo;
     vec2 screenDim;
 	vec2 pointSize;

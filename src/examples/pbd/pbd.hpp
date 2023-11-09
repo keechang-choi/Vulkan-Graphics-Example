@@ -301,6 +301,7 @@ class VgeExample : public VgeBase {
 
     vk::raii::Pipeline pipelinePhong = nullptr;
     vk::raii::Pipeline pipelineSimpleMesh = nullptr;
+    vk::raii::Pipeline pipelineWireMesh = nullptr;
     vk::raii::Pipeline pipelineSimpleLine = nullptr;
 
     std::vector<vk::raii::Semaphore> semaphores;
