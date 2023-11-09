@@ -74,9 +74,13 @@ class SoftBody2D {
   void solve(const double dt, const double edgeCompliance,
              const double areaCompliance);
   void postSolve(const double dt);
-  void startGrab(const glm::vec3 pos);
-  void moveGrabbed(const glm::vec3 pos);
-  void endGrab(const glm::vec3 pos, const glm::vec3 vel);
+  void startGrab(const glm::dvec3 pos);
+  void moveGrabbed(const glm::dvec3 pos);
+  void endGrab(const glm::dvec3 pos, const glm::dvec3 vel);
+  glm::dvec4 getBoundingCircle() {
+    return glm::dvec4{vertices[0].pos.x, vertices[0].pos.y, vertices[0].pos.z,
+                      radius};
+  }
 
  private:
   // mapped buffer
@@ -99,6 +103,7 @@ class SoftBody2D {
   int grabId;
   // store prev mass value, since grabbed mass would be inf.
   double grabInvMass;
+  double radius;
 
   double getTriArea(uint32_t triId);
   void initPhysics();
@@ -353,5 +358,9 @@ class VgeExample : public VgeBase {
   const std::vector<uint32_t> kSimulationsMinNumParticles{1, 1, 1, 2, 6, 1};
   const std::vector<uint32_t> kSimulationsMaxNumParticles{20, 1000, 30,
                                                           2,  105,  1024};
+  int mouseGrabBody = -1;
+  int mouseOverBody = -1;
+  // softBody mouse pos and additional state
+  glm::vec4 softBodyMouseData;
 };
 }  // namespace vge

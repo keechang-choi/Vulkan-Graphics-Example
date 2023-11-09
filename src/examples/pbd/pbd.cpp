@@ -62,6 +62,23 @@ std::optional<glm::vec3> rayPlaneIntersection(glm::vec3 rayStart,
   }
   return std::nullopt;
 }
+
+std::pair<glm::vec3, glm::vec3> getRayStartAndDir(const glm::vec2 mousePos,
+                                                  const glm::vec2 windowSize,
+                                                  glm::mat4 inverseProjView) {
+  glm::vec2 normalizedMousePos{2.f * mousePos.x / windowSize.x - 1.f,
+                               2.f * mousePos.y / windowSize.y - 1.f};
+
+  glm::vec4 rayStart =
+      inverseProjView * glm::vec4(normalizedMousePos, 0.f, 1.f);
+  rayStart /= rayStart.w;
+  glm::vec4 rayEnd = inverseProjView * glm::vec4(normalizedMousePos, 0.1f, 1.f);
+  rayEnd /= rayEnd.w;
+
+  glm::vec3 rayDir(glm::normalize(rayEnd - rayStart));
+  return std::make_pair(glm::vec3(rayStart), rayDir);
+}
+
 }  // namespace
 namespace vge {
 VgeExample::VgeExample() : VgeBase() { title = "Particle Example"; }
@@ -1111,10 +1128,11 @@ void VgeExample::setupDynamicUbo() {
       // coordinate offset only
       modelInstances[instanceIndex].transform.translation =
           glm::vec3{+quadScale + 3.f * rectScale, -rectScale, 0.f};
+      // NOTE: 2.0 as alpha -> white wire, 3.0 -> red wire
       dynamicUbo[instanceIndex].modelColor = glm::vec4{
           static_cast<float>(i) / static_cast<float>(n),
           0.5f + 0.5 * (static_cast<float>(i) / static_cast<float>(n)), 0.5f,
-          3.f};
+          2.f};
     }
   }
 }
@@ -1905,6 +1923,13 @@ void VgeExample::updateDynamicUbo() {
     int n = simulationsNumParticles[5];
     for (auto i = 0; i < n; i++) {
       size_t instanceIndex = findInstances("softCircle" + std::to_string(i))[0];
+      auto& modelInstance = modelInstances[instanceIndex];
+      auto& softBody2D = modelInstance.softBody2D;
+      if (i == mouseOverBody) {
+        dynamicUbo[instanceIndex].modelColor.a = 3.f;
+      } else {
+        dynamicUbo[instanceIndex].modelColor.a = 2.f;
+      }
       dynamicUbo[instanceIndex].modelMatrix = glm::translate(
           glm::mat4{1.f}, modelInstances[instanceIndex].transform.translation);
     }
@@ -2044,9 +2069,12 @@ void VgeExample::onUpdateUIOverlay() {
     ImGui::Text("Mouse Right: %s", mouseData.right ? "true" : "false");
     ImGui::Text("Mouse Pos: (%f, %f)", mouseData.mousePos.x,
                 mouseData.mousePos.y);
-    ImGui::Text("Click Data: (%f, %f, %f, %f)", compute.ubo.clickData.x,
+    ImGui::Text("Compute Click Data: (%f, %f, %f, %f)", compute.ubo.clickData.x,
                 compute.ubo.clickData.y, compute.ubo.clickData.z,
                 compute.ubo.clickData.w);
+    ImGui::Text("SoftBody Click Data: (%f, %f, %f), %d, %d",
+                softBodyMouseData.x, softBodyMouseData.y, softBodyMouseData.z,
+                mouseGrabBody, mouseOverBody);
   }
 
   if (uiOverlay->header("Settings")) {
@@ -2157,10 +2185,10 @@ void VgeExample::onUpdateUIOverlay() {
         opts.lastTailOnly = !opts.lastTailOnly;
       }
       if (ImGui::TreeNode("simulation6 Options")) {
-        uiOverlay->inputFloat("edgeCompliance", &opts.edgeCompliance, 0.001f,
-                              "%.3f");
-        uiOverlay->inputFloat("areaCompliance", &opts.areaCompliance, 0.001f,
-                              "%.3f");
+        uiOverlay->inputFloat("edgeCompliance", &opts.edgeCompliance, 0.0001f,
+                              "%.4f");
+        uiOverlay->inputFloat("areaCompliance", &opts.areaCompliance, 0.0001f,
+                              "%.4f");
 
         ImGui::TreePop();
       }
@@ -2494,6 +2522,41 @@ void VgeExample::simulate() {
       softBody2D->updateBuffer(currentFrameIndex);
     }
   }
+  // sofyBody rayCast
+  {
+    glm::vec3 rayStart, rayDir;
+    std::tie(rayStart, rayDir) = ::getRayStartAndDir(
+        mouseData.mousePos,
+        glm::vec2{static_cast<float>(width), static_cast<float>(height)},
+        camera.getInverseView() * glm::inverse(camera.getProjection()));
+    glm::vec3 planeNormal{0.f, 0.f, 1.0f};
+    std::optional<glm::vec3> intersectionPt =
+        ::rayPlaneIntersection(rayStart, rayDir, planeNormal, glm::vec3{0.f});
+    mouseOverBody = -1;
+    softBodyMouseData = glm::vec4{0.f};
+    if (intersectionPt.has_value()) {
+      size_t n = simulationsNumParticles[5];
+      for (auto i = 0; i < n; i++) {
+        size_t instanceIndex =
+            findInstances("softCircle" + std::to_string(i))[0];
+        auto& modelInstance = modelInstances[instanceIndex];
+        auto& softBody2D = modelInstance.softBody2D;
+        // offset
+        glm::vec3 softBodyMousePos(
+            -modelInstances[instanceIndex].transform.translation);
+        softBodyMousePos += intersectionPt.value();
+        glm::vec4 boundingCircle = softBody2D->getBoundingCircle();
+        glm::vec3 circleCenter(boundingCircle);
+        float radius = boundingCircle.w;
+        float distSquared = glm::distance2(circleCenter, softBodyMousePos);
+        if (distSquared <= radius * radius) {
+          mouseOverBody = i;
+        }
+        softBodyMouseData =
+            glm::vec4(softBodyMousePos, static_cast<float>(mouseOverBody));
+      }
+    }
+  }
 }
 
 void VgeExample::handleBallCollision(uint32_t simulationIndex,
@@ -2760,7 +2823,7 @@ SoftBody2D::SoftBody2D(const std::vector<SimpleModel::Vertex>& vertices,
   for (auto i = 0; i < framesInFlight; i++) {
     updateBuffer(i);
   }
-
+  radius = transform.scale.x;
   initPhysics();
 }
 
@@ -2902,11 +2965,11 @@ void SoftBody2D::postSolve(const double dt) {
   }
 }
 
-void SoftBody2D::startGrab(const glm::vec3 pos) {}
+void SoftBody2D::startGrab(const glm::dvec3 pos) {}
 
-void SoftBody2D::moveGrabbed(const glm::vec3 pos) {}
+void SoftBody2D::moveGrabbed(const glm::dvec3 pos) {}
 
-void SoftBody2D::endGrab(const glm::vec3 pos, const glm::vec3 vel) {}
+void SoftBody2D::endGrab(const glm::dvec3 pos, const glm::dvec3 vel) {}
 }  // namespace vge
 
 VULKAN_EXAMPLE_MAIN()
