@@ -2504,25 +2504,7 @@ void VgeExample::simulate() {
       }
     }
   }
-  // 2d softBody
-  {
-    size_t n = simulationsNumParticles[5];
-    glm::vec3 gravity{0.f, 10.f, 0.f};
-    float rectScale = 10.f;
-    for (auto i = 0; i < n; i++) {
-      size_t instanceIndex = findInstances("softCircle" + std::to_string(i))[0];
-      auto& modelInstance = modelInstances[instanceIndex];
-      auto& softBody2D = modelInstance.softBody2D;
-      double sdt = animationTimer / static_cast<float>(opts.numSubsteps);
-      for (auto step = 0; step < opts.numSubsteps; step++) {
-        softBody2D->preSolve(sdt, gravity, rectScale);
-        softBody2D->solve(sdt, opts.edgeCompliance, opts.areaCompliance);
-        softBody2D->postSolve(sdt);
-      }
-      softBody2D->updateBuffer(currentFrameIndex);
-    }
-  }
-  // sofyBody rayCast
+  // sofyBody mouse interaction
   {
     glm::vec3 rayStart, rayDir;
     std::tie(rayStart, rayDir) = ::getRayStartAndDir(
@@ -2555,6 +2537,54 @@ void VgeExample::simulate() {
         softBodyMouseData =
             glm::vec4(softBodyMousePos, static_cast<float>(mouseOverBody));
       }
+    }
+    if (mouseData.left) {
+      if (mouseGrabBody == -1) {
+        mouseGrabBody = mouseOverBody;
+        if (mouseGrabBody != -1) {
+          // grab start
+          size_t instanceIndex =
+              findInstances("softCircle" + std::to_string(mouseGrabBody))[0];
+          auto& modelInstance = modelInstances[instanceIndex];
+          auto& softBody2D = modelInstance.softBody2D;
+          softBody2D->startGrab(softBodyMouseData);
+        }
+      } else {
+        // move
+        size_t instanceIndex =
+            findInstances("softCircle" + std::to_string(mouseGrabBody))[0];
+        auto& modelInstance = modelInstances[instanceIndex];
+        auto& softBody2D = modelInstance.softBody2D;
+        softBody2D->moveGrabbed(softBodyMouseData);
+      }
+    } else {
+      if (mouseGrabBody != -1) {
+        // grab end
+        size_t instanceIndex =
+            findInstances("softCircle" + std::to_string(mouseGrabBody))[0];
+        auto& modelInstance = modelInstances[instanceIndex];
+        auto& softBody2D = modelInstance.softBody2D;
+        softBody2D->endGrab(softBodyMouseData, glm::vec3{0.f});
+        mouseGrabBody = -1;
+      }
+    }
+  }
+  // 2d softBody
+  {
+    size_t n = simulationsNumParticles[5];
+    glm::vec3 gravity{0.f, 10.f, 0.f};
+    float rectScale = 10.f;
+    for (auto i = 0; i < n; i++) {
+      size_t instanceIndex = findInstances("softCircle" + std::to_string(i))[0];
+      auto& modelInstance = modelInstances[instanceIndex];
+      auto& softBody2D = modelInstance.softBody2D;
+      double sdt = animationTimer / static_cast<float>(opts.numSubsteps);
+      for (auto step = 0; step < opts.numSubsteps; step++) {
+        softBody2D->preSolve(sdt, gravity, rectScale);
+        softBody2D->solve(sdt, opts.edgeCompliance, opts.areaCompliance);
+        softBody2D->postSolve(sdt);
+      }
+      softBody2D->updateBuffer(currentFrameIndex);
     }
   }
 }
@@ -2965,11 +2995,37 @@ void SoftBody2D::postSolve(const double dt) {
   }
 }
 
-void SoftBody2D::startGrab(const glm::dvec3 pos) {}
+void SoftBody2D::startGrab(const glm::dvec3 pos) {
+  double minD2 = std::numeric_limits<double>::max();
+  grabId = -1;
+  for (auto i = 0; i < numParticles; i++) {
+    double d2 = glm::distance2(pos, glm::dvec3(vertices[i].pos));
+    if (d2 < minD2) {
+      minD2 = d2;
+      grabId = i;
+    }
+  }
+  if (grabId >= 0) {
+    grabInvMass = invMasses[grabId];
+    invMasses[grabId] = 0.f;
+    vertices[grabId].pos = glm::dvec4(pos, 1.f);
+  }
+}
 
-void SoftBody2D::moveGrabbed(const glm::dvec3 pos) {}
+void SoftBody2D::moveGrabbed(const glm::dvec3 pos) {
+  if (grabId >= 0) {
+    vertices[grabId].pos = glm::dvec4(pos, 1.f);
+  }
+}
 
-void SoftBody2D::endGrab(const glm::dvec3 pos, const glm::dvec3 vel) {}
+void SoftBody2D::endGrab(const glm::dvec3 pos, const glm::dvec3 vel) {
+  if (grabId >= 0) {
+    vertices[grabId].pos = glm::dvec4(pos, 1.f);
+    invMasses[grabId] = grabInvMass;
+    this->vel[grabId] = vel;
+  }
+  grabId = -1;
+}
 }  // namespace vge
 
 VULKAN_EXAMPLE_MAIN()
