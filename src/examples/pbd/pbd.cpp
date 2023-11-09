@@ -2868,10 +2868,6 @@ double SoftBody2D::getTriArea(uint32_t triId) {
   glm::dvec3 v1(vertices[id2].pos - vertices[id0].pos);
   glm::dvec3 e{0.f, 0.f, 1.f};
   double area = 0.5f * glm::dot(glm::cross(v0, v1), e);
-  // std::cout << "Triangle " + std::to_string(triId) + ": " +
-  // std::to_string(area)
-  //           << std::endl;
-  assert(area != 0.f && "zero area calculated");
   return area;
 }
 
