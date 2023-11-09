@@ -2527,6 +2527,8 @@ void VgeExample::simulate() {
         glm::vec3 softBodyMousePos(
             -modelInstances[instanceIndex].transform.translation);
         softBodyMousePos += intersectionPt.value();
+        // intersection point calculation error makes non-zero z.
+        softBodyMousePos.z = 0.f;
         glm::vec4 boundingCircle = softBody2D->getBoundingCircle();
         glm::vec3 circleCenter(boundingCircle);
         float radius = boundingCircle.w;

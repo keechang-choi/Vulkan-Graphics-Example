@@ -180,7 +180,7 @@ struct Options {
   // save camera view. not configurable by pannel
   glm::mat4 cameraView{1.f};
   float edgeCompliance = 0.1f;
-  float areaCompliance = 0.1f;
+  float areaCompliance = 0.001f;
 };
 
 // NOTE: ssbo usage alignment
