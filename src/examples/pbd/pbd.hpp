@@ -74,13 +74,10 @@ class SoftBody2D {
   void solve(const double dt, const double edgeCompliance,
              const double areaCompliance);
   void postSolve(const double dt);
-  void startGrab(const glm::dvec3 pos);
-  void moveGrabbed(const glm::dvec3 pos);
-  void endGrab(const glm::dvec3 pos, const glm::dvec3 vel);
-  glm::dvec4 getBoundingCircle() {
-    return glm::dvec4{vertices[0].pos.x, vertices[0].pos.y, vertices[0].pos.z,
-                      radius};
-  }
+  void startGrab(const glm::dvec3 mousePos);
+  void moveGrabbed(const glm::dvec3 mousePos);
+  void endGrab(const glm::dvec3 mousePos, const glm::dvec3 mouseVel);
+  glm::dvec4 getBoundingCircle() { return glm::dvec4(pos[0], radius); }
 
  private:
   // mapped buffer
@@ -89,6 +86,7 @@ class SoftBody2D {
   std::vector<SimpleModel::Vertex> vertices;
   std::vector<uint32_t> indices;
   uint32_t numParticles;
+  std::vector<glm::dvec3> pos;
   std::vector<glm::dvec3> prevPos;
   std::vector<glm::dvec3> vel;
   uint32_t numTris;
