@@ -2769,7 +2769,7 @@ void VgeExample::simulate() {
       {
         // point-edge distance constraint
         for (auto i = 2; i < n; i++) {
-          glm::dvec3 corr, corr0, corr1;
+          glm::dvec3 corr{0.f}, corr0{0.f}, corr1{0.f};
           if (i == 2 || i == 3) {
             // NOTE: edge vertices order matters.
             solveEdgePointCollisionConstraint(
@@ -2787,6 +2787,7 @@ void VgeExample::simulate() {
                 opts.compressionStiffness, opts.stretchStiffness, corr, corr1,
                 corr0);
           }
+
           simulationParticles[i].pos += glm::dvec4(corr, 0.f);
           simulationParticles[0].pos += glm::dvec4(corr0, 0.f);
           simulationParticles[1].pos += glm::dvec4(corr1, 0.f);
@@ -2794,7 +2795,7 @@ void VgeExample::simulate() {
 
         // distance constraint
 
-        glm::dvec3 corr0, corr1;
+        glm::dvec3 corr0{0.f}, corr1{0.f};
         solveDistanceConstraint(simulationParticles[0].pos,
                                 simulationParticles[1].pos, invMasses[0],
                                 invMasses[1], restLength, opts.lengthStiffness,
@@ -2915,14 +2916,17 @@ bool VgeExample::solveEdgePointCollisionConstraint(
   double t = 0.5;
   double d2 = glm::length2(d);
   if (d2 >= 1e-12) {
-    t = glm::dot(d, p - p1) / d2;
+    t = glm::dot(d, p - p0) / d2;
     t = glm::clamp(t, 0.0, 1.0);
   }
   glm::dvec3 q = p0 + d * t;
-  glm::dvec3 axis{0.0, 0.0, 1.0};
-  glm::dvec3 n = glm::cross(axis, glm::normalize(d));
-  double dist = glm::dot(p - q, n);
+  // glm::dvec3 axis{0.0, 0.0, 1.0};
+  // glm::dvec3 n = glm::cross(axis, glm::normalize(d));
+  glm::dvec3 n = p - q;
+  double dist = glm::length(n);
+
   if (dist == 0.0) return false;
+  n = n / dist;
 
   double C = dist - restDist;
   double b0 = 1.0 - t;
@@ -3154,7 +3158,7 @@ double SoftBody2D::getTriArea(uint32_t triId) {
   glm::dvec3 v1(pos[id2] - pos[id0]);
   glm::dvec3 e{0.f, 0.f, 1.f};
   double area = 0.5f * glm::dot(glm::cross(v0, v1), e);
-  assert(area != 0.0);
+  // assert(area != 0.0);
   return area;
 }
 
