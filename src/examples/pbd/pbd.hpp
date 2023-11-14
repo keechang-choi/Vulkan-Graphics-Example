@@ -371,12 +371,19 @@ class VgeExample : public VgeBase {
   const std::vector<uint32_t> kSimulationsMinNumParticles{1, 1, 1, 2, 6, 1, 5};
   const std::vector<uint32_t> kSimulationsMaxNumParticles{20,  1000, 30, 2,
                                                           105, 1024, 5};
-  int mouseGrabBody = -1;
-  int mouseOverBody = -1;
-  // softBody mouse pos and additional state
-  glm::vec4 softBodyMouseData;
+  struct {
+    int mouseGrabBody = -1;
+    int mouseOverBody = -1;
+    // softBody mouse pos and additional state
+    glm::vec4 softBodyMouseData;
+  } simulation6;
 
   // simulation7
-  double restLength;
+  struct {
+    double restLength;
+    double grabMass;
+    int mouseGrabBody = -1;
+    int mouseOverBody = -1;
+  } simulation7;
 };
 }  // namespace vge
