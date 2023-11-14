@@ -616,7 +616,7 @@ void VgeExample::loadAssets() {
     rndEngine.seed(1111);
     std::uniform_real_distribution<float> uniformDist(0.f, 1.f);
 
-    float rectScale = 10.f;
+    float rectScale = simulation2DSceneScale;
     int n = simulationsNumParticles[5];
     for (auto i = 0; i < n; i++) {
       float circleScale =
@@ -2306,7 +2306,12 @@ void VgeExample::onUpdateUIOverlay() {
         ImGui::TreePop();
       }
       if (ImGui::TreeNode("simulation7 Options")) {
-        uiOverlay->inputFloat("stiffness", &opts.stiffness, 0.0001f, "%.4f");
+        uiOverlay->inputFloat("lengthStiffness", &opts.lengthStiffness, 0.0001f,
+                              "%.4f");
+        uiOverlay->inputFloat("compressionStiffness",
+                              &opts.compressionStiffness, 0.0001f, "%.4f");
+        uiOverlay->inputFloat("stretchStiffness", &opts.stretchStiffness,
+                              0.0001f, "%.4f");
 
         ImGui::TreePop();
       }
@@ -2695,7 +2700,6 @@ void VgeExample::simulate() {
     {
       size_t n = simulationsNumParticles[5];
       glm::dvec3 gravity{0.f, 10.f, 0.f};
-      float rectScale = 10.f;
       double sdt = animationTimer / static_cast<double>(opts.numSubsteps);
       for (auto step = 0; step < opts.numSubsteps; step++) {
         for (auto i = 0; i < n; i++) {
@@ -2703,7 +2707,7 @@ void VgeExample::simulate() {
               findInstances("softCircle" + std::to_string(i))[0];
           auto& modelInstance = modelInstances[instanceIndex];
           auto& softBody2D = modelInstance.softBody2D;
-          softBody2D->preSolve(sdt, gravity, rectScale);
+          softBody2D->preSolve(sdt, gravity, simulation2DSceneScale);
           softBody2D->solve(sdt, opts.edgeCompliance, opts.areaCompliance);
           softBody2D->postSolve(sdt);
         }
@@ -2722,33 +2726,91 @@ void VgeExample::simulate() {
     auto& simulationParticles = simulationsParticles[simulationIndex];
     size_t n = simulationParticles.size();
     glm::dvec3 gravity{0.f, 10.f, 0.f};
-    float rectScale = 10.f;
     double sdt = animationTimer / static_cast<double>(opts.numSubsteps);
+    std::vector<double> invMasses(n);
     for (auto step = 0; step < opts.numSubsteps; step++) {
       for (auto i = 0; i < n; i++) {
+        if (simulationParticles[i].vel.w == 0.0) {
+          invMasses[i] = 0.0;
+        } else {
+          invMasses[i] = 1.0 / simulationParticles[i].vel.w;
+        }
         glm::dvec4 acc{0.f, opts.gravity, 0.f, 0.f};
         if (i == 2 || i == 3) {
           acc.y = 0.f;
         }
         simulationParticles[i].vel += acc * sdt;
         simulationParticles[i].prevPos = simulationParticles[i].pos;
-        float radius = simulationParticles[i].pos.w;
+        double radius = simulationParticles[i].pos.w;
         simulationParticles[i].pos += simulationParticles[i].vel * sdt;
         simulationParticles[i].pos.w = radius;
-        handleWallCollision(
-            simulationIndex, i,
-            glm::vec2{simulation2DSceneScale, simulation2DSceneScale});
+        // handleWallCollision(
+        //     simulationIndex, i,
+        //     glm::vec2{simulation2DSceneScale, simulation2DSceneScale});
+        glm::dvec4 correctedPos(simulationParticles[i].prevPos);
+        if (simulationParticles[i].pos.y + radius > 0.f) {
+          correctedPos.y = -radius;
+          simulationParticles[i].pos = correctedPos;
+        }
+        if (simulationParticles[i].pos.y - radius < -simulation2DSceneScale) {
+          correctedPos.y = -simulation2DSceneScale + radius;
+          simulationParticles[i].pos = correctedPos;
+        }
+        if (simulationParticles[i].pos.x - radius < 0.f) {
+          correctedPos.x = radius;
+          simulationParticles[i].pos = correctedPos;
+        }
+        if (simulationParticles[i].pos.x + radius > simulation2DSceneScale) {
+          correctedPos.x = simulation2DSceneScale - radius;
+          simulationParticles[i].pos = correctedPos;
+        }
       }
-      // point-edge distance constraint
 
-      // distance constraint
-      glm::dvec3 corr0, corr1;
-      solveDistanceConstraint(
-          simulationParticles[0].pos, simulationParticles[1].pos,
-          simulationParticles[0].vel.w, simulationParticles[1].vel.w,
-          restLength, opts.stiffness, corr0, corr1);
-      simulationParticles[0].pos += glm::dvec4(corr0, 0.f);
-      simulationParticles[1].pos += glm::dvec4(corr1, 0.f);
+      {
+        // point-edge distance constraint
+        for (auto i = 2; i < n; i++) {
+          glm::dvec3 corr, corr0, corr1;
+          if (i == 2 || i == 3) {
+            // NOTE: edge vertices order matters.
+            solveEdgePointCollisionConstraint(
+                simulationParticles[i].pos, simulationParticles[0].pos,
+                simulationParticles[1].pos, invMasses[i], invMasses[0],
+                invMasses[1], simulationParticles[i].pos.w /*rest dist*/,
+                opts.compressionStiffness, opts.stretchStiffness, corr, corr0,
+                corr1);
+          } else {
+            // NOTE: edge vertices order matters.
+            solveEdgePointCollisionConstraint(
+                simulationParticles[i].pos, simulationParticles[1].pos,
+                simulationParticles[0].pos, invMasses[i], invMasses[1],
+                invMasses[0], simulationParticles[i].pos.w /*rest dist*/,
+                opts.compressionStiffness, opts.stretchStiffness, corr, corr1,
+                corr0);
+          }
+          simulationParticles[i].pos += glm::dvec4(corr, 0.f);
+          simulationParticles[0].pos += glm::dvec4(corr0, 0.f);
+          simulationParticles[1].pos += glm::dvec4(corr1, 0.f);
+        }
+
+        // distance constraint
+
+        glm::dvec3 corr0, corr1;
+        solveDistanceConstraint(simulationParticles[0].pos,
+                                simulationParticles[1].pos, invMasses[0],
+                                invMasses[1], restLength, opts.lengthStiffness,
+                                corr0, corr1);
+        simulationParticles[0].pos += glm::dvec4(corr0, 0.f);
+        simulationParticles[1].pos += glm::dvec4(corr1, 0.f);
+      }
+
+      // end step
+      for (auto i = 0; i < n; i++) {
+        float mass = simulationParticles[i].vel.w;
+        // NOTE: divide by zero
+        simulationParticles[i].vel =
+            (simulationParticles[i].pos - simulationParticles[i].prevPos) / sdt;
+        simulationParticles[i].vel.w = mass;
+      }
     }
   }
 }
@@ -2840,6 +2902,49 @@ bool VgeExample::solveDistanceConstraint(
   glm::dvec3 corr = stiffness * n * (d - restLength) / wSum;
   corr0 = invMass0 * corr;
   corr1 = -invMass1 * corr;
+  return true;
+}
+
+bool VgeExample::solveEdgePointCollisionConstraint(
+    const glm::dvec3 p, const glm::dvec3 p0, const glm::dvec3 p1,
+    const double invMass, const double invMass0, const double invMass1,
+    const double restDist, const double compressionStiffness,
+    const double stretchStiffness, glm::dvec3& corr, glm::dvec3& corr0,
+    glm::dvec3& corr1) {
+  glm::dvec3 d(p1 - p0);
+  double t = 0.5;
+  double d2 = glm::length2(d);
+  if (d2 >= 1e-12) {
+    t = glm::dot(d, p - p1) / d2;
+    t = glm::clamp(t, 0.0, 1.0);
+  }
+  glm::dvec3 q = p0 + d * t;
+  glm::dvec3 axis{0.0, 0.0, 1.0};
+  glm::dvec3 n = glm::cross(axis, glm::normalize(d));
+  double dist = glm::dot(p - q, n);
+  if (dist == 0.0) return false;
+
+  double C = dist - restDist;
+  double b0 = 1.0 - t;
+  double b1 = t;
+  glm::dvec3 grad = n;
+  glm::dvec3 grad0 = -n * b0;
+  glm::dvec3 grad1 = -n * b1;
+
+  double s = invMass + invMass0 * b0 * b0 + invMass1 * b1 * b1;
+  if (s == 0.0) return false;
+
+  s = C / s;
+  if (s < 0.0)
+    s *= compressionStiffness;
+  else
+    s *= stretchStiffness;
+
+  if (s == 0.0) return false;
+
+  corr = -s * invMass * grad;
+  corr0 = -s * invMass0 * grad0;
+  corr1 = -s * invMass1 * grad1;
   return true;
 }
 

@@ -180,7 +180,9 @@ struct Options {
   float edgeCompliance = 0.1f;
   float areaCompliance = 0.001f;
 
-  float stiffness = 0.001;
+  float lengthStiffness = 0.001;
+  float compressionStiffness = 0.001;
+  float stretchStiffness = 0.000;
 };
 
 // NOTE: ssbo usage alignment
@@ -241,6 +243,12 @@ class VgeExample : public VgeBase {
                                const double invMass0, const double invMass1,
                                const double restLength, const double stiffness,
                                glm::dvec3& corr0, glm::dvec3& corr1);
+  bool solveEdgePointCollisionConstraint(
+      const glm::dvec3 p, const glm::dvec3 p0, const glm::dvec3 p1,
+      const double invMass, const double invMass0, const double invMass1,
+      const double restDist, const double compressionStiffness,
+      const double stretchStiffness, glm::dvec3& corr, glm::dvec3& corr0,
+      glm::dvec3& corr1);
 
   struct {
     uint32_t queueFamilyIndex;
