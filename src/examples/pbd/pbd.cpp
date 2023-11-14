@@ -483,9 +483,10 @@ void VgeExample::loadAssets() {
 
   for (auto simulationIndex = 0;
        simulationIndex < simulationsNumParticles.size(); simulationIndex++) {
+    // softBody2D for simulation6
     if (simulationIndex == 5) continue;
-    simulationsParticles.push_back(
-        std::vector<Particle>(simulationsNumParticles[simulationIndex]));
+    simulationsParticles[simulationIndex] =
+        std::vector<Particle>(simulationsNumParticles[simulationIndex]);
     for (auto i = 0; i < simulationsParticles[simulationIndex].size(); i++) {
       ModelInstance modelInstance{};
       modelInstance.simpleModel = circle;
@@ -551,6 +552,13 @@ void VgeExample::loadAssets() {
     ModelInstance modelInstance{};
     modelInstance.simpleModel = singleLine;
     modelInstance.name = "singleLines5-" + std::to_string(i);
+    addModelInstance(std::move(modelInstance));
+  }
+  // simulation 7
+  {
+    ModelInstance modelInstance{};
+    modelInstance.simpleModel = singleLine;
+    modelInstance.name = "singleLines7-" + std::to_string(0);
     addModelInstance(std::move(modelInstance));
   }
 
@@ -961,6 +969,14 @@ void VgeExample::setupDynamicUbo() {
     // default
     dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
   }
+  {
+    int i = 0;
+    size_t instanceIndex =
+        findInstances("singleLines7-" + std::to_string(i))[0];
+    // not using initial translation
+    // default
+    dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
+  }
 
   std::default_random_engine rndEngine;
   rndEngine.seed(1111);
@@ -1133,6 +1149,37 @@ void VgeExample::setupDynamicUbo() {
           static_cast<float>(i) / static_cast<float>(n),
           0.5f + 0.5 * (static_cast<float>(i) / static_cast<float>(n)), 0.5f,
           2.f};
+    }
+  }
+
+  {
+    uint32_t simulationIndex = 6;
+    auto& simulationParticles = simulationsParticles[simulationIndex];
+    size_t n = simulationParticles.size();
+    std::vector<float> masses{1.f, 1.f, 0.f, 0.f, 2.f};
+    std::vector<glm::vec3> colors{
+        glm::vec3{1.f, 1.f, 1.f}, glm::vec3{1.f, 1.f, 1.f},
+        glm::vec3{1.f, 0.f, 0.f}, glm::vec3{1.f, 0.f, 0.f},
+        glm::vec3{0.f, 0.f, 1.f}};
+    std::vector<glm::vec3> positions{
+        glm::vec3{2.f, -5.f, 0.f}, glm::vec3{8.f, -5.f, 0.f},
+        glm::vec3{4.f, -4.f, 0.f}, glm::vec3{6.f, -4.f, 0.f},
+        glm::vec3{5.f, -9.f, 0.f},
+    };
+    for (auto i = 0; i < n; i++) {
+      float radius = 0.2f;
+      float mass = masses[i];
+      size_t instanceIndex =
+          findInstances("circle" + std::to_string(simulationIndex + 1) + "-" +
+                        std::to_string(i))[0];
+      simulationParticles[i].pos = glm::vec4(positions[i], radius);
+      simulationParticles[i].vel = glm::vec4{0.f, 0.f, 0.f, mass};
+      modelInstances[instanceIndex].transform.translation =
+          glm::vec3{quadScale + rectScale * 2.0f, -rectScale * 0.0f, 0.f};
+      modelInstances[instanceIndex].transform.scale =
+          glm::vec3{radius, radius, radius};
+
+      dynamicUbo[instanceIndex].modelColor = glm::vec4(colors[i], 1.f);
     }
   }
 }
@@ -1864,7 +1911,8 @@ void VgeExample::updateDynamicUbo() {
         dynamicUbo[instanceIndex].modelMatrix;
   }
 
-  for (auto i = 0; i < simulationsParticles.size(); i++) {
+  for (auto& item : simulationsParticles) {
+    int i = item.first;
     for (auto j = 0; j < simulationsParticles[i].size(); j++) {
       size_t instanceIndex = findInstances("circle" + std::to_string(i + 1) +
                                            "-" + std::to_string(j))[0];
@@ -1918,7 +1966,6 @@ void VgeExample::updateDynamicUbo() {
                      glm::vec3{scale, scale, scale});
     }
   }
-
   {
     int n = simulationsNumParticles[5];
     for (auto i = 0; i < n; i++) {
@@ -1934,7 +1981,44 @@ void VgeExample::updateDynamicUbo() {
           glm::mat4{1.f}, modelInstances[instanceIndex].transform.translation);
     }
   }
-
+  {
+    auto& simulationParticles = simulationsParticles[6];
+    int n = 1;
+    int i = 0;
+    // NOTE: not using scene graph hierarchy
+    glm::vec3 v0{0.f, 0.f, 1.0f};
+    float l0 = glm::length(v0);
+    size_t circleInstantceIndex =
+        findInstances("circle7-" + std::to_string(i))[0];
+    glm::vec3 offset =
+        modelInstances[circleInstantceIndex].transform.translation;
+    size_t instanceIndex =
+        findInstances("singleLines7-" + std::to_string(i))[0];
+    int particleIndex = 0;
+    glm::vec3 p1{simulationParticles[particleIndex].pos};
+    glm::vec3 p2{simulationParticles[particleIndex + 1].pos};
+    glm::vec3 v1(p2 - p1);
+    glm::vec3 translation(p1);
+    glm::mat4 rotation{1.f};
+    float l1 = glm::length(v1);
+    float scale = l1 / l0;
+    if (l1 > 0.f) {
+      float theta = acos(glm::dot(v0, v1) / (l0 * l1));
+      glm::vec3 axis = glm::cross(v0, v1);
+      if (glm::length(axis) == 0.0) {
+        scale = theta > 1.5f ? -scale : scale;
+      } else {
+        axis = glm::normalize(axis);
+        rotation = glm::rotate(rotation, theta, axis);
+      }
+    }
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::translate(glm::mat4{1.f}, offset + translation);
+    dynamicUbo[instanceIndex].modelMatrix =
+        dynamicUbo[instanceIndex].modelMatrix * rotation;
+    dynamicUbo[instanceIndex].modelMatrix = glm::scale(
+        dynamicUbo[instanceIndex].modelMatrix, glm::vec3{scale, scale, scale});
+  }
   // update animation joint matrices for each shared model
   {
     std::unordered_set<const vgeu::glTF::Model*> updatedSharedModelSet;
