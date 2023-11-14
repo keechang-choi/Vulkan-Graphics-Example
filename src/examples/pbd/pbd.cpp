@@ -88,8 +88,8 @@ void VgeExample::initVulkan() {
   cameraController.moveSpeed = opts.moveSpeed;
   // camera setup
   if (glm::isIdentity(opts.cameraView, 1e-6f)) {
-    camera.setViewTarget(glm::vec3{30.f, -20.f, -20.f},
-                         glm::vec3{30.f, -10.f, 0.f});
+    camera.setViewTarget(glm::vec3{40.f, -20.f, -20.f},
+                         glm::vec3{40.f, -10.f, 0.f});
   } else {
     camera.setViewMatrix(opts.cameraView);
   }
@@ -554,10 +554,35 @@ void VgeExample::loadAssets() {
     modelInstance.name = "singleLines5-" + std::to_string(i);
     addModelInstance(std::move(modelInstance));
   }
+  std::shared_ptr<SimpleModel> singleSpring = std::make_shared<SimpleModel>(
+      device, globalAllocator->getAllocator(), queue, commandPool);
+  {
+    int n = 51;
+    float interval = 1.f / static_cast<float>(n);
+    // n+1 vertices
+    std::vector<glm::vec4> positions;
+    positions.push_back({0.f, 0.f, 0.f, 1.f});
+    positions.push_back({0.f, 0.f, interval, 1.f});
+    positions.push_back({0.f, 0.f, interval * 2.f, 1.f});
+    for (auto i = 0; i < n - 5; i++) {
+      float y = static_cast<float>(i % 2) * 2.f - 1.f;
+      positions.push_back({0.f, y, static_cast<float>(i + 3) * interval, 1.f});
+    }
+    positions.push_back({0.f, 0.f, 1.f - interval * 2.f, 1.f});
+    positions.push_back({0.f, 0.f, 1.f - interval, 1.f});
+    positions.push_back({0.f, 0.f, 1.f, 1.f});
+    std::vector<uint32_t> indices;
+    for (auto i = 0; i < n; i++) {
+      indices.push_back(i);
+      indices.push_back(i + 1);
+    }
+    singleSpring->setLineList(positions, indices, {1.f, 1.f, 1.f, 1.f});
+  }
+
   // simulation 7
   {
     ModelInstance modelInstance{};
-    modelInstance.simpleModel = singleLine;
+    modelInstance.simpleModel = singleSpring;
     modelInstance.name = "singleLines7-" + std::to_string(0);
     addModelInstance(std::move(modelInstance));
   }
@@ -1162,10 +1187,11 @@ void VgeExample::setupDynamicUbo() {
         glm::vec3{1.f, 0.f, 0.f}, glm::vec3{1.f, 0.f, 0.f},
         glm::vec3{0.f, 0.f, 1.f}};
     std::vector<glm::vec3> positions{
-        glm::vec3{2.f, -5.f, 0.f}, glm::vec3{8.f, -5.f, 0.f},
+        glm::vec3{2.f, -5.f, 0.f}, glm::vec3{8.f, -5.2f, 0.f},
         glm::vec3{4.f, -4.f, 0.f}, glm::vec3{6.f, -4.f, 0.f},
         glm::vec3{5.f, -9.f, 0.f},
     };
+    restLength = glm::distance(positions[0], positions[1]);
     for (auto i = 0; i < n; i++) {
       float radius = 0.2f;
       float mass = masses[i];
@@ -2003,7 +2029,7 @@ void VgeExample::updateDynamicUbo() {
     float l1 = glm::length(v1);
     float scale = l1 / l0;
     if (l1 > 0.f) {
-      float theta = acos(glm::dot(v0, v1) / (l0 * l1));
+      float theta = std::acos(glm::dot(v0, v1) / (l0 * l1));
       glm::vec3 axis = glm::cross(v0, v1);
       if (glm::length(axis) == 0.0) {
         scale = theta > 1.5f ? -scale : scale;
@@ -2011,13 +2037,16 @@ void VgeExample::updateDynamicUbo() {
         axis = glm::normalize(axis);
         rotation = glm::rotate(rotation, theta, axis);
       }
+      axis = glm::normalize(v0);
+      theta = std::atan(v1.y / v1.x);
+      rotation = glm::rotate(rotation, theta, axis);
     }
     dynamicUbo[instanceIndex].modelMatrix =
         glm::translate(glm::mat4{1.f}, offset + translation);
     dynamicUbo[instanceIndex].modelMatrix =
         dynamicUbo[instanceIndex].modelMatrix * rotation;
     dynamicUbo[instanceIndex].modelMatrix = glm::scale(
-        dynamicUbo[instanceIndex].modelMatrix, glm::vec3{scale, scale, scale});
+        dynamicUbo[instanceIndex].modelMatrix, glm::vec3{0.f, 0.1f, scale});
   }
   // update animation joint matrices for each shared model
   {
@@ -2276,6 +2305,12 @@ void VgeExample::onUpdateUIOverlay() {
 
         ImGui::TreePop();
       }
+      if (ImGui::TreeNode("simulation7 Options")) {
+        uiOverlay->inputFloat("stiffness", &opts.stiffness, 0.0001f, "%.4f");
+
+        ImGui::TreePop();
+      }
+
       ImGui::Spacing();
       uiOverlay->inputInt("desiredSharedDataSize", &opts.desiredSharedDataSize,
                           64);
@@ -2588,95 +2623,132 @@ void VgeExample::simulate() {
       }
     }
   }
-  // sofyBody mouse interaction
-  {
-    glm::vec3 rayStart, rayDir;
-    std::tie(rayStart, rayDir) = ::getRayStartAndDir(
-        mouseData.mousePos,
-        glm::vec2{static_cast<float>(width), static_cast<float>(height)},
-        camera.getInverseView() * glm::inverse(camera.getProjection()));
-    glm::vec3 planeNormal{0.f, 0.f, 1.0f};
-    std::optional<glm::vec3> intersectionPt =
-        ::rayPlaneIntersection(rayStart, rayDir, planeNormal, glm::vec3{0.f});
-    mouseOverBody = -1;
-    softBodyMouseData = glm::vec4{0.f};
-    if (intersectionPt.has_value()) {
+  if (opts.enableSimulation[5]) {
+    // sofyBody mouse interaction
+    {
+      glm::vec3 rayStart, rayDir;
+      std::tie(rayStart, rayDir) = ::getRayStartAndDir(
+          mouseData.mousePos,
+          glm::vec2{static_cast<float>(width), static_cast<float>(height)},
+          camera.getInverseView() * glm::inverse(camera.getProjection()));
+      glm::vec3 planeNormal{0.f, 0.f, 1.0f};
+      std::optional<glm::vec3> intersectionPt =
+          ::rayPlaneIntersection(rayStart, rayDir, planeNormal, glm::vec3{0.f});
+      mouseOverBody = -1;
+      softBodyMouseData = glm::vec4{0.f};
+      if (intersectionPt.has_value()) {
+        size_t n = simulationsNumParticles[5];
+        for (auto i = 0; i < n; i++) {
+          size_t instanceIndex =
+              findInstances("softCircle" + std::to_string(i))[0];
+          auto& modelInstance = modelInstances[instanceIndex];
+          auto& softBody2D = modelInstance.softBody2D;
+          // offset
+          glm::vec3 softBodyMousePos(
+              -modelInstances[instanceIndex].transform.translation);
+          softBodyMousePos += intersectionPt.value();
+          // intersection point calculation error makes non-zero z.
+          softBodyMousePos.z = 0.f;
+          glm::vec4 boundingCircle = softBody2D->getBoundingCircle();
+          glm::vec3 circleCenter(boundingCircle);
+          float radius = boundingCircle.w;
+          float distSquared = glm::distance2(circleCenter, softBodyMousePos);
+          if (distSquared <= radius * radius) {
+            mouseOverBody = i;
+          }
+          softBodyMouseData =
+              glm::vec4(softBodyMousePos, static_cast<float>(mouseOverBody));
+        }
+      }
+      if (mouseData.left) {
+        if (mouseGrabBody == -1) {
+          mouseGrabBody = mouseOverBody;
+          if (mouseGrabBody != -1) {
+            // grab start
+            size_t instanceIndex =
+                findInstances("softCircle" + std::to_string(mouseGrabBody))[0];
+            auto& modelInstance = modelInstances[instanceIndex];
+            auto& softBody2D = modelInstance.softBody2D;
+            softBody2D->startGrab(softBodyMouseData);
+          }
+        } else {
+          // move
+          size_t instanceIndex =
+              findInstances("softCircle" + std::to_string(mouseGrabBody))[0];
+          auto& modelInstance = modelInstances[instanceIndex];
+          auto& softBody2D = modelInstance.softBody2D;
+          softBody2D->moveGrabbed(softBodyMouseData);
+        }
+      } else {
+        if (mouseGrabBody != -1) {
+          // grab end
+          size_t instanceIndex =
+              findInstances("softCircle" + std::to_string(mouseGrabBody))[0];
+          auto& modelInstance = modelInstances[instanceIndex];
+          auto& softBody2D = modelInstance.softBody2D;
+          softBody2D->endGrab(softBodyMouseData, glm::vec3{0.f});
+          mouseGrabBody = -1;
+        }
+      }
+    }
+    // 2d softBody
+    {
       size_t n = simulationsNumParticles[5];
+      glm::dvec3 gravity{0.f, 10.f, 0.f};
+      float rectScale = 10.f;
+      double sdt = animationTimer / static_cast<double>(opts.numSubsteps);
+      for (auto step = 0; step < opts.numSubsteps; step++) {
+        for (auto i = 0; i < n; i++) {
+          size_t instanceIndex =
+              findInstances("softCircle" + std::to_string(i))[0];
+          auto& modelInstance = modelInstances[instanceIndex];
+          auto& softBody2D = modelInstance.softBody2D;
+          softBody2D->preSolve(sdt, gravity, rectScale);
+          softBody2D->solve(sdt, opts.edgeCompliance, opts.areaCompliance);
+          softBody2D->postSolve(sdt);
+        }
+      }
       for (auto i = 0; i < n; i++) {
         size_t instanceIndex =
             findInstances("softCircle" + std::to_string(i))[0];
         auto& modelInstance = modelInstances[instanceIndex];
         auto& softBody2D = modelInstance.softBody2D;
-        // offset
-        glm::vec3 softBodyMousePos(
-            -modelInstances[instanceIndex].transform.translation);
-        softBodyMousePos += intersectionPt.value();
-        // intersection point calculation error makes non-zero z.
-        softBodyMousePos.z = 0.f;
-        glm::vec4 boundingCircle = softBody2D->getBoundingCircle();
-        glm::vec3 circleCenter(boundingCircle);
-        float radius = boundingCircle.w;
-        float distSquared = glm::distance2(circleCenter, softBodyMousePos);
-        if (distSquared <= radius * radius) {
-          mouseOverBody = i;
-        }
-        softBodyMouseData =
-            glm::vec4(softBodyMousePos, static_cast<float>(mouseOverBody));
-      }
-    }
-    if (mouseData.left) {
-      if (mouseGrabBody == -1) {
-        mouseGrabBody = mouseOverBody;
-        if (mouseGrabBody != -1) {
-          // grab start
-          size_t instanceIndex =
-              findInstances("softCircle" + std::to_string(mouseGrabBody))[0];
-          auto& modelInstance = modelInstances[instanceIndex];
-          auto& softBody2D = modelInstance.softBody2D;
-          softBody2D->startGrab(softBodyMouseData);
-        }
-      } else {
-        // move
-        size_t instanceIndex =
-            findInstances("softCircle" + std::to_string(mouseGrabBody))[0];
-        auto& modelInstance = modelInstances[instanceIndex];
-        auto& softBody2D = modelInstance.softBody2D;
-        softBody2D->moveGrabbed(softBodyMouseData);
-      }
-    } else {
-      if (mouseGrabBody != -1) {
-        // grab end
-        size_t instanceIndex =
-            findInstances("softCircle" + std::to_string(mouseGrabBody))[0];
-        auto& modelInstance = modelInstances[instanceIndex];
-        auto& softBody2D = modelInstance.softBody2D;
-        softBody2D->endGrab(softBodyMouseData, glm::vec3{0.f});
-        mouseGrabBody = -1;
+        softBody2D->updateBuffer(currentFrameIndex);
       }
     }
   }
-  // 2d softBody
-  {
-    size_t n = simulationsNumParticles[5];
+  if (opts.enableSimulation[6]) {
+    uint32_t simulationIndex = 6;
+    auto& simulationParticles = simulationsParticles[simulationIndex];
+    size_t n = simulationParticles.size();
     glm::dvec3 gravity{0.f, 10.f, 0.f};
     float rectScale = 10.f;
     double sdt = animationTimer / static_cast<double>(opts.numSubsteps);
     for (auto step = 0; step < opts.numSubsteps; step++) {
       for (auto i = 0; i < n; i++) {
-        size_t instanceIndex =
-            findInstances("softCircle" + std::to_string(i))[0];
-        auto& modelInstance = modelInstances[instanceIndex];
-        auto& softBody2D = modelInstance.softBody2D;
-        softBody2D->preSolve(sdt, gravity, rectScale);
-        softBody2D->solve(sdt, opts.edgeCompliance, opts.areaCompliance);
-        softBody2D->postSolve(sdt);
+        glm::dvec4 acc{0.f, opts.gravity, 0.f, 0.f};
+        if (i == 2 || i == 3) {
+          acc.y = 0.f;
+        }
+        simulationParticles[i].vel += acc * sdt;
+        simulationParticles[i].prevPos = simulationParticles[i].pos;
+        float radius = simulationParticles[i].pos.w;
+        simulationParticles[i].pos += simulationParticles[i].vel * sdt;
+        simulationParticles[i].pos.w = radius;
+        handleWallCollision(
+            simulationIndex, i,
+            glm::vec2{simulation2DSceneScale, simulation2DSceneScale});
       }
-    }
-    for (auto i = 0; i < n; i++) {
-      size_t instanceIndex = findInstances("softCircle" + std::to_string(i))[0];
-      auto& modelInstance = modelInstances[instanceIndex];
-      auto& softBody2D = modelInstance.softBody2D;
-      softBody2D->updateBuffer(currentFrameIndex);
+      // point-edge distance constraint
+
+      // distance constraint
+      glm::dvec3 corr0, corr1;
+      solveDistanceConstraint(
+          simulationParticles[0].pos, simulationParticles[1].pos,
+          simulationParticles[0].vel.w, simulationParticles[1].vel.w,
+          restLength, opts.stiffness, corr0, corr1);
+      simulationParticles[0].pos += glm::dvec4(corr0, 0.f);
+      simulationParticles[1].pos += glm::dvec4(corr1, 0.f);
     }
   }
 }
@@ -2754,6 +2826,21 @@ void VgeExample::handleWallCollision(uint32_t simulationIndex,
     simulationParticles[ballIndex].vel.y =
         abs(simulationParticles[ballIndex].vel.y);
   }
+}
+bool VgeExample::solveDistanceConstraint(
+    const glm::dvec3 p0, const glm::dvec3 p1, const double invMass0,
+    const double invMass1, const double restLength, const double stiffness,
+    glm::dvec3& corr0, glm::dvec3& corr1) {
+  double wSum = invMass0 + invMass1;
+  if (wSum == 0.0) return false;
+  glm::dvec3 n(p1 - p0);
+  double d = glm::length(n);
+  if (d == 0.0) return false;
+  n = n / d;
+  glm::dvec3 corr = stiffness * n * (d - restLength) / wSum;
+  corr0 = invMass0 * corr;
+  corr1 = -invMass1 * corr;
+  return true;
 }
 
 SimpleModel::SimpleModel(const vk::raii::Device& device, VmaAllocator allocator,

@@ -179,6 +179,8 @@ struct Options {
   glm::mat4 cameraView{1.f};
   float edgeCompliance = 0.1f;
   float areaCompliance = 0.001f;
+
+  float stiffness = 0.001;
 };
 
 // NOTE: ssbo usage alignment
@@ -235,6 +237,11 @@ class VgeExample : public VgeBase {
                            uint32_t ballIndex2, float restitution);
   void handleWallCollision(uint32_t simulationIndex, uint32_t ballIndex,
                            glm::vec2 worldSize);
+  bool solveDistanceConstraint(const glm::dvec3 p0, const glm::dvec3 p1,
+                               const double invMass0, const double invMass1,
+                               const double restLength, const double stiffness,
+                               glm::dvec3& corr0, glm::dvec3& corr1);
+
   struct {
     uint32_t queueFamilyIndex;
     std::vector<std::unique_ptr<vgeu::VgeuBuffer>> storageBuffers;
@@ -360,5 +367,8 @@ class VgeExample : public VgeBase {
   int mouseOverBody = -1;
   // softBody mouse pos and additional state
   glm::vec4 softBodyMouseData;
+
+  // simulation7
+  double restLength;
 };
 }  // namespace vge
