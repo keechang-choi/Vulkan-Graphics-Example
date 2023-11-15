@@ -382,6 +382,8 @@ class VgeExample : public VgeBase {
   struct {
     double restLength;
     double grabMass;
+    glm::vec3 circleMousePos;
+    glm::vec3 grabOffset;
     int mouseGrabBody = -1;
     int mouseOverBody = -1;
   } simulation7;

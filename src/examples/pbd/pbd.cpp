@@ -2201,6 +2201,10 @@ void VgeExample::onUpdateUIOverlay() {
                 simulation6.softBodyMouseData.y,
                 simulation6.softBodyMouseData.z, simulation6.mouseGrabBody,
                 simulation6.mouseOverBody);
+    ImGui::Text("simulation7 Click Data: (%f, %f, %f), %d, %d",
+                simulation7.circleMousePos.x, simulation7.circleMousePos.y,
+                simulation7.circleMousePos.z, simulation7.mouseGrabBody,
+                simulation7.mouseOverBody);
   }
 
   if (uiOverlay->header("Settings")) {
@@ -2756,11 +2760,12 @@ void VgeExample::simulate() {
                         std::to_string(i))[0];
       auto& modelInstance = modelInstances[instanceIndex];
       // offset
-      glm::vec3 circleMousePos(
-          -modelInstances[instanceIndex].transform.translation);
-      circleMousePos += intersectionPt.value();
+      simulation7.circleMousePos =
+          -modelInstances[instanceIndex].transform.translation;
+      simulation7.circleMousePos += intersectionPt.value();
+      simulation7.circleMousePos.z = 0.f;
 
-      float d2 = glm::distance2(center, circleMousePos);
+      float d2 = glm::distance2(center, simulation7.circleMousePos);
       if (d2 <= radius * radius) {
         simulation7.mouseOverBody = i;
       }
@@ -2769,18 +2774,23 @@ void VgeExample::simulate() {
           simulation7.mouseGrabBody = simulation7.mouseOverBody;
           if (simulation7.mouseGrabBody != -1) {
             // grab start
-            simulation7.grabMass = simulationParticles[i].pos.w;
-            simulationParticles[i].pos = glm::dvec4(circleMousePos, 0.f);
+            simulation7.grabMass = simulationParticles[i].vel.w;
+            simulationParticles[i].vel.w = 0.f;
+            simulation7.grabOffset = simulation7.circleMousePos - center;
+            // simulationParticles[i].pos = glm::dvec4(circleMousePos, radius);
           }
         } else {
           // move
-          simulationParticles[i].pos = glm::dvec4(circleMousePos, 0.f);
+          simulationParticles[i].pos = glm::dvec4(
+              simulation7.circleMousePos - simulation7.grabOffset, radius);
         }
       } else {
         if (simulation7.mouseGrabBody != -1) {
           // grab end
-          simulationParticles[i].pos =
-              glm::dvec4(circleMousePos, simulation7.grabMass);
+          simulationParticles[i].pos = glm::dvec4(
+              simulation7.circleMousePos - simulation7.grabOffset, radius);
+          simulationParticles[i].vel =
+              glm::dvec4(0.f, 0.f, 0.f, simulation7.grabMass);
           simulation7.mouseGrabBody = -1;
         }
       }
@@ -2793,6 +2803,7 @@ void VgeExample::simulate() {
       for (auto i = 0; i < n; i++) {
         if (simulationParticles[i].vel.w == 0.0) {
           invMasses[i] = 0.0;
+          continue;
         } else {
           invMasses[i] = 1.0 / simulationParticles[i].vel.w;
         }
@@ -2808,7 +2819,7 @@ void VgeExample::simulate() {
         // handleWallCollision(
         //     simulationIndex, i,
         //     glm::vec2{simulation2DSceneScale, simulation2DSceneScale});
-        glm::dvec4 correctedPos(simulationParticles[i].prevPos);
+        glm::dvec4 correctedPos(simulationParticles[i].pos);
         if (simulationParticles[i].pos.y + radius > 0.f) {
           correctedPos.y = -radius;
           simulationParticles[i].pos = correctedPos;
