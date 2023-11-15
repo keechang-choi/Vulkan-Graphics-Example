@@ -29,6 +29,13 @@ https://github.com/SaschaWillems/Vulkan/blob/master/base/VulkanglTFModel.h
 #include <memory>
 namespace vgeu {
 
+// from: https://stackoverflow.com/a/57595105
+template <typename T, typename... Rest>
+void hashCombine(std::size_t& seed, const T& v, const Rest&... rest) {
+  seed ^= std::hash<T>{}(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+  (hashCombine(seed, rest), ...);
+};
+
 enum class DescriptorBindingFlagBits : uint32_t {
   kImageBaseColor = 0x00000001,
   kImageNormalMap = 0x00000002

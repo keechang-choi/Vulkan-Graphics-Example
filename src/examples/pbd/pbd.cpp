@@ -2319,7 +2319,8 @@ void VgeExample::onUpdateUIOverlay() {
                               "%.4f");
         uiOverlay->inputFloat("areaCompliance", &opts.areaCompliance, 0.0001f,
                               "%.4f");
-
+        uiOverlay->inputFloat("collisionStiffness", &opts.collisionStiffness,
+                              0.0001f, "%.4f");
         ImGui::TreePop();
       }
       if (ImGui::TreeNode("simulation7 Options")) {
@@ -2725,7 +2726,25 @@ void VgeExample::simulate() {
           auto& modelInstance = modelInstances[instanceIndex];
           auto& softBody2D = modelInstance.softBody2D;
           softBody2D->preSolve(sdt, gravity, simulation2DSceneScale);
-          softBody2D->solve(sdt, opts.edgeCompliance, opts.areaCompliance);
+        }
+        for (auto i = 0; i < n; i++) {
+          size_t instanceIndex =
+              findInstances("softCircle" + std::to_string(i))[0];
+          auto& modelInstance = modelInstances[instanceIndex];
+          auto& softBody2D = modelInstance.softBody2D;
+          softBody2D->solve(sdt, opts.edgeCompliance, opts.areaCompliance,
+                            opts.collisionStiffness);
+          softBody2D->updateAABBs();
+        }
+        // TODO: collision
+        // hash init at right after load soft bodies
+        // hash reset -> hash create -> for each tri, query
+        // solve tri-point collision constraint for each tri-point pair
+        for (auto i = 0; i < n; i++) {
+          size_t instanceIndex =
+              findInstances("softCircle" + std::to_string(i))[0];
+          auto& modelInstance = modelInstances[instanceIndex];
+          auto& softBody2D = modelInstance.softBody2D;
           softBody2D->postSolve(sdt);
         }
       }
@@ -3179,6 +3198,7 @@ SoftBody2D::SoftBody2D(const std::vector<SimpleModel::Vertex>& vertices,
   restAreas.resize(numTris);
   edgeLengths.resize(edgeIds.size() / 2);
   invMasses.resize(numParticles);
+  aabbs.resize(numTris);
 
   grabId = -1;
   grabInvMass = 0.f;
@@ -3286,7 +3306,8 @@ void SoftBody2D::preSolve(const double dt, const glm::dvec3 gravity,
 }
 
 void SoftBody2D::solve(const double dt, const double edgeCompliance,
-                       const double areaCompliance) {
+                       const double areaCompliance,
+                       const double collisionStiffness) {
   solveEdges(dt, edgeCompliance);
   solveAreas(dt, areaCompliance);
 }
@@ -3379,6 +3400,51 @@ void SoftBody2D::endGrab(const glm::dvec3 mousePos, const glm::dvec3 mouseVel) {
   }
   grabId = -1;
 }
+
+void SoftBody2D::updateAABBs() {
+  for (auto i = 0; i < numTris; i++) {
+    double xMin = std::numeric_limits<double>::max();
+    double xMax = std::numeric_limits<double>::min();
+    double yMin = std::numeric_limits<double>::max();
+    double yMax = std::numeric_limits<double>::min();
+
+    for (auto j = 0; j < 3; j++) {
+      xMin = std::min(pos[triIds[i * 3 + j]].x, xMin);
+      xMax = std::max(pos[triIds[i * 3 + j]].x, xMax);
+      yMin = std::min(pos[triIds[i * 3 + j]].y, yMin);
+      yMax = std::max(pos[triIds[i * 3 + j]].y, yMax);
+    }
+    aabbs[i].x = xMin;
+    aabbs[i].y = xMax;
+    aabbs[i].z = yMin;
+    aabbs[i].w = yMax;
+  }
+}
+SpatialHash::SpatialHash(const double spacing, const uint32_t maxNumObjects)
+    : spacing(spacing),
+      tableSize(2 * maxNumObjects),
+      cellStart(tableSize + 1),
+      cellEntries(maxNumObjects) {
+  cellIndex = 0;
+}
+
+void SpatialHash::resetTable() {
+  cellIndex = 0;
+  separtor.resize(1);
+}
+void SpatialHash::addPos(const std::vector<glm::dvec3>& pos) {}
+void SpatialHash::createTable() {}
+void SpatialHash::queryTri(
+    const glm::dvec4 aabb,
+    std::vector<std::pair<uint32_t, uint32_t>>& queryIds) {
+  // aabb-> cellCoords -> hash -> start, end
+  // -> convert to object, index pair by binary search
+}
+
+uint32_t SpatialHash::hashCellIndex(const int xi, const int yi, const int zi) {}
+int SpatialHash::cellIndex(const double coord) {}
+uint32_t SpatialHash::hashPos(const glm::dvec3 pos) {}
+
 }  // namespace vge
 
 VULKAN_EXAMPLE_MAIN()

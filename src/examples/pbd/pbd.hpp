@@ -72,14 +72,20 @@ class SoftBody2D {
   void preSolve(const double dt, const glm::dvec3 gravity,
                 const double rectScale);
   void solve(const double dt, const double edgeCompliance,
-             const double areaCompliance);
+             const double areaCompliance, const double collisionStiffness);
   void postSolve(const double dt);
   void startGrab(const glm::dvec3 mousePos);
   void moveGrabbed(const glm::dvec3 mousePos);
   void endGrab(const glm::dvec3 mousePos, const glm::dvec3 mouseVel);
   glm::dvec4 getBoundingCircle() { return glm::dvec4(pos[0], radius); }
+  void updateAABBs();
 
  private:
+  double getTriArea(uint32_t triId);
+  void initPhysics();
+  void solveEdges(const double dt, const double compliance);
+  void solveAreas(const double dt, const double compliance);
+
   // mapped buffer
   std::vector<std::unique_ptr<vgeu::VgeuBuffer>> vertexBuffers;
   std::unique_ptr<vgeu::VgeuBuffer> indexBuffer;
@@ -103,10 +109,32 @@ class SoftBody2D {
   double grabInvMass;
   double radius;
 
-  double getTriArea(uint32_t triId);
-  void initPhysics();
-  void solveEdges(const double dt, double compliance);
-  void solveAreas(const double dt, double compliance);
+  // collision
+  std::vector<glm::dvec4> aabbs;
+};
+
+class SpatialHash {
+ public:
+  SpatialHash(const double spacing, const uint32_t maxNumObjects);
+  void resetTable();
+  void addPos(const std::vector<glm::dvec3>& pos);
+  void createTable();
+  void query(const glm::dvec3 pos, int maxCellDistance,
+             std::vector<std::pair<uint32_t, uint32_t>>& queryIds);
+  void queryTri(const glm::dvec4 aabb,
+                std::vector<std::pair<uint32_t, uint32_t>>& queryIds);
+
+ private:
+  uint32_t hashCellIndex(const int xi, const int yi, const int zi);
+  int cellIndex(const double coord);
+  uint32_t hashPos(const glm::dvec3 pos);
+
+  double spacing;
+  uint32_t tableSize;
+  std::vector<uint32_t> cellStart;
+  std::vector<uint32_t> cellEntries;
+  uint32_t cellIndex;
+  std::vector<uint32_t> separtor;
 };
 
 // NOTE: for current animation implementation,
@@ -183,6 +211,7 @@ struct Options {
   float lengthStiffness = 0.001;
   float compressionStiffness = 0.001;
   float stretchStiffness = 0.000;
+  float collisionStiffness = 0.001;
 };
 
 // NOTE: ssbo usage alignment
