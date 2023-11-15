@@ -1181,15 +1181,15 @@ void VgeExample::setupDynamicUbo() {
     uint32_t simulationIndex = 6;
     auto& simulationParticles = simulationsParticles[simulationIndex];
     size_t n = simulationParticles.size();
-    std::vector<float> masses{2.f, 2.f, 0.f, 0.f, 1.f};
+    std::vector<float> masses{2.f, 2.f, 0.f, 0.f, 1.0f};
     std::vector<glm::vec3> colors{
         glm::vec3{1.f, 1.f, 1.f}, glm::vec3{1.f, 1.f, 1.f},
         glm::vec3{1.f, 0.f, 0.f}, glm::vec3{1.f, 0.f, 0.f},
         glm::vec3{0.f, 0.f, 1.f}};
     std::vector<glm::vec3> positions{
         glm::vec3{2.f, -5.f, 0.f},  glm::vec3{8.f, -5.0f, 0.f},
-        glm::vec3{4.f, -4.8f, 0.f}, glm::vec3{6.f, -4.8f, 0.f},
-        glm::vec3{5.f, -9.f, 0.f},
+        glm::vec3{4.f, -4.7f, 0.f}, glm::vec3{6.f, -4.7f, 0.f},
+        glm::vec3{5.f, -5.5f, 0.f},
     };
     simulation7.restLength = glm::distance(positions[0], positions[1]);
     for (auto i = 0; i < n; i++) {
@@ -2842,23 +2842,12 @@ void VgeExample::simulate() {
         // point-edge distance constraint
         for (auto i = 2; i < n; i++) {
           glm::dvec3 corr{0.f}, corr0{0.f}, corr1{0.f};
-          if (i == 2 || i == 3) {
-            // NOTE: edge vertices order matters.
-            solveEdgePointCollisionConstraint(
-                simulationParticles[i].pos, simulationParticles[0].pos,
-                simulationParticles[1].pos, invMasses[i], invMasses[0],
-                invMasses[1], simulationParticles[i].pos.w /*rest dist*/,
-                opts.compressionStiffness, opts.stretchStiffness, corr, corr0,
-                corr1);
-          } else {
-            // NOTE: edge vertices order matters.
-            solveEdgePointCollisionConstraint(
-                simulationParticles[i].pos, simulationParticles[1].pos,
-                simulationParticles[0].pos, invMasses[i], invMasses[1],
-                invMasses[0], simulationParticles[i].pos.w /*rest dist*/,
-                opts.compressionStiffness, opts.stretchStiffness, corr, corr1,
-                corr0);
-          }
+          solveEdgePointCollisionConstraint(
+              simulationParticles[i].pos, simulationParticles[0].pos,
+              simulationParticles[1].pos, invMasses[i], invMasses[0],
+              invMasses[1], simulationParticles[i].pos.w + 0.1 /*rest dist*/,
+              opts.compressionStiffness, opts.stretchStiffness, corr, corr0,
+              corr1);
 
           simulationParticles[i].pos += glm::dvec4(corr, 0.f);
           simulationParticles[0].pos += glm::dvec4(corr0, 0.f);
