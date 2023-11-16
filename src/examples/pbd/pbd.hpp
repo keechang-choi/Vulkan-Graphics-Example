@@ -422,7 +422,9 @@ class VgeExample : public VgeBase {
     uint32_t numTotalVertices = 0;
     double avgEdgeLength = 0.0;
     std::unique_ptr<SpatialHash> spatialHash;
-    std::vector<const vge::SoftBody2D*> softBodies;
+    // raw ptrs without ownership
+    std::vector<vge::SoftBody2D*> softBodies;
+    std::vector<vge::ModelInstance*> softBodyInstances;
   } simulation6;
 
   // simulation7

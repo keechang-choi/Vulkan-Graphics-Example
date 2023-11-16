@@ -639,8 +639,12 @@ void VgeExample::loadAssets() {
       modelInstance.softBody2D = std::make_unique<SoftBody2D>(
           vertices, indices, transform, MAX_CONCURRENT_FRAMES,
           globalAllocator->getAllocator());
+      // NOTE: unique_ptr guarantees
+      // transferring owenership does not change the location
+      simulation6.softBodies.push_back(modelInstance.softBody2D.get());
       modelInstance.name = "softCircle" + std::to_string(i);
       addModelInstance(std::move(modelInstance));
+      simulation6.softBodyInstances.push_back(&modelInstances.back());
     }
     avgScale /= static_cast<double>(n);
     simulation6.avgEdgeLength = 0.0;
@@ -2678,13 +2682,10 @@ void VgeExample::simulate() {
       if (intersectionPt.has_value()) {
         size_t n = simulationsNumParticles[5];
         for (auto i = 0; i < n; i++) {
-          size_t instanceIndex =
-              findInstances("softCircle" + std::to_string(i))[0];
-          auto& modelInstance = modelInstances[instanceIndex];
+          auto& modelInstance = *simulation6.softBodyInstances[i];
           auto& softBody2D = modelInstance.softBody2D;
           // offset
-          glm::vec3 softBodyMousePos(
-              -modelInstances[instanceIndex].transform.translation);
+          glm::vec3 softBodyMousePos(-modelInstance.transform.translation);
           softBodyMousePos += intersectionPt.value();
           // intersection point calculation error makes non-zero z.
           softBodyMousePos.z = 0.f;
@@ -2704,27 +2705,21 @@ void VgeExample::simulate() {
           simulation6.mouseGrabBody = simulation6.mouseOverBody;
           if (simulation6.mouseGrabBody != -1) {
             // grab start
-            size_t instanceIndex = findInstances(
-                "softCircle" + std::to_string(simulation6.mouseGrabBody))[0];
-            auto& modelInstance = modelInstances[instanceIndex];
-            auto& softBody2D = modelInstance.softBody2D;
+            vge::SoftBody2D* softBody2D =
+                simulation6.softBodies[simulation6.mouseGrabBody];
             softBody2D->startGrab(simulation6.softBodyMouseData);
           }
         } else {
           // move
-          size_t instanceIndex = findInstances(
-              "softCircle" + std::to_string(simulation6.mouseGrabBody))[0];
-          auto& modelInstance = modelInstances[instanceIndex];
-          auto& softBody2D = modelInstance.softBody2D;
+          vge::SoftBody2D* softBody2D =
+              simulation6.softBodies[simulation6.mouseGrabBody];
           softBody2D->moveGrabbed(simulation6.softBodyMouseData);
         }
       } else {
         if (simulation6.mouseGrabBody != -1) {
           // grab end
-          size_t instanceIndex = findInstances(
-              "softCircle" + std::to_string(simulation6.mouseGrabBody))[0];
-          auto& modelInstance = modelInstances[instanceIndex];
-          auto& softBody2D = modelInstance.softBody2D;
+          vge::SoftBody2D* softBody2D =
+              simulation6.softBodies[simulation6.mouseGrabBody];
           softBody2D->endGrab(simulation6.softBodyMouseData, glm::vec3{0.f});
           simulation6.mouseGrabBody = -1;
         }
@@ -2737,17 +2732,11 @@ void VgeExample::simulate() {
       double sdt = animationTimer / static_cast<double>(opts.numSubsteps);
       for (auto step = 0; step < opts.numSubsteps; step++) {
         for (auto i = 0; i < n; i++) {
-          size_t instanceIndex =
-              findInstances("softCircle" + std::to_string(i))[0];
-          auto& modelInstance = modelInstances[instanceIndex];
-          auto& softBody2D = modelInstance.softBody2D;
+          vge::SoftBody2D* softBody2D = simulation6.softBodies[i];
           softBody2D->preSolve(sdt, gravity, simulation2DSceneScale);
         }
         for (auto i = 0; i < n; i++) {
-          size_t instanceIndex =
-              findInstances("softCircle" + std::to_string(i))[0];
-          auto& modelInstance = modelInstances[instanceIndex];
-          auto& softBody2D = modelInstance.softBody2D;
+          vge::SoftBody2D* softBody2D = simulation6.softBodies[i];
           softBody2D->solve(sdt, opts.edgeCompliance, opts.areaCompliance,
                             opts.collisionStiffness);
           softBody2D->updateAABBs();
@@ -2757,26 +2746,17 @@ void VgeExample::simulate() {
         // hash reset -> hash create -> for each tri, query
         simulation6.spatialHash->resetTable();
         for (auto i = 0; i < n; i++) {
-          size_t instanceIndex =
-              findInstances("softCircle" + std::to_string(i))[0];
-          auto& modelInstance = modelInstances[instanceIndex];
-          auto& softBody2D = modelInstance.softBody2D;
+          vge::SoftBody2D* softBody2D = simulation6.softBodies[i];
           simulation6.spatialHash->addPos(softBody2D->getPositions());
         }
         simulation6.spatialHash->createPartialSum();
         for (auto i = 0; i < n; i++) {
-          size_t instanceIndex =
-              findInstances("softCircle" + std::to_string(i))[0];
-          auto& modelInstance = modelInstances[instanceIndex];
-          auto& softBody2D = modelInstance.softBody2D;
+          vge::SoftBody2D* softBody2D = simulation6.softBodies[i];
           simulation6.spatialHash->addTableEntries(softBody2D->getPositions());
         }
         // solve tri-point collision constraint for each tri-point pair
         for (auto i = 0; i < n; i++) {
-          size_t instanceIndex =
-              findInstances("softCircle" + std::to_string(i))[0];
-          auto& modelInstance = modelInstances[instanceIndex];
-          auto& softBody2D = modelInstance.softBody2D;
+          vge::SoftBody2D* softBody2D = simulation6.softBodies[i];
           const auto& aabbs = softBody2D->getAABBs();
           for (auto triId = 0; triId < aabbs.size(); triId++) {
             std::vector<std::pair<uint32_t, uint32_t>> queryIds;
@@ -2785,10 +2765,8 @@ void VgeExample::simulate() {
               uint32_t objectIndex;
               uint32_t vIndex;
               std::tie(objectIndex, vIndex) = item;
-              size_t collisionInstanceIndex =
-                  findInstances("softCircle" + std::to_string(objectIndex))[0];
-              auto& collisionBody =
-                  modelInstances[collisionInstanceIndex].softBody2D;
+              vge::SoftBody2D* collisionBody =
+                  simulation6.softBodies[objectIndex];
               glm::dvec3 p(collisionBody->getPositions()[vIndex]);
               glm::dvec3 p0(
                   softBody2D->getPositions()[softBody2D->getTriVertexIndex(
@@ -2806,18 +2784,12 @@ void VgeExample::simulate() {
         }
 
         for (auto i = 0; i < n; i++) {
-          size_t instanceIndex =
-              findInstances("softCircle" + std::to_string(i))[0];
-          auto& modelInstance = modelInstances[instanceIndex];
-          auto& softBody2D = modelInstance.softBody2D;
+          vge::SoftBody2D* softBody2D = simulation6.softBodies[i];
           softBody2D->postSolve(sdt);
         }
       }
       for (auto i = 0; i < n; i++) {
-        size_t instanceIndex =
-            findInstances("softCircle" + std::to_string(i))[0];
-        auto& modelInstance = modelInstances[instanceIndex];
-        auto& softBody2D = modelInstance.softBody2D;
+        vge::SoftBody2D* softBody2D = simulation6.softBodies[i];
         softBody2D->updateBuffer(currentFrameIndex);
       }
     }
