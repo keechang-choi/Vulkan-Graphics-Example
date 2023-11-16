@@ -646,15 +646,20 @@ void VgeExample::loadAssets() {
       addModelInstance(std::move(modelInstance));
       simulation6.softBodyInstances.push_back(&modelInstances.back());
     }
+    // hash init at right after load soft bodies
     avgScale /= static_cast<double>(n);
     simulation6.avgEdgeLength = 0.0;
     for (auto i = 0; i < indices.size() / 3; i++) {
+      uint32_t id0 = indices[3 * i];
+      uint32_t id1 = indices[3 * i + 1];
+      uint32_t id2 = indices[3 * i + 2];
+
       simulation6.avgEdgeLength +=
-          glm::distance(vertices[3 * i].pos, vertices[3 * i + 1].pos);
+          glm::distance(vertices[id0].pos, vertices[id1].pos);
       simulation6.avgEdgeLength +=
-          glm::distance(vertices[3 * i + 1].pos, vertices[3 * i + 2].pos);
+          glm::distance(vertices[id1].pos, vertices[id2].pos);
       simulation6.avgEdgeLength +=
-          glm::distance(vertices[3 * i + 2].pos, vertices[3 * i].pos);
+          glm::distance(vertices[id2].pos, vertices[id0].pos);
     }
     simulation6.avgEdgeLength /= static_cast<double>(indices.size());
     simulation6.avgEdgeLength *= avgScale;
@@ -2741,8 +2746,7 @@ void VgeExample::simulate() {
                             opts.collisionStiffness);
           softBody2D->updateAABBs();
         }
-        // TODO: collision
-        // hash init at right after load soft bodies
+        // solve collision constraint
         // hash reset -> hash create -> for each tri, query
         simulation6.spatialHash->resetTable();
         for (auto i = 0; i < n; i++) {
