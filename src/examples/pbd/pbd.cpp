@@ -618,11 +618,12 @@ void VgeExample::loadAssets() {
 
     float rectScale = simulation2DSceneScale;
     int n = simulationsNumParticles[5];
+    double avgScale = 0.0;
     for (auto i = 0; i < n; i++) {
       float circleScale =
           (2.f + 2.f * static_cast<float>(i) / static_cast<float>(n)) *
           rectScale / 10.f / sqrt(static_cast<float>(n));
-
+      avgScale += circleScale;
       vgeu::TransformComponent transform;
       transform.translation =
           glm::vec3{std::clamp(rectScale * uniformDist(rndEngine), circleScale,
@@ -641,6 +642,21 @@ void VgeExample::loadAssets() {
       modelInstance.name = "softCircle" + std::to_string(i);
       addModelInstance(std::move(modelInstance));
     }
+    avgScale /= static_cast<double>(n);
+    simulation6.avgEdgeLength = 0.0;
+    for (auto i = 0; i < indices.size() / 3; i++) {
+      simulation6.avgEdgeLength +=
+          glm::distance(vertices[3 * i].pos, vertices[3 * i + 1].pos);
+      simulation6.avgEdgeLength +=
+          glm::distance(vertices[3 * i + 1].pos, vertices[3 * i + 2].pos);
+      simulation6.avgEdgeLength +=
+          glm::distance(vertices[3 * i + 2].pos, vertices[3 * i].pos);
+    }
+    simulation6.avgEdgeLength /= static_cast<double>(indices.size());
+    simulation6.avgEdgeLength *= avgScale;
+    simulation6.numTotalVertices = vertices.size() * n;
+    simulation6.spatialHash = std::make_unique<SpatialHash>(
+        simulation6.avgEdgeLength, simulation6.numTotalVertices);
   }
 
   std::shared_ptr<SimpleModel> quad = std::make_shared<SimpleModel>(
@@ -2739,7 +2755,56 @@ void VgeExample::simulate() {
         // TODO: collision
         // hash init at right after load soft bodies
         // hash reset -> hash create -> for each tri, query
+        simulation6.spatialHash->resetTable();
+        for (auto i = 0; i < n; i++) {
+          size_t instanceIndex =
+              findInstances("softCircle" + std::to_string(i))[0];
+          auto& modelInstance = modelInstances[instanceIndex];
+          auto& softBody2D = modelInstance.softBody2D;
+          simulation6.spatialHash->addPos(softBody2D->getPositions());
+        }
+        simulation6.spatialHash->createPartialSum();
+        for (auto i = 0; i < n; i++) {
+          size_t instanceIndex =
+              findInstances("softCircle" + std::to_string(i))[0];
+          auto& modelInstance = modelInstances[instanceIndex];
+          auto& softBody2D = modelInstance.softBody2D;
+          simulation6.spatialHash->addTableEntries(softBody2D->getPositions());
+        }
         // solve tri-point collision constraint for each tri-point pair
+        for (auto i = 0; i < n; i++) {
+          size_t instanceIndex =
+              findInstances("softCircle" + std::to_string(i))[0];
+          auto& modelInstance = modelInstances[instanceIndex];
+          auto& softBody2D = modelInstance.softBody2D;
+          const auto& aabbs = softBody2D->getAABBs();
+          for (auto triId = 0; triId < aabbs.size(); triId++) {
+            std::vector<std::pair<uint32_t, uint32_t>> queryIds;
+            simulation6.spatialHash->queryTri(aabbs[triId], queryIds);
+            for (const auto& item : queryIds) {
+              uint32_t objectIndex;
+              uint32_t vIndex;
+              std::tie(objectIndex, vIndex) = item;
+              size_t collisionInstanceIndex =
+                  findInstances("softCircle" + std::to_string(objectIndex))[0];
+              auto& collisionBody =
+                  modelInstances[collisionInstanceIndex].softBody2D;
+              glm::dvec3 p(collisionBody->getPositions()[vIndex]);
+              glm::dvec3 p0(
+                  softBody2D->getPositions()[softBody2D->getTriVertexIndex(
+                      triId, 0)]);
+              glm::dvec3 p1(
+                  softBody2D->getPositions()[softBody2D->getTriVertexIndex(
+                      triId, 1)]);
+              glm::dvec3 p2(
+                  softBody2D->getPositions()[softBody2D->getTriVertexIndex(
+                      triId, 2)]);
+              // TODO: intersection test or
+              // test in solve constraint using barycentric coords
+            }
+          }
+        }
+
         for (auto i = 0; i < n; i++) {
           size_t instanceIndex =
               findInstances("softCircle" + std::to_string(i))[0];
@@ -3425,25 +3490,86 @@ SpatialHash::SpatialHash(const double spacing, const uint32_t maxNumObjects)
       tableSize(2 * maxNumObjects),
       cellStart(tableSize + 1),
       cellEntries(maxNumObjects) {
-  cellIndex = 0;
+  separator.resize(0);
+  separator.push_back(0);
+  objectIndex = 0;
 }
 
 void SpatialHash::resetTable() {
-  cellIndex = 0;
-  separtor.resize(1);
-}
-void SpatialHash::addPos(const std::vector<glm::dvec3>& pos) {}
-void SpatialHash::createTable() {}
-void SpatialHash::queryTri(
-    const glm::dvec4 aabb,
-    std::vector<std::pair<uint32_t, uint32_t>>& queryIds) {
-  // aabb-> cellCoords -> hash -> start, end
-  // -> convert to object, index pair by binary search
+  separator.resize(0);
+  separator.push_back(0);
+  objectIndex = 0;
+  for (auto i = 0; i < cellStart.size(); i++) {
+    cellStart[i] = 0;
+  }
 }
 
-uint32_t SpatialHash::hashCellIndex(const int xi, const int yi, const int zi) {}
-int SpatialHash::cellIndex(const double coord) {}
-uint32_t SpatialHash::hashPos(const glm::dvec3 pos) {}
+void SpatialHash::addPos(const std::vector<glm::dvec3>& positions) {
+  for (const auto& pos : positions) {
+    uint32_t h = hashPos(pos);
+    cellStart[h]++;
+  }
+  separator.push_back(separator.back() + positions.size());
+}
+
+void SpatialHash::createPartialSum() {
+  uint32_t start = 0;
+  for (auto i = 0; i < tableSize; i++) {
+    start += cellStart[i];
+    cellStart[i] = start;
+  }
+  cellStart[tableSize] = start;
+}
+
+void SpatialHash::addTableEntries(const std::vector<glm::dvec3>& positions) {
+  for (auto i = 0; i < positions.size(); i++) {
+    const auto& pos = positions[i];
+    uint32_t h = hashPos(pos);
+    cellStart[h]--;
+    cellEntries[cellStart[h]] = std::make_pair(objectIndex, i);
+  }
+  objectIndex++;
+}
+
+void SpatialHash::queryTri(
+    const glm::dvec4& aabb,
+    std::vector<std::pair<uint32_t, uint32_t>>& queryIds) {
+  queryIds.resize(0);
+  // aabb-> cellCoords -> hash -> start, end
+  // -> convert to object, index pair by binary search
+  int x0 = discreteCoord(aabb.x);
+  int x1 = discreteCoord(aabb.y);
+  int y0 = discreteCoord(aabb.z);
+  int y1 = discreteCoord(aabb.w);
+  int z0 = 0;
+  int z1 = 0;
+  for (auto xi = x0; xi <= x1; xi++) {
+    for (auto yi = y0; yi <= y1; yi++) {
+      for (auto zi = z0; zi <= z1; zi++) {
+        uint32_t h = hashDiscreteCoords(xi, yi, zi);
+        uint32_t start = cellStart[h];
+        uint32_t end = cellStart[h + 1];
+        for (auto i = start; i < end; i++) {
+          queryIds.push_back(cellEntries[i]);
+        }
+      }
+    }
+  }
+}
+
+uint32_t SpatialHash::hashDiscreteCoords(const int xi, const int yi,
+                                         const int zi) {
+  size_t seed = 0;
+  vgeu::hashCombine(seed, xi, yi, zi);
+  return static_cast<uint32_t>(seed) % tableSize;
+}
+int SpatialHash::discreteCoord(const double coord) {
+  return static_cast<int>(std::floor(coord / spacing));
+}
+uint32_t SpatialHash::hashPos(const glm::dvec3& pos) {
+  return hashDiscreteCoords(discreteCoord(pos.x), discreteCoord(pos.y),
+                            discreteCoord(pos.z));
+}
 
 }  // namespace vge
 

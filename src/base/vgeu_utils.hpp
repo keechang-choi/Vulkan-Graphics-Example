@@ -25,7 +25,16 @@ https://github.com/KhronosGroup/Vulkan-Hpp
 #include <vector>
 
 namespace vgeu {
-// initVulkan - device
+// from: https://stackoverflow.com/a/57595105
+template <typename T, typename... Rest>
+void hashCombine(std::size_t& seed, const T& v, const Rest&... rest) {
+  if constexpr (sizeof(size_t) >= 8) {
+    seed ^= std::hash<T>{}(v) + 0x9e3779b97f4a7c15 + (seed << 6) + (seed >> 2);
+  } else {
+    seed ^= std::hash<T>{}(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+  }
+  (hashCombine(seed, rest), ...);
+};
 
 const std::vector<const char*> validationLayers = {
     "VK_LAYER_KHRONOS_validation"};

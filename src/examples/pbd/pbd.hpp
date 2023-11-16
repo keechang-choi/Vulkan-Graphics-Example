@@ -79,6 +79,16 @@ class SoftBody2D {
   void endGrab(const glm::dvec3 mousePos, const glm::dvec3 mouseVel);
   glm::dvec4 getBoundingCircle() { return glm::dvec4(pos[0], radius); }
   void updateAABBs();
+  const std::vector<glm::dvec3>& getPositions() { return pos; };
+  const std::vector<glm::dvec4>& getAABBs() { return aabbs; };
+  // assert(vId < 3)
+  uint32_t getTriVertexIndex(uint32_t triId, uint32_t vId) {
+    return triIds[triId * 3 + vId];
+  };
+
+  void correctPos(const glm::dvec3& corr, uint32_t index) {
+    pos[index] = corr;
+  };
 
  private:
   double getTriArea(uint32_t triId);
@@ -117,24 +127,28 @@ class SpatialHash {
  public:
   SpatialHash(const double spacing, const uint32_t maxNumObjects);
   void resetTable();
-  void addPos(const std::vector<glm::dvec3>& pos);
-  void createTable();
+  // same adding order to addTableEntries()
+  void addPos(const std::vector<glm::dvec3>& positions);
+  void createPartialSum();
+  // same adding order to addPos()
+  void addTableEntries(const std::vector<glm::dvec3>& positions);
   void query(const glm::dvec3 pos, int maxCellDistance,
              std::vector<std::pair<uint32_t, uint32_t>>& queryIds);
-  void queryTri(const glm::dvec4 aabb,
+  void queryTri(const glm::dvec4& aabb,
                 std::vector<std::pair<uint32_t, uint32_t>>& queryIds);
 
  private:
-  uint32_t hashCellIndex(const int xi, const int yi, const int zi);
-  int cellIndex(const double coord);
-  uint32_t hashPos(const glm::dvec3 pos);
+  uint32_t hashDiscreteCoords(const int xi, const int yi, const int zi);
+  int discreteCoord(const double coord);
+  uint32_t hashPos(const glm::dvec3& pos);
 
   double spacing;
   uint32_t tableSize;
   std::vector<uint32_t> cellStart;
-  std::vector<uint32_t> cellEntries;
-  uint32_t cellIndex;
-  std::vector<uint32_t> separtor;
+  // object index, particle index
+  std::vector<std::pair<uint32_t, uint32_t>> cellEntries;
+  std::vector<uint32_t> separator;
+  uint32_t objectIndex;
 };
 
 // NOTE: for current animation implementation,
@@ -405,6 +419,10 @@ class VgeExample : public VgeBase {
     int mouseOverBody = -1;
     // softBody mouse pos and additional state
     glm::vec4 softBodyMouseData;
+    uint32_t numTotalVertices = 0;
+    double avgEdgeLength = 0.0;
+    std::unique_ptr<SpatialHash> spatialHash;
+    std::vector<const vge::SoftBody2D*> softBodies;
   } simulation6;
 
   // simulation7
