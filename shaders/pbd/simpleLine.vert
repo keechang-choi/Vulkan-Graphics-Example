@@ -28,10 +28,10 @@ layout (location = 0) out vec4 outColor;
 
 void main() 
 {
-	if(modelUbo.modelColor.a == 2.0){
-		outColor = vec4(1.0, 1.0, 1.0, 1.0);
-	}else if(modelUbo.modelColor.a == 3.0){
+	if(modelUbo.modelColor.a >= 3.0){
 		outColor = vec4(1.0, 0.0, 0.0, 1.0);
+	}else if(modelUbo.modelColor.a >= 2.0){
+		outColor = vec4(1.0, 1.0, 1.0, 1.0);
 	}else{
 		outColor = inColor;
 	}

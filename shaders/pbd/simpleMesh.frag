@@ -20,7 +20,9 @@ const float checkBoardSize = 0.05;
 void main() 
 {
 	float modelColorAlpha = modelUbo.modelColor.a;
-	modelColorAlpha = clamp(modelColorAlpha, 0.0, 1.0);
+	if(modelColorAlpha>1.0){
+		modelColorAlpha = mod(modelColorAlpha, 1.0);
+	}
 	vec3 color = mix(inColor.xyz, modelUbo.modelColor.xyz, modelColorAlpha);
 
 	// High ambient colors because mesh materials are pretty dark

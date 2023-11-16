@@ -88,8 +88,8 @@ void VgeExample::initVulkan() {
   cameraController.moveSpeed = opts.moveSpeed;
   // camera setup
   if (glm::isIdentity(opts.cameraView, 1e-6f)) {
-    camera.setViewTarget(glm::vec3{40.f, -20.f, -20.f},
-                         glm::vec3{40.f, -10.f, 0.f});
+    camera.setViewTarget(glm::vec3{50.f, -20.f, -20.f},
+                         glm::vec3{50.f, -10.f, 0.f});
   } else {
     camera.setViewMatrix(opts.cameraView);
   }
@@ -1194,11 +1194,12 @@ void VgeExample::setupDynamicUbo() {
       // coordinate offset only
       modelInstances[instanceIndex].transform.translation =
           glm::vec3{+quadScale + 3.f * rectScale, -rectScale, 0.f};
-      // NOTE: 2.0 as alpha -> white wire, 3.0 -> red wire
+      // NOTE: alpha>= 2.0 -> white wire, >=3.0 -> red wire
+      // using 0.9999 instead of 1.0
       dynamicUbo[instanceIndex].modelColor = glm::vec4{
           static_cast<float>(i) / static_cast<float>(n),
           0.5f + 0.5 * (static_cast<float>(i) / static_cast<float>(n)), 0.5f,
-          2.f};
+          0.5f};
     }
   }
 
@@ -1492,6 +1493,14 @@ void VgeExample::render() {
     animationTime += frameTimer;
   }
   simulate();
+  {
+    // TODO: make new simulation update function
+    size_t n = simulationsNumParticles[5];
+    for (auto i = 0; i < n; i++) {
+      vge::SoftBody2D* softBody2D = simulation6.softBodies[i];
+      softBody2D->updateBuffer(currentFrameIndex);
+    }
+  }
   draw();
   animationLastTime = animationTime;
 }
@@ -2024,9 +2033,13 @@ void VgeExample::updateDynamicUbo() {
       auto& modelInstance = modelInstances[instanceIndex];
       auto& softBody2D = modelInstance.softBody2D;
       if (i == simulation6.mouseOverBody) {
-        dynamicUbo[instanceIndex].modelColor.a = 3.f;
+        float intpart;
+        dynamicUbo[instanceIndex].modelColor.a =
+            3.f + std::modf(dynamicUbo[instanceIndex].modelColor.a, &intpart);
       } else {
-        dynamicUbo[instanceIndex].modelColor.a = 2.f;
+        float intpart;
+        dynamicUbo[instanceIndex].modelColor.a =
+            2.f + std::modf(dynamicUbo[instanceIndex].modelColor.a, &intpart);
       }
       dynamicUbo[instanceIndex].modelMatrix = glm::translate(
           glm::mat4{1.f}, modelInstances[instanceIndex].transform.translation);
@@ -2758,6 +2771,19 @@ void VgeExample::simulate() {
           vge::SoftBody2D* softBody2D = simulation6.softBodies[i];
           simulation6.spatialHash->addTableEntries(softBody2D->getPositions());
         }
+        // use color for collision detection check visualization
+        for (auto i = 0; i < n; i++) {
+          vge::SoftBody2D* softBody2D = simulation6.softBodies[i];
+          const auto& aabbs = softBody2D->getAABBs();
+          for (auto triId = 0; triId < aabbs.size(); triId++) {
+            uint32_t vIndex0 = softBody2D->getTriVertexIndex(triId, 0);
+            uint32_t vIndex1 = softBody2D->getTriVertexIndex(triId, 1);
+            uint32_t vIndex2 = softBody2D->getTriVertexIndex(triId, 2);
+            softBody2D->setColor({1.f, 1.f, 1.f, 1.f}, vIndex0);
+            softBody2D->setColor({1.f, 1.f, 1.f, 1.f}, vIndex1);
+            softBody2D->setColor({1.f, 1.f, 1.f, 1.f}, vIndex2);
+          }
+        }
         // solve tri-point collision constraint for each tri-point pair
         for (auto i = 0; i < n; i++) {
           vge::SoftBody2D* softBody2D = simulation6.softBodies[i];
@@ -2765,24 +2791,45 @@ void VgeExample::simulate() {
           for (auto triId = 0; triId < aabbs.size(); triId++) {
             std::vector<std::pair<uint32_t, uint32_t>> queryIds;
             simulation6.spatialHash->queryTri(aabbs[triId], queryIds);
+            uint32_t vIndex0 = softBody2D->getTriVertexIndex(triId, 0);
+            uint32_t vIndex1 = softBody2D->getTriVertexIndex(triId, 1);
+            uint32_t vIndex2 = softBody2D->getTriVertexIndex(triId, 2);
+            glm::dvec3 p0(softBody2D->getPositions()[vIndex0]);
+            glm::dvec3 p1(softBody2D->getPositions()[vIndex1]);
+            glm::dvec3 p2(softBody2D->getPositions()[vIndex2]);
+            double invMass0 = softBody2D->getInvMasses()[vIndex0];
+            double invMass1 = softBody2D->getInvMasses()[vIndex1];
+            double invMass2 = softBody2D->getInvMasses()[vIndex2];
             for (const auto& item : queryIds) {
               uint32_t objectIndex;
               uint32_t vIndex;
               std::tie(objectIndex, vIndex) = item;
+              if (objectIndex == i) {
+                if (vIndex == vIndex0 || vIndex == vIndex1 ||
+                    vIndex == vIndex2) {
+                  continue;
+                }
+              }
               vge::SoftBody2D* collisionBody =
                   simulation6.softBodies[objectIndex];
               glm::dvec3 p(collisionBody->getPositions()[vIndex]);
-              glm::dvec3 p0(
-                  softBody2D->getPositions()[softBody2D->getTriVertexIndex(
-                      triId, 0)]);
-              glm::dvec3 p1(
-                  softBody2D->getPositions()[softBody2D->getTriVertexIndex(
-                      triId, 1)]);
-              glm::dvec3 p2(
-                  softBody2D->getPositions()[softBody2D->getTriVertexIndex(
-                      triId, 2)]);
               // TODO: intersection test or
               // test in solve constraint using barycentric coords
+              double invMass = collisionBody->getInvMasses()[vIndex];
+
+              glm::dvec3 corr, corr0, corr1, corr2;
+              if (solveTrianglePointCollisionConstraint(
+                      p, p0, p1, p2, invMass, invMass0, invMass1, invMass2, 0.0,
+                      opts.collisionStiffness, corr, corr0, corr1, corr2)) {
+                // collisionBody->correctPos(corr, vIndex);
+                // softBody2D->correctPos(corr0, vIndex0);
+                // softBody2D->correctPos(corr1, vIndex1);
+                // softBody2D->correctPos(corr2, vIndex2);
+                // collisionBody->setColor({0.f, 0.f, 1.f, 1.f}, vIndex);
+                softBody2D->setColor({1.f, 0.f, 0.f, 1.f}, vIndex0);
+                softBody2D->setColor({1.f, 0.f, 0.f, 1.f}, vIndex1);
+                softBody2D->setColor({1.f, 0.f, 0.f, 1.f}, vIndex2);
+              }
             }
           }
         }
@@ -2792,10 +2839,7 @@ void VgeExample::simulate() {
           softBody2D->postSolve(sdt);
         }
       }
-      for (auto i = 0; i < n; i++) {
-        vge::SoftBody2D* softBody2D = simulation6.softBodies[i];
-        softBody2D->updateBuffer(currentFrameIndex);
-      }
+      // update buffer moved into render()
     }
   }
   if (opts.enableSimulation[6]) {
@@ -3070,6 +3114,98 @@ bool VgeExample::solveEdgePointCollisionConstraint(
   corr = -s * invMass * grad;
   corr0 = -s * invMass0 * grad0;
   corr1 = -s * invMass1 * grad1;
+  return true;
+}
+
+bool VgeExample::solveTrianglePointCollisionConstraint(
+    const glm::dvec3 p, const glm::dvec3 p0, const glm::dvec3 p1,
+    const glm::dvec3 p2, const double invMass, const double invMass0,
+    const double invMass1, const double invMass2, const double restDist,
+    const double compressionStiffness, glm::dvec3& corr, glm::dvec3& corr0,
+    glm::dvec3& corr1, glm::dvec3& corr2) {
+  glm::dvec3 lambda{1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0};
+  glm::dvec3 e0(p1 - p0);
+  glm::dvec3 e1(p2 - p1);
+  glm::dvec3 e2(p0 - p2);
+  glm::dmat2 barycentricMat(e0 /*p1 - p0*/, -e2 /*p2 - p0*/);
+  double det = glm::determinant(barycentricMat);
+  if (det == 0.0) {
+    // collapsed triangle
+    return false;
+  }
+  glm::dvec2 lambda12 = glm::inverse(barycentricMat) * glm::dvec2(p - p0);
+  lambda[1] = lambda12[0];
+  lambda[2] = lambda12[1];
+  lambda[0] = 1.0 - lambda[1] - lambda[2];
+  if (glm::any(glm::lessThanEqual(lambda, glm::dvec3(0.f)))) {
+    // p located outside triangle
+    return false;
+  }
+
+  glm::dvec3 axis{0.0, 0.0, 1.0};
+  glm::dvec3 n;
+  glm::dvec3 d;
+  glm::dvec3 pTriangle;
+  double dist;
+  glm::dvec3 b{0.0};
+
+  // edge directional normal?
+  double h0 = lambda[0] / glm::length(e0);
+  double h1 = lambda[1] / glm::length(e1);
+  double h2 = lambda[2] / glm::length(e2);
+  int edgeIndex;
+  if (h0 > h1 && h0 > h2) {
+    edgeIndex = 1;
+    d = e1;
+    pTriangle = p1;
+  } else if (h1 > h0 && h1 > h2) {
+    edgeIndex = 2;
+    d = e2;
+    pTriangle = p2;
+  } else {
+    edgeIndex = 0;
+    d = e0;
+    pTriangle = p0;
+  }
+  double t;
+  double d2 = glm::length2(d);
+  if (d2 >= 1e-12) {
+    t = glm::dot(d, p - pTriangle) / d2;
+    if (t < 0.0 || t > 1.0) return false;
+  }
+  glm::dvec3 q = pTriangle + d * t;
+  n = glm::cross(axis, glm::normalize(d));
+  dist = glm::dot(n, p - q);
+  if (edgeIndex == 0) {
+    b[0] = 1.0 - t;
+    b[1] = t;
+  } else if (edgeIndex == 1) {
+    b[1] = 1.0 - t;
+    b[2] = t;
+  } else {
+    b[2] = 1.0 - t;
+    b[0] = t;
+  }
+  double C = dist - restDist;
+
+  glm::dvec3 grad = n;
+  glm::dvec3 grad0 = -n * b[0];
+  glm::dvec3 grad1 = -n * b[1];
+  glm::dvec3 grad2 = -n * b[2];
+
+  double s = invMass + invMass0 * b[0] * b[0] + invMass1 * b[1] * b[1] +
+             invMass2 * b[2] * b[2];
+  if (s == 0.0) return false;
+
+  s = C / s;
+  s *= compressionStiffness;
+
+  if (s == 0.0) return false;
+
+  corr = -s * invMass * grad;
+  corr0 = -s * invMass0 * grad0;
+  corr1 = -s * invMass1 * grad1;
+  corr2 = -s * invMass2 * grad2;
   return true;
 }
 
@@ -3445,9 +3581,9 @@ void SoftBody2D::endGrab(const glm::dvec3 mousePos, const glm::dvec3 mouseVel) {
 void SoftBody2D::updateAABBs() {
   for (auto i = 0; i < numTris; i++) {
     double xMin = std::numeric_limits<double>::max();
-    double xMax = std::numeric_limits<double>::min();
+    double xMax = std::numeric_limits<double>::lowest();
     double yMin = std::numeric_limits<double>::max();
-    double yMax = std::numeric_limits<double>::min();
+    double yMax = std::numeric_limits<double>::lowest();
 
     for (auto j = 0; j < 3; j++) {
       xMin = std::min(pos[triIds[i * 3 + j]].x, xMin);

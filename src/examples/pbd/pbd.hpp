@@ -80,15 +80,17 @@ class SoftBody2D {
   glm::dvec4 getBoundingCircle() { return glm::dvec4(pos[0], radius); }
   void updateAABBs();
   const std::vector<glm::dvec3>& getPositions() { return pos; };
+  const std::vector<double>& getInvMasses() { return invMasses; };
   const std::vector<glm::dvec4>& getAABBs() { return aabbs; };
   // assert(vId < 3)
   uint32_t getTriVertexIndex(uint32_t triId, uint32_t vId) {
     return triIds[triId * 3 + vId];
   };
 
-  void correctPos(const glm::dvec3& corr, uint32_t index) {
-    pos[index] = corr;
-  };
+  void correctPos(const glm::dvec3 corr, uint32_t index) { pos[index] = corr; };
+  void setColor(const glm::vec4 color, uint32_t index) {
+    vertices[index].color = color;
+  }
 
  private:
   double getTriArea(uint32_t triId);
@@ -292,6 +294,13 @@ class VgeExample : public VgeBase {
       const double restDist, const double compressionStiffness,
       const double stretchStiffness, glm::dvec3& corr, glm::dvec3& corr0,
       glm::dvec3& corr1);
+
+  bool solveTrianglePointCollisionConstraint(
+      const glm::dvec3 p, const glm::dvec3 p0, const glm::dvec3 p1,
+      const glm::dvec3 p2, const double invMass, const double invMass0,
+      const double invMass1, const double invMass2, const double restDist,
+      const double compressionStiffness, glm::dvec3& corr, glm::dvec3& corr0,
+      glm::dvec3& corr1, glm::dvec3& corr2);
 
   struct {
     uint32_t queueFamilyIndex;
