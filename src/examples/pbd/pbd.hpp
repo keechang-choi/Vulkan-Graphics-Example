@@ -227,7 +227,7 @@ struct Options {
   float lengthStiffness = 0.001;
   float compressionStiffness = 0.001;
   float stretchStiffness = 0.000;
-  float collisionStiffness = 0.001;
+  float collisionStiffness = 0.01;
 };
 
 // NOTE: ssbo usage alignment
@@ -419,7 +419,7 @@ class VgeExample : public VgeBase {
   // sim index x particle nums
   std::unordered_map<int, std::vector<Particle>> simulationsParticles;
   float simulation2DSceneScale = 10.f;
-  std::vector<uint32_t> simulationsNumParticles{10, 50, 5, 2, 8, 1, 5};
+  std::vector<uint32_t> simulationsNumParticles{10, 50, 5, 2, 8, 2, 5};
   const std::vector<uint32_t> kSimulationsMinNumParticles{1, 1, 1, 2, 6, 1, 5};
   const std::vector<uint32_t> kSimulationsMaxNumParticles{20,  1000, 30, 2,
                                                           105, 1024, 5};

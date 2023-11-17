@@ -631,7 +631,8 @@ void VgeExample::loadAssets() {
                     std::clamp(-rectScale * uniformDist(rndEngine),
                                -rectScale + circleScale, -circleScale),
                     0.f};
-      transform.rotation = glm::vec3{-glm::half_pi<float>(), 0.f, 0.f};
+      // NOTE: ccw triangle
+      transform.rotation = glm::vec3{glm::half_pi<float>(), 0.f, 0.f};
       // NOTE: consider axis direction for cross product
       transform.scale = glm::vec3{circleScale, +circleScale, circleScale};
 
@@ -2821,14 +2822,14 @@ void VgeExample::simulate() {
               if (solveTrianglePointCollisionConstraint(
                       p, p0, p1, p2, invMass, invMass0, invMass1, invMass2, 0.0,
                       opts.collisionStiffness, corr, corr0, corr1, corr2)) {
-                // collisionBody->correctPos(corr, vIndex);
-                // softBody2D->correctPos(corr0, vIndex0);
-                // softBody2D->correctPos(corr1, vIndex1);
-                // softBody2D->correctPos(corr2, vIndex2);
                 // collisionBody->setColor({0.f, 0.f, 1.f, 1.f}, vIndex);
                 softBody2D->setColor({1.f, 0.f, 0.f, 1.f}, vIndex0);
                 softBody2D->setColor({1.f, 0.f, 0.f, 1.f}, vIndex1);
                 softBody2D->setColor({1.f, 0.f, 0.f, 1.f}, vIndex2);
+                collisionBody->correctPos(p + corr, vIndex);
+                softBody2D->correctPos(p0 + corr0, vIndex0);
+                softBody2D->correctPos(p1 + corr1, vIndex1);
+                softBody2D->correctPos(p2 + corr2, vIndex2);
               }
             }
           }
@@ -3154,11 +3155,12 @@ bool VgeExample::solveTrianglePointCollisionConstraint(
   double h1 = lambda[1] / glm::length(e1);
   double h2 = lambda[2] / glm::length(e2);
   int edgeIndex;
-  if (h0 > h1 && h0 > h2) {
+  // closest edge
+  if (h0 < h1 && h0 < h2) {
     edgeIndex = 1;
     d = e1;
     pTriangle = p1;
-  } else if (h1 > h0 && h1 > h2) {
+  } else if (h1 < h0 && h1 < h2) {
     edgeIndex = 2;
     d = e2;
     pTriangle = p2;
@@ -3174,7 +3176,7 @@ bool VgeExample::solveTrianglePointCollisionConstraint(
     if (t < 0.0 || t > 1.0) return false;
   }
   glm::dvec3 q = pTriangle + d * t;
-  n = glm::cross(axis, glm::normalize(d));
+  n = glm::normalize(glm::cross(d, axis));
   dist = glm::dot(n, p - q);
   if (edgeIndex == 0) {
     b[0] = 1.0 - t;
@@ -3414,7 +3416,7 @@ double SoftBody2D::getTriArea(uint32_t triId) {
 
   glm::dvec3 v0(pos[id1] - pos[id0]);
   glm::dvec3 v1(pos[id2] - pos[id0]);
-  glm::dvec3 e{0.f, 0.f, 1.f};
+  glm::dvec3 e{0.f, 0.f, -1.f};
   double area = 0.5f * glm::dot(glm::cross(v0, v1), e);
   // assert(area != 0.0);
   return area;
@@ -3514,7 +3516,7 @@ void SoftBody2D::solveAreas(const double dt, const double compliance) {
   double alpha = compliance / dt / dt;
   // TODO: check alpha value and increase precision to double.
   // TODO: plot area against compliance to check compliance
-  glm::dvec3 e3{0.f, 0.f, 1.f};
+  glm::dvec3 e3{0.f, 0.f, -1.f};
   std::vector<glm::dvec3> grads(3);
   for (auto i = 0; i < numTris; i++) {
     double w = 0.f;
