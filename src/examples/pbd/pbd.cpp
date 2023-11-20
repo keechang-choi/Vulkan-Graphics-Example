@@ -587,20 +587,24 @@ void VgeExample::loadAssets() {
     addModelInstance(std::move(modelInstance));
   }
 
+  // NOTE: facing +z ccw
   std::shared_ptr<SimpleModel> centerCircle = std::make_shared<SimpleModel>(
       device, globalAllocator->getAllocator(), queue, commandPool);
   centerCircle->setNgon(6, {1.0f, 1.0f, 1.0f, 1.f}, true);
 
   // softBody2d
   {
-    std::vector<vgeu::glTF::Vertex> modelVertices;
-    std::vector<uint32_t> indices;
-    vgeu::glTF::Model circleExtraPoints(device, globalAllocator->getAllocator(),
-                                        queue, commandPool,
-                                        MAX_CONCURRENT_FRAMES);
-    circleExtraPoints.loadFromFile(
-        getAssetsPath() + "/models/circleExtraInnerPoints2.gltf",
-        glTFLoadingFlags, 1.f, &modelVertices, &indices);
+    //   std::vector<vgeu::glTF::Vertex> modelVertices;
+    //   std::vector<uint32_t> indices;
+    //   vgeu::glTF::Model circleExtraPoints(device,
+    //   globalAllocator->getAllocator(),
+    //                                       queue, commandPool,
+    //                                       MAX_CONCURRENT_FRAMES);
+    //   circleExtraPoints.loadFromFile(
+    //       getAssetsPath() + "/models/circleExtraInnerPoints2.gltf",
+    //       glTFLoadingFlags, 1.f, &modelVertices, &indices);
+    std::vector<SimpleModel::Vertex> modelVertices(centerCircle->vertices);
+    std::vector<uint32_t> indices(centerCircle->indices);
 
     std::vector<SimpleModel::Vertex> vertices(modelVertices.size());
     for (auto i = 0; i < modelVertices.size(); i++) {
@@ -628,11 +632,14 @@ void VgeExample::loadAssets() {
       transform.translation =
           glm::vec3{std::clamp(rectScale * uniformDist(rndEngine), circleScale,
                                rectScale - circleScale),
-                    std::clamp(-rectScale * uniformDist(rndEngine),
-                               -rectScale + circleScale, -circleScale),
-                    0.f};
+                    /*std::clamp(-rectScale * uniformDist(rndEngine),
+                               -rectScale + circleScale, -circleScale)*/
+                    -circleScale * 2.f * (i + 0.5f), 0.f};
       // NOTE: ccw triangle
-      transform.rotation = glm::vec3{glm::half_pi<float>(), 0.f, 0.f};
+      // for blender loaded model
+      // transform.rotation = glm::vec3{glm::half_pi<float>(), 0.f, 0.f};
+      // for created simple model
+      transform.rotation = glm::vec3{glm::pi<float>(), 0.f, 0.f};
       // NOTE: consider axis direction for cross product
       transform.scale = glm::vec3{circleScale, +circleScale, circleScale};
 
@@ -2860,19 +2867,22 @@ void VgeExample::simulate() {
       simulation7.mouseOverBody = -1;
       float radius = simulationParticles[i].pos.w;
       glm::vec3 center(simulationParticles[i].pos);
-      size_t instanceIndex =
-          findInstances("circle" + std::to_string(simulationIndex + 1) + "-" +
-                        std::to_string(i))[0];
-      auto& modelInstance = modelInstances[instanceIndex];
-      // offset
-      simulation7.circleMousePos =
-          -modelInstances[instanceIndex].transform.translation;
-      simulation7.circleMousePos += intersectionPt.value();
-      simulation7.circleMousePos.z = 0.f;
 
-      float d2 = glm::distance2(center, simulation7.circleMousePos);
-      if (d2 <= radius * radius) {
-        simulation7.mouseOverBody = i;
+      if (intersectionPt.has_value()) {
+        size_t instanceIndex =
+            findInstances("circle" + std::to_string(simulationIndex + 1) + "-" +
+                          std::to_string(i))[0];
+        auto& modelInstance = modelInstances[instanceIndex];
+        // offset
+        simulation7.circleMousePos =
+            -modelInstances[instanceIndex].transform.translation;
+        simulation7.circleMousePos += intersectionPt.value();
+        simulation7.circleMousePos.z = 0.f;
+
+        float d2 = glm::distance2(center, simulation7.circleMousePos);
+        if (d2 <= radius * radius) {
+          simulation7.mouseOverBody = i;
+        }
       }
       if (mouseData.left) {
         if (simulation7.mouseGrabBody == -1) {
@@ -3469,10 +3479,10 @@ void SoftBody2D::preSolve(const double dt, const glm::dvec3 gravity,
       correctedPos.y = 0.f;
       pos[i] = correctedPos;
     }
-    if (pos[i].y < -rectScale) {
-      correctedPos.y = -rectScale;
-      pos[i] = correctedPos;
-    }
+    // if (pos[i].y < -rectScale) {
+    //   correctedPos.y = -rectScale;
+    //   pos[i] = correctedPos;
+    // }
     if (pos[i].x < 0.f) {
       correctedPos.x = 0.f;
       pos[i] = correctedPos;
