@@ -298,7 +298,7 @@ class VgeExample : public VgeBase {
       const double stretchStiffness, glm::dvec3& corr, glm::dvec3& corr0,
       glm::dvec3& corr1);
 
-  bool solveTrianglePointCollisionConstraint(
+  bool solveTrianglePointDistanceConstraint(
       const glm::dvec3 p, const glm::dvec3 p0, const glm::dvec3 p1,
       const glm::dvec3 p2, const double invMass, const double invMass0,
       const double invMass1, const double invMass2, const double restDist,
@@ -308,6 +308,12 @@ class VgeExample : public VgeBase {
   bool checkLineIntersection2D(const glm::dvec2 p0, const glm::dvec2 p1,
                                const glm::dvec2 p2, const glm::dvec2 p3,
                                glm::dvec2& intersectionPt);
+
+  bool solveEdgePointCollisionConstraint(
+      const glm::dvec3 p, const glm::dvec3 p0, const glm::dvec3 p1,
+      const double invMass, const double invMass0, const double invMass1,
+      const glm::dvec3 q, glm::dvec3& corr, glm::dvec3& corr0,
+      glm::dvec3& corr1);
 
   struct {
     uint32_t queueFamilyIndex;

@@ -594,25 +594,27 @@ void VgeExample::loadAssets() {
 
   // softBody2d
   {
-    //   std::vector<vgeu::glTF::Vertex> modelVertices;
-    //   std::vector<uint32_t> indices;
-    //   vgeu::glTF::Model circleExtraPoints(device,
-    //   globalAllocator->getAllocator(),
-    //                                       queue, commandPool,
-    //                                       MAX_CONCURRENT_FRAMES);
-    //   circleExtraPoints.loadFromFile(
-    //       getAssetsPath() + "/models/circleExtraInnerPoints2.gltf",
-    //       glTFLoadingFlags, 1.f, &modelVertices, &indices);
-    // std::vector<uint32_t> surfaceIndices{
-    //     53, 64, 64, 63, 63, 62, 62, 61, 61, 57, 57, 59, 59, 52, 52, 51,
-    //     51, 50, 50, 60, 60, 55, 55, 54, 54, 49, 49, 58, 58, 56, 53};
-    std::vector<SimpleModel::Vertex> modelVertices(centerCircle->vertices);
-    std::vector<uint32_t> indices(centerCircle->indices);
-    std::vector<uint32_t> surfaceIndices;
-    for (auto i = 1; i < centerCircle->vertices.size(); i++) {
-      surfaceIndices.push_back(i);
-      surfaceIndices.push_back((i + 1) % centerCircle->vertices.size());
-    }
+    std::vector<vgeu::glTF::Vertex> modelVertices;
+    std::vector<uint32_t> indices;
+    vgeu::glTF::Model circleExtraPoints(device, globalAllocator->getAllocator(),
+                                        queue, commandPool,
+                                        MAX_CONCURRENT_FRAMES);
+    circleExtraPoints.loadFromFile(
+        getAssetsPath() + "/models/circleExtraInnerPoints2.gltf",
+        glTFLoadingFlags, 1.f, &modelVertices, &indices);
+    std::vector<uint32_t> surfaceIndices{
+        53, 64, 64, 63, 63, 62, 62, 61, 61, 57, 57, 59, 59, 52, 52, 51,
+        51, 50, 50, 60, 60, 55, 55, 54, 54, 49, 49, 58, 58, 56, 53};
+    // simple model circle with center point
+    // std::vector<SimpleModel::Vertex> modelVertices(centerCircle->vertices);
+    // std::vector<uint32_t> indices(centerCircle->indices);
+    // std::vector<uint32_t> surfaceIndices;
+    // for (auto i = 1; i < centerCircle->vertices.size() - 1; i++) {
+    //   surfaceIndices.push_back(i);
+    //   surfaceIndices.push_back(i + 1);
+    // }
+    // surfaceIndices.push_back(centerCircle->vertices.size() - 1);
+    // surfaceIndices.push_back(1);
 
     std::vector<SimpleModel::Vertex> vertices(modelVertices.size());
     for (auto i = 0; i < modelVertices.size(); i++) {
@@ -645,15 +647,15 @@ void VgeExample::loadAssets() {
                     -circleScale * 2.f * (i + 0.5f), 0.f};
       // NOTE: ccw triangle
       // for blender loaded model
-      // transform.rotation = glm::vec3{glm::half_pi<float>(), 0.f, 0.f};
+      transform.rotation = glm::vec3{glm::half_pi<float>(), 0.f, 0.f};
       // for created simple model
-      transform.rotation = glm::vec3{glm::pi<float>(), 0.f, 0.f};
+      // transform.rotation = glm::vec3{glm::pi<float>(), 0.f, 0.f};
       // NOTE: consider axis direction for cross product
       transform.scale = glm::vec3{circleScale, +circleScale, circleScale};
 
       ModelInstance modelInstance{};
       modelInstance.softBody2D = std::make_unique<SoftBody2D>(
-          vertices, indices, transform, MAX_CONCURRENT_FRAMES,
+          vertices, indices, surfaceIndices, transform, MAX_CONCURRENT_FRAMES,
           globalAllocator->getAllocator());
       // NOTE: unique_ptr guarantees
       // transferring owenership does not change the location
@@ -2821,6 +2823,9 @@ void VgeExample::simulate() {
               uint32_t vIndex;
               std::tie(objectIndex, vIndex) = item;
               if (objectIndex == i) {
+                // self-collision
+                continue;
+                // same triangle
                 if (vIndex == vIndex0 || vIndex == vIndex1 ||
                     vIndex == vIndex2) {
                   continue;
@@ -2834,7 +2839,7 @@ void VgeExample::simulate() {
               double invMass = collisionBody->getInvMasses()[vIndex];
 
               glm::dvec3 corr, corr0, corr1, corr2;
-              if (solveTrianglePointCollisionConstraint(
+              if (solveTrianglePointDistanceConstraint(
                       p, p0, p1, p2, invMass, invMass0, invMass1, invMass2, 0.0,
                       opts.collisionStiffness, corr, corr0, corr1, corr2)) {
                 // collisionBody->setColor({0.f, 0.f, 1.f, 1.f}, vIndex);
@@ -2847,9 +2852,49 @@ void VgeExample::simulate() {
                 // softBody2D->correctPos(p2 + corr2, vIndex2);
                 const std::vector<uint32_t>& surfaceIndices =
                     softBody2D->getSurfaceIndices();
+                int intersectionSurfaceIndex = -1;
+                glm::dvec2 intersectionPt;
                 for (auto surfaceIndex = 0;
                      surfaceIndex < surfaceIndices.size() / 2; surfaceIndex++) {
+                  const auto& surfacePt0 =
+                      softBody2D
+                          ->getPositions()[surfaceIndices[surfaceIndex * 2]];
+                  const auto& surfacePt1 =
+                      softBody2D->getPositions()
+                          [surfaceIndices[surfaceIndex * 2 + 1]];
+
                   // intersection test
+                  if (checkLineIntersection2D(
+                          p, collisionBody->getPositions()[0], surfacePt0,
+                          surfacePt1, intersectionPt)) {
+                    intersectionSurfaceIndex = surfaceIndex;
+                    break;
+                  }
+                }
+                // assert(intersectionSurfaceIndex != -1);
+
+                if (intersectionSurfaceIndex != -1) {
+                  int surfaceEdgeIndex0 =
+                      surfaceIndices[intersectionSurfaceIndex * 2];
+                  int surfaceEdgeIndex1 =
+                      surfaceIndices[intersectionSurfaceIndex * 2 + 1];
+                  glm::dvec3 contactPos(intersectionPt, 0.0);
+
+                  if (solveEdgePointCollisionConstraint(
+                          p, softBody2D->getPositions()[surfaceEdgeIndex0],
+                          softBody2D->getPositions()[surfaceEdgeIndex1],
+                          invMass,
+                          softBody2D->getInvMasses()[surfaceEdgeIndex0],
+                          softBody2D->getInvMasses()[surfaceEdgeIndex1],
+                          contactPos, corr, corr0, corr1)) {
+                    collisionBody->correctPos(p + corr, vIndex);
+                    softBody2D->correctPos(
+                        softBody2D->getPositions()[surfaceEdgeIndex0] + corr0,
+                        surfaceEdgeIndex0);
+                    softBody2D->correctPos(
+                        softBody2D->getPositions()[surfaceEdgeIndex1] + corr1,
+                        surfaceEdgeIndex1);
+                  }
                 }
               }
             }
@@ -3142,7 +3187,7 @@ bool VgeExample::solveEdgePointDistanceConstraint(
   return true;
 }
 
-bool VgeExample::solveTrianglePointCollisionConstraint(
+bool VgeExample::solveTrianglePointDistanceConstraint(
     const glm::dvec3 p, const glm::dvec3 p0, const glm::dvec3 p1,
     const glm::dvec3 p2, const double invMass, const double invMass0,
     const double invMass1, const double invMass2, const double restDist,
@@ -3240,15 +3285,60 @@ bool VgeExample::checkLineIntersection2D(const glm::dvec2 p0,
                                          const glm::dvec2 p2,
                                          const glm::dvec2 p3,
                                          glm::dvec2& intersectionPt) {
-  glm::dvec2 s1(p1 - p0);
-  glm::dvec2 s2(p3 - p2);
-  double d = -s2.x * s1.y + s1.x * s2.y;
+  glm::dvec2 v0(p1 - p0);
+  glm::dvec2 v1(p3 - p2);
+  glm::dmat2 m(v0, -v1);
+  double d = glm::determinant(m);
   if (d == 0.0) return false;
-  double s, t;
-  s = 0;
-  t = 0;
+  glm::dvec2 t = glm::inverse(m) * (p2 - p0);
+  if (t[0] >= 0.0 && t[0] <= 1.0 && t[1] >= 0.0 && t[1] <= 1.0) {
+    intersectionPt = p0 + t[0] * v0;
+    return true;
+  }
+  // std::cout << "p0: " << glm::to_string(p0) << ", p2: " << glm::to_string(p2)
+  //           << ", p3: " << glm::to_string(p3) << std::endl
+  //           << "t0: " << t[0] << ", t1: " << t[1] << std::endl;
+  return false;
+}
+
+bool VgeExample::solveEdgePointCollisionConstraint(
+    const glm::dvec3 p, const glm::dvec3 p0, const glm::dvec3 p1,
+    const double invMass, const double invMass0, const double invMass1,
+    const glm::dvec3 q, glm::dvec3& corr, glm::dvec3& corr0,
+    glm::dvec3& corr1) {
+  glm::dvec3 d(p1 - p0);
+  double t = 0.5;
+  double d2 = glm::length2(d);
+  if (d2 >= 1e-12) {
+    t = glm::dot(d, p - p0) / d2;
+    if (t < 0.0 || t > 1.0) return false;
+  }
+  double b0 = 1.0 - t;
+  double b1 = t;
+
+  glm::dvec3 n = q - p;
+  double dist = glm::length(n);
+  if (dist == 0.0) return false;
+  n = n / dist;
+  double C = glm::dot(n, p - q);
+
+  glm::dvec3 grad = n;
+  glm::dvec3 grad0 = -n * b0;
+  glm::dvec3 grad1 = -n * b1;
+
+  double s = invMass + invMass0 * b0 * b0 + invMass1 * b1 * b1;
+  if (s == 0.0) return false;
+
+  s = C / s;
+
+  if (s == 0.0) return false;
+
+  corr = -s * invMass * grad;
+  corr0 = -s * invMass0 * grad0;
+  corr1 = -s * invMass1 * grad1;
   return true;
 }
+
 SimpleModel::SimpleModel(const vk::raii::Device& device, VmaAllocator allocator,
                          const vk::raii::Queue& transferQueue,
                          const vk::raii::CommandPool& commandPool)
