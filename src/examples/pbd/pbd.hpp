@@ -63,6 +63,7 @@ class SoftBody2D {
   // triangle list
   SoftBody2D(const std::vector<SimpleModel::Vertex>& vertices,
              const std::vector<uint32_t>& indices,
+             const std::vector<uint32_t>& surfaceIndices,
              const vgeu::TransformComponent transform,
              const uint32_t framesInFlight, VmaAllocator allocator);
   void updateBuffer(uint32_t currentFrameIndex);
@@ -80,6 +81,7 @@ class SoftBody2D {
   glm::dvec4 getBoundingCircle() { return glm::dvec4(pos[0], radius); }
   void updateAABBs();
   const std::vector<glm::dvec3>& getPositions() { return pos; };
+  const std::vector<uint32_t>& getSurfaceIndices() { return surfaceIndices; };
   const std::vector<double>& getInvMasses() { return invMasses; };
   const std::vector<glm::dvec4>& getAABBs() { return aabbs; };
   // assert(vId < 3)
@@ -103,6 +105,7 @@ class SoftBody2D {
   std::unique_ptr<vgeu::VgeuBuffer> indexBuffer;
   std::vector<SimpleModel::Vertex> vertices;
   std::vector<uint32_t> indices;
+  std::vector<uint32_t> surfaceIndices;
   uint32_t numParticles;
   std::vector<glm::dvec3> pos;
   std::vector<glm::dvec3> prevPos;
@@ -288,7 +291,7 @@ class VgeExample : public VgeBase {
                                const double invMass0, const double invMass1,
                                const double restLength, const double stiffness,
                                glm::dvec3& corr0, glm::dvec3& corr1);
-  bool solveEdgePointCollisionConstraint(
+  bool solveEdgePointDistanceConstraint(
       const glm::dvec3 p, const glm::dvec3 p0, const glm::dvec3 p1,
       const double invMass, const double invMass0, const double invMass1,
       const double restDist, const double compressionStiffness,
@@ -301,6 +304,10 @@ class VgeExample : public VgeBase {
       const double invMass1, const double invMass2, const double restDist,
       const double compressionStiffness, glm::dvec3& corr, glm::dvec3& corr0,
       glm::dvec3& corr1, glm::dvec3& corr2);
+
+  bool checkLineIntersection2D(const glm::dvec2 p0, const glm::dvec2 p1,
+                               const glm::dvec2 p2, const glm::dvec2 p3,
+                               glm::dvec2& intersectionPt);
 
   struct {
     uint32_t queueFamilyIndex;

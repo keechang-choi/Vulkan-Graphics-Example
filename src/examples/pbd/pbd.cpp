@@ -603,8 +603,16 @@ void VgeExample::loadAssets() {
     //   circleExtraPoints.loadFromFile(
     //       getAssetsPath() + "/models/circleExtraInnerPoints2.gltf",
     //       glTFLoadingFlags, 1.f, &modelVertices, &indices);
+    // std::vector<uint32_t> surfaceIndices{
+    //     53, 64, 64, 63, 63, 62, 62, 61, 61, 57, 57, 59, 59, 52, 52, 51,
+    //     51, 50, 50, 60, 60, 55, 55, 54, 54, 49, 49, 58, 58, 56, 53};
     std::vector<SimpleModel::Vertex> modelVertices(centerCircle->vertices);
     std::vector<uint32_t> indices(centerCircle->indices);
+    std::vector<uint32_t> surfaceIndices;
+    for (auto i = 1; i < centerCircle->vertices.size(); i++) {
+      surfaceIndices.push_back(i);
+      surfaceIndices.push_back((i + 1) % centerCircle->vertices.size());
+    }
 
     std::vector<SimpleModel::Vertex> vertices(modelVertices.size());
     for (auto i = 0; i < modelVertices.size(); i++) {
@@ -2833,10 +2841,16 @@ void VgeExample::simulate() {
                 softBody2D->setColor({1.f, 0.f, 0.f, 1.f}, vIndex0);
                 softBody2D->setColor({1.f, 0.f, 0.f, 1.f}, vIndex1);
                 softBody2D->setColor({1.f, 0.f, 0.f, 1.f}, vIndex2);
-                collisionBody->correctPos(p + corr, vIndex);
-                softBody2D->correctPos(p0 + corr0, vIndex0);
-                softBody2D->correctPos(p1 + corr1, vIndex1);
-                softBody2D->correctPos(p2 + corr2, vIndex2);
+                // collisionBody->correctPos(p + corr, vIndex);
+                // softBody2D->correctPos(p0 + corr0, vIndex0);
+                // softBody2D->correctPos(p1 + corr1, vIndex1);
+                // softBody2D->correctPos(p2 + corr2, vIndex2);
+                const std::vector<uint32_t>& surfaceIndices =
+                    softBody2D->getSurfaceIndices();
+                for (auto surfaceIndex = 0;
+                     surfaceIndex < surfaceIndices.size() / 2; surfaceIndex++) {
+                  // intersection test
+                }
               }
             }
           }
@@ -2957,7 +2971,7 @@ void VgeExample::simulate() {
         // point-edge distance constraint
         for (auto i = 2; i < n; i++) {
           glm::dvec3 corr{0.f}, corr0{0.f}, corr1{0.f};
-          solveEdgePointCollisionConstraint(
+          solveEdgePointDistanceConstraint(
               simulationParticles[i].pos, simulationParticles[0].pos,
               simulationParticles[1].pos, invMasses[i], invMasses[0],
               invMasses[1], simulationParticles[i].pos.w + 0.1 /*rest dist*/,
@@ -3082,7 +3096,7 @@ bool VgeExample::solveDistanceConstraint(
   return true;
 }
 
-bool VgeExample::solveEdgePointCollisionConstraint(
+bool VgeExample::solveEdgePointDistanceConstraint(
     const glm::dvec3 p, const glm::dvec3 p0, const glm::dvec3 p1,
     const double invMass, const double invMass0, const double invMass1,
     const double restDist, const double compressionStiffness,
@@ -3221,6 +3235,20 @@ bool VgeExample::solveTrianglePointCollisionConstraint(
   return true;
 }
 
+bool VgeExample::checkLineIntersection2D(const glm::dvec2 p0,
+                                         const glm::dvec2 p1,
+                                         const glm::dvec2 p2,
+                                         const glm::dvec2 p3,
+                                         glm::dvec2& intersectionPt) {
+  glm::dvec2 s1(p1 - p0);
+  glm::dvec2 s2(p3 - p2);
+  double d = -s2.x * s1.y + s1.x * s2.y;
+  if (d == 0.0) return false;
+  double s, t;
+  s = 0;
+  t = 0;
+  return true;
+}
 SimpleModel::SimpleModel(const vk::raii::Device& device, VmaAllocator allocator,
                          const vk::raii::Queue& transferQueue,
                          const vk::raii::CommandPool& commandPool)
@@ -3350,9 +3378,10 @@ uint32_t ModelInstance::getVertexCount() const {
 
 SoftBody2D::SoftBody2D(const std::vector<SimpleModel::Vertex>& vertices,
                        const std::vector<uint32_t>& indices,
+                       const std::vector<uint32_t>& surfaceIndices,
                        const vgeu::TransformComponent transform,
                        const uint32_t framesInFlight, VmaAllocator allocator)
-    : vertices{vertices}, indices{indices} {
+    : vertices{vertices}, indices{indices}, surfaceIndices{surfaceIndices} {
   numParticles = vertices.size();
   // triange list
   numTris = indices.size() / 3;
