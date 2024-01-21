@@ -8,7 +8,6 @@ layout (set = 0, binding = 0) uniform GlobalUbo
     mat4 view;
 	mat4 inverseView;
 	vec4 lightPos;
-    vec4 softBodyInfo;
 	vec4 tailInfo;
     vec2 screenDim;
 	vec2 pointSize;
@@ -41,7 +40,7 @@ void main ()
     float tailIntensity = globalUbo.tailInfo.z;
     float tailFadeOut = globalUbo.tailInfo.w;
 	float currentFront = mod((tailFrontIndex-1 + tailSize), tailSize);
-	float index = mod(gl_VertexIndex, tailSize);
+	float index = mod(float(gl_VertexIndex), tailSize);
     float brightness = (tailSize - mod(tailSize + currentFront - index, tailSize))/tailSize;
 	outColor = tailIntensity * unpackColor(inPos.w) * pow(brightness, tailFadeOut);
 }
