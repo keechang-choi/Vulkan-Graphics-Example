@@ -665,4 +665,22 @@ void setImageLayout(const vk::raii::CommandBuffer& commandBuffer,
                  newImageLayout);
 }
 
+size_t padBufferSize(const vk::raii::PhysicalDevice physicalDevice,
+                     size_t originalSize, bool isUniformType) {
+  size_t minUboAlignment;
+  if (isUniformType) {
+    minUboAlignment =
+        physicalDevice.getProperties().limits.minUniformBufferOffsetAlignment;
+  } else {
+    // storage
+    minUboAlignment =
+        physicalDevice.getProperties().limits.minStorageBufferOffsetAlignment;
+  }
+  size_t alignedSize = originalSize;
+  if (minUboAlignment > 0) {
+    alignedSize = (alignedSize + minUboAlignment - 1) & ~(minUboAlignment - 1);
+  }
+  return alignedSize;
+}
+
 }  // namespace vgeu
