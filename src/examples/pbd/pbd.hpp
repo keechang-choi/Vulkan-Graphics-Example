@@ -25,7 +25,7 @@ struct GlobalUbo {
   glm::vec2 pointSize{1.f, 64.f};
 };
 
-// TODO: simple model for circle, quad, lines
+// NOTE: simple model for circle, quad, lines
 struct SimpleModel {
   SimpleModel(const vk::raii::Device& device, VmaAllocator allocator,
               const vk::raii::Queue& transferQueue,
@@ -169,7 +169,6 @@ struct ModelInstance {
   // initial offset and scale
   vgeu::TransformComponent transform;
   uint32_t getVertexCount() const;
-  // TODO: delete copy constructor and assignment operator,
   ModelInstance(){};
   ModelInstance(const ModelInstance& o) = delete;
   ModelInstance& operator=(const ModelInstance& other) = delete;

@@ -1301,7 +1301,9 @@ void VgeExample::createDescriptorSetLayout() {
     setLayouts.push_back(*graphics.globalUboDescriptorSetLayout);
   }
 
-  // TODO: remove if not used in graphics
+  // NOTE: used for external animation in compute and
+  // used for lighting in graphics.
+  // currently only for graphics
   // set 1
   {
     vk::DescriptorSetLayoutBinding layoutBinding(
@@ -1512,7 +1514,7 @@ void VgeExample::render() {
   }
   simulate();
   {
-    // TODO: make new simulation update function
+    // soft body simulation update
     size_t n = simulationsNumParticles[5];
     for (auto i = 0; i < n; i++) {
       vge::SoftBody2D* softBody2D = simulation6.softBodies[i];
@@ -1598,7 +1600,6 @@ void VgeExample::buildCommandBuffers() {
       vk::Rect2D(vk::Offset2D(0, 0), swapChainData->swapChainExtent),
       clearValues);
 
-  // TODO: compute animation
   //  acquire barrier compute -> graphics
   if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
     std::vector<vk::BufferMemoryBarrier> bufferBarriers;
@@ -3556,7 +3557,7 @@ void SoftBody2D::initPhysics() {
     double area = getTriArea(i);
     restAreas[i] = area;
     double pinvMasses = area > 0.f ? 1.f / (area / 3.f) : 0.f;
-    // TODO: check ngon w, wo center point
+    // NOTE: check ngon w, wo center point
     invMasses[triIds[3 * i]] += pinvMasses;
     invMasses[triIds[3 * i + 1]] += pinvMasses;
     invMasses[triIds[3 * i + 2]] += pinvMasses;
@@ -3643,8 +3644,8 @@ void SoftBody2D::solveEdges(const double dt, const double compliance) {
 
 void SoftBody2D::solveAreas(const double dt, const double compliance) {
   double alpha = compliance / dt / dt;
-  // TODO: check alpha value and increase precision to double.
-  // TODO: plot area against compliance to check compliance
+  // NOTE: check alpha value and increase precision to double.
+  // NOTE: plot area against compliance to check compliance
   glm::dvec3 e3{0.f, 0.f, -1.f};
   std::vector<glm::dvec3> grads(3);
   for (auto i = 0; i < numTris; i++) {

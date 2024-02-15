@@ -34,10 +34,10 @@ void main()
 	outColor = modelUbo.modelColor;
 	outUV = inUV;
 	// TODO: animation pre-compute
-	mat4 worldTransform = mat4(1.0);
-	gl_Position = globalUbo.projection * globalUbo.view * worldTransform * vec4(inPos.xyz, 1.0);
+	mat4 worldTransform = modelUbo.modelMatrix;
+	vec4 pos = worldTransform * vec4(inPos, 1.0);
+	gl_Position = globalUbo.projection * globalUbo.view * pos;
 	
-	vec4 pos = modelUbo.modelMatrix * vec4(inPos, 1.0);
 	mat3 normalMatrix = inverse(transpose(mat3(worldTransform)));
 	outNormal = normalize(normalMatrix * inNormal);
 	vec3 lPos = globalUbo.lightPos.xyz;
