@@ -197,7 +197,6 @@ class VgeExample : public VgeBase {
   // compute resources
   void prepareCompute();
 
-
   struct {
     uint32_t queueFamilyIndex;
     std::vector<std::unique_ptr<vgeu::VgeuBuffer>> storageBuffers;

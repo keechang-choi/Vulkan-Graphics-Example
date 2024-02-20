@@ -123,17 +123,24 @@ vk::raii::Device createLogicalDevice(
   }
 
   if (requestedQueueTypes & vk::QueueFlagBits::eCompute) {
-    vk::DeviceQueueCreateInfo deviceQueueCreateInfo(
-        vk::DeviceQueueCreateFlags(), queueFamilyIndices.compute, 1,
-        &queuePriority);
-    queueCreateInfos.push_back(deviceQueueCreateInfo);
+    // only if dedicated compute queue supported
+    if (queueFamilyIndices.compute != queueFamilyIndices.graphics) {
+      vk::DeviceQueueCreateInfo deviceQueueCreateInfo(
+          vk::DeviceQueueCreateFlags(), queueFamilyIndices.compute, 1,
+          &queuePriority);
+      queueCreateInfos.push_back(deviceQueueCreateInfo);
+    }
   }
 
   if (requestedQueueTypes & vk::QueueFlagBits::eTransfer) {
-    vk::DeviceQueueCreateInfo deviceQueueCreateInfo(
-        vk::DeviceQueueCreateFlags(), queueFamilyIndices.transfer, 1,
-        &queuePriority);
-    queueCreateInfos.push_back(deviceQueueCreateInfo);
+    // only if dedicated transfer queue supported
+    if ((queueFamilyIndices.transfer != queueFamilyIndices.graphics) &&
+        (queueFamilyIndices.transfer != queueFamilyIndices.compute)) {
+      vk::DeviceQueueCreateInfo deviceQueueCreateInfo(
+          vk::DeviceQueueCreateFlags(), queueFamilyIndices.transfer, 1,
+          &queuePriority);
+      queueCreateInfos.push_back(deviceQueueCreateInfo);
+    }
   }
 
   std::vector<const char*> deviceExtensions(extensions);
