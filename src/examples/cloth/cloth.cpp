@@ -88,8 +88,8 @@ void VgeExample::initVulkan() {
   cameraController.moveSpeed = opts.moveSpeed;
   // camera setup
   if (glm::isIdentity(opts.cameraView, 1e-6f)) {
-    camera.setViewTarget(glm::vec3{50.f, -20.f, -20.f},
-                         glm::vec3{50.f, -10.f, 0.f});
+    camera.setViewTarget(glm::vec3{0.f, -10.f, -20.f},
+                         glm::vec3{0.f, 0.f, 0.f});
   } else {
     camera.setViewMatrix(opts.cameraView);
   }
@@ -367,6 +367,10 @@ void VgeExample::prepareCompute() {
                                               vk::CommandBufferLevel::ePrimary,
                                               MAX_CONCURRENT_FRAMES);
     compute.cmdBuffers = vk::raii::CommandBuffers(device, cmdBufferAI);
+    compute.firstCompute.resize(MAX_CONCURRENT_FRAMES);
+    for (auto i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      compute.firstCompute[i] = true;
+    }
   }
 
   // create semaphore for compute-graphics sync
@@ -492,7 +496,7 @@ void VgeExample::loadAssets() {
     std::vector<uint32_t> indices{0, 1, 1, 2, 2, 3, 3, 0};
     rectLines->setLineList(positions, indices, {1.f, 1.f, 1.f, 1.f});
   }
-  for (auto i = 1; i <= 8; i++) {
+  for (auto i = 1; i <= 4; i++) {
     ModelInstance modelInstance{};
     modelInstance.simpleModel = rectLines;
     modelInstance.name = "rectLines" + std::to_string(i);
@@ -747,6 +751,23 @@ void VgeExample::setupDynamicUbo() {
         dynamicUbo[instanceIndex].modelMatrix,
         glm::vec3{quadScale * 0.5f * sqrt(2.f), quadScale * 0.5f * sqrt(2.f),
                   quadScale * 0.5f * sqrt(2.f)});
+    // default
+    dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
+  }
+
+  float rectScale = quadScale * sqrt(2.f);
+  for (auto i = 0; i < 4; i++) {
+    glm::vec3 tr(quadScale * cos(i * glm::half_pi<float>()), 0.f,
+                 quadScale * sin(i * glm::half_pi<float>()));
+    size_t instanceIndex =
+        findInstances("rectLines" + std::to_string(i + 1))[0];
+    dynamicUbo[instanceIndex].modelMatrix = glm::translate(glm::mat4{1.f}, tr);
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::rotate(dynamicUbo[instanceIndex].modelMatrix,
+                    glm::radians(((i + 1) % 4) * 90.f + 45.f), up);
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+                   glm::vec3{rectScale, -rectScale * 0.5f, rectScale});
     // default
     dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
   }

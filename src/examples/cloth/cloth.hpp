@@ -135,7 +135,7 @@ struct Options {
   float animationSpeed = 0.5f;
   float restitution = 1.0f;
   std::vector<bool> enableSimulation;
-  bool computeModelAnimation{false};
+  bool computeModelAnimation{true};
   int32_t numSubsteps = 10;
 
   // save camera view. not configurable by pannel
