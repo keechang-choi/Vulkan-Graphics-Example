@@ -108,10 +108,12 @@ struct DynamicUboElt {
   glm::vec4 modelColor{0.f};
 };
 
+// cloth particle
 struct Particle {
-  glm::dvec4 pos;
-  glm::dvec4 vel;
-  glm::dvec4 prevPos;
+  glm::vec4 pos;
+  glm::vec4 vel;
+  glm::vec4 normal;
+  glm::vec2 uv;
 };
 
 struct SpecializationData {
@@ -197,43 +199,6 @@ class VgeExample : public VgeBase {
   // compute resources
   void prepareCompute();
 
-  struct {
-    uint32_t queueFamilyIndex;
-    std::vector<std::unique_ptr<vgeu::VgeuBuffer>> storageBuffers;
-    std::vector<std::unique_ptr<vgeu::VgeuBuffer>> uniformBuffers;
-    vk::raii::Queue queue = nullptr;
-    vk::raii::CommandPool cmdPool = nullptr;
-    vk::raii::CommandBuffers cmdBuffers = nullptr;
-    std::vector<vk::raii::Semaphore> semaphores;
-
-    vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
-    std::vector<vk::raii::DescriptorSet> descriptorSets;
-    vk::raii::PipelineLayout pipelineLayout = nullptr;
-
-    vk::raii::DescriptorSetLayout skinDescriptorSetLayout = nullptr;
-    // each frames in flight, each model
-    std::vector<std::vector<vk::raii::DescriptorSet>> skinDescriptorSets;
-
-    // each model, each skins
-    std::vector<std::vector<vgeu::glTF::MeshMatricesData>> skinMatricesData;
-    // each frames in flight, each model
-    std::vector<std::vector<std::unique_ptr<vgeu::VgeuBuffer>>>
-        skinMatricesBuffers;
-
-    // each frames in flight, each model
-    std::vector<std::vector<std::unique_ptr<vgeu::VgeuBuffer>>>
-        animatedVertexBuffers;
-
-    // for compute animation
-    vk::raii::Pipeline pipelineModelAnimate = nullptr;
-    struct computeUbo {
-      glm::vec4 clickData;
-      float dt;
-      uint32_t particleCount;
-    } ubo;
-    std::vector<bool> firstCompute;
-  } compute;
-
   void draw();
   void buildCommandBuffers();
   void buildComputeCommandBuffers();
@@ -252,6 +217,65 @@ class VgeExample : public VgeBase {
   VertexInfos simpleVertexInfos;
   // for animated vertex
   VertexInfos animatedVertexInfos;
+
+  bool dedicatedComputeQueue{false};
+  struct Cloth {
+    glm::uvec2 gridSize{60, 60};
+    glm::vec2 size{5.f, 5.f};
+  } cloth;
+
+  // used in both of the pipelines
+  std::vector<std::unique_ptr<vgeu::VgeuBuffer>> storageBuffers;
+  // each frames in flight, each model
+  std::vector<std::vector<std::unique_ptr<vgeu::VgeuBuffer>>>
+      animatedVertexBuffers;
+  struct {
+    uint32_t queueFamilyIndex;
+
+    vk::raii::Queue queue = nullptr;
+    vk::raii::CommandPool cmdPool = nullptr;
+    vk::raii::CommandBuffers cmdBuffers = nullptr;
+    struct Semaphores {
+      std::vector<vk::raii::Semaphore> ready;
+      std::vector<vk::raii::Semaphore> complete;
+    } semaphores;
+
+    vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
+    std::vector<vk::raii::DescriptorSet> descriptorSets;
+    vk::raii::PipelineLayout pipelineLayout = nullptr;
+
+    vk::raii::DescriptorSetLayout skinDescriptorSetLayout = nullptr;
+    // each frames in flight, each model
+    std::vector<std::vector<vk::raii::DescriptorSet>> skinDescriptorSets;
+
+    // each model, each skins
+    std::vector<std::vector<vgeu::glTF::MeshMatricesData>> skinMatricesData;
+    // each frames in flight, each model
+    std::vector<std::vector<std::unique_ptr<vgeu::VgeuBuffer>>>
+        skinMatricesBuffers;
+
+    struct Pipelines {
+      // for compute animation
+      vk::raii::Pipeline pipelineModelAnimate = nullptr;
+      // cloth simulation calculation and integration
+      vk::raii::Pipeline pipelineCloth = nullptr;
+    } pipelines;
+
+    std::vector<std::unique_ptr<vgeu::VgeuBuffer>> uniformBuffers;
+    struct computeUbo {
+      glm::vec4 clickData;
+      float dt;
+      glm::ivec2 particleCount;
+      float particleMass;
+      float springStiffness;
+      float damping;
+      glm::vec4 restDist;
+      glm::vec4 gravity;
+    } ubo;
+
+    std::vector<bool> firstCompute;
+  } compute;
+
   struct {
     // NOTE: movable element;
     uint32_t queueFamilyIndex;
@@ -261,12 +285,13 @@ class VgeExample : public VgeBase {
     vk::raii::DescriptorSetLayout globalUboDescriptorSetLayout = nullptr;
     vk::raii::PipelineLayout pipelineLayout = nullptr;
 
-    vk::raii::Pipeline pipelinePhong = nullptr;
-    vk::raii::Pipeline pipelineSimpleMesh = nullptr;
-    vk::raii::Pipeline pipelineWireMesh = nullptr;
-    vk::raii::Pipeline pipelineSimpleLine = nullptr;
+    struct Pipelines {
+      vk::raii::Pipeline pipelinePhong = nullptr;
+      vk::raii::Pipeline pipelineSimpleMesh = nullptr;
+      vk::raii::Pipeline pipelineWireMesh = nullptr;
+      vk::raii::Pipeline pipelineSimpleLine = nullptr;
+    } pipelines;
 
-    std::vector<vk::raii::Semaphore> semaphores;
   } graphics;
 
   std::vector<ModelInstance> modelInstances;
