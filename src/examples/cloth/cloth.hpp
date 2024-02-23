@@ -183,21 +183,31 @@ class VgeExample : public VgeBase {
   // copy option values to member variables
   void initFromOptions();
 
-  void loadAssets();
+  // common resources
+  void prepareCommon();
   void createDescriptorPool();
-
+  void loadAssets();
   void createVertexSCI();
   void createStorageBuffers();
+  // NOTE: require UBO to be set
   void createUniformBuffers();
-
-  // graphics resources
-  void prepareGraphics();
   void createDescriptorSetLayout();
   void createDescriptorSets();
-  void createPipelines();
 
   // compute resources
   void prepareCompute();
+  void createComputeUniformBuffers();
+  void createComputeStorageBuffers();
+  void createComputeDescriptorSetLayout();
+  void createComputeDescriptorSets();
+  void createComputePipelines();
+
+  // graphics resources
+  void prepareGraphics();
+  void createGraphicsUniformBuffers();
+  void createGraphicsDescriptorSetLayout();
+  void createGraphicsDescriptorSets();
+  void createGraphicsPipelines();
 
   void draw();
   void buildCommandBuffers();
@@ -213,28 +223,33 @@ class VgeExample : public VgeBase {
 
   void setOptions(const std::optional<Options>& opts);
 
-  // NOTE: for simple Model
-  VertexInfos simpleVertexInfos;
-  // for animated vertex
-  VertexInfos animatedVertexInfos;
-
   bool dedicatedComputeQueue{false};
   struct Cloth {
     glm::uvec2 gridSize{60, 60};
     glm::vec2 size{5.f, 5.f};
   } cloth;
 
-  // used in both of the pipelines
-  std::vector<std::unique_ptr<vgeu::VgeuBuffer>> storageBuffers;
-  // each frames in flight, each model
-  std::vector<std::vector<std::unique_ptr<vgeu::VgeuBuffer>>>
-      animatedVertexBuffers;
+  struct {
+    // used in both of the pipelines
+    std::vector<std::unique_ptr<vgeu::VgeuBuffer>> storageBuffers;
+    // each frames in flight, each model
+    std::vector<std::vector<std::unique_ptr<vgeu::VgeuBuffer>>>
+        animatedVertexBuffers;
+
+    std::vector<DynamicUboElt> dynamicUbo;
+    size_t alignedSizeDynamicUboElt = 0;
+    std::vector<std::unique_ptr<vgeu::VgeuBuffer>> dynamicUniformBuffers;
+    std::vector<vk::raii::DescriptorSet> dynamicUboDescriptorSets;
+    vk::raii::DescriptorSetLayout dynamicUboDescriptorSetLayout = nullptr;
+
+  } common;
   struct {
     uint32_t queueFamilyIndex;
 
     vk::raii::Queue queue = nullptr;
     vk::raii::CommandPool cmdPool = nullptr;
     vk::raii::CommandBuffers cmdBuffers = nullptr;
+    // strictly, these semaphores commonly used.
     struct Semaphores {
       std::vector<vk::raii::Semaphore> ready;
       std::vector<vk::raii::Semaphore> complete;
@@ -277,6 +292,11 @@ class VgeExample : public VgeBase {
   } compute;
 
   struct {
+    // NOTE: for simple Model
+    VertexInfos simpleVertexInfos;
+    // for animated vertex
+    VertexInfos animatedVertexInfos;
+
     // NOTE: movable element;
     uint32_t queueFamilyIndex;
     std::vector<std::unique_ptr<vgeu::VgeuBuffer>> globalUniformBuffers;
@@ -297,12 +317,6 @@ class VgeExample : public VgeBase {
   std::vector<ModelInstance> modelInstances;
   // saves both index for corresponding model and simple model
   std::unordered_map<std::string, std::vector<size_t>> instanceMap;
-
-  std::vector<DynamicUboElt> dynamicUbo;
-  size_t alignedSizeDynamicUboElt = 0;
-  std::vector<std::unique_ptr<vgeu::VgeuBuffer>> dynamicUniformBuffers;
-  std::vector<vk::raii::DescriptorSet> dynamicUboDescriptorSets;
-  vk::raii::DescriptorSetLayout dynamicUboDescriptorSetLayout = nullptr;
 
   float animationTime = 0.f;
   float animationLastTime = 0.f;

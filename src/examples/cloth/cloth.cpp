@@ -29,24 +29,6 @@ glm::vec3 unpackColor(float f) {
   // each field in 0.0 ~ 255.0
   return color;
 }
-uint32_t mapToIntegrateSteps(uint32_t integrator) {
-  uint32_t numSteps = 1u;
-  switch (integrator) {
-    case 1:
-    case 2:
-    case 4:
-      numSteps = integrator;
-      break;
-    case 5:
-    case 6:
-    case 8:
-      numSteps = integrator - 4u;
-      break;
-    default:
-      assert(false && "failed: unsupported integrator type");
-  }
-  return numSteps;
-}
 
 std::optional<glm::vec3> rayPlaneIntersection(glm::vec3 rayStart,
                                               glm::vec3 rayDir,
@@ -110,249 +92,269 @@ void VgeExample::getEnabledExtensions() {
 
 void VgeExample::prepare() {
   VgeBase::prepare();
-  loadAssets();
-  createDescriptorPool();
   graphics.queueFamilyIndex = queueFamilyIndices.graphics;
   compute.queueFamilyIndex = queueFamilyIndices.compute;
-  createStorageBuffers();
-  createVertexSCI();
-  createUniformBuffers();
-  setupDynamicUbo();
+  prepareCommon();
   prepareGraphics();
   prepareCompute();
   prepared = true;
 }
 
-void VgeExample::prepareGraphics() {
+void VgeExample::prepareCommon() {
+  loadAssets();
+  createDescriptorPool();
+  createStorageBuffers();
+  // dynamic UBO
+  setupDynamicUbo();
+  createUniformBuffers();
   createDescriptorSetLayout();
   createDescriptorSets();
-  createPipelines();
-  // create semaphore for compute-graphics sync
-  {
-    std::vector<vk::Semaphore> semaphoresToSignal;
-    semaphoresToSignal.reserve(MAX_CONCURRENT_FRAMES);
-    graphics.semaphores.reserve(MAX_CONCURRENT_FRAMES);
-    for (size_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
-      vk::raii::Semaphore& semaphore =
-          graphics.semaphores.emplace_back(device, vk::SemaphoreCreateInfo());
-      semaphoresToSignal.push_back(*semaphore);
-    }
-    // initial signaled
+}
 
-    vk::SubmitInfo submitInfo({}, {}, {}, semaphoresToSignal);
-    queue.submit(submitInfo);
-    queue.waitIdle();
+void VgeExample::createStorageBuffers() {
+  // animated vertex ssbo wo transfer and mapped ptr
+  common.animatedVertexBuffers.resize(MAX_CONCURRENT_FRAMES);
+  for (auto i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    common.animatedVertexBuffers[i].reserve(modelInstances.size());
+    for (size_t j = 0; j < modelInstances.size(); j++) {
+      common.animatedVertexBuffers[i].push_back(
+          std::move(std::make_unique<vgeu::VgeuBuffer>(
+              globalAllocator->getAllocator(), sizeof(AnimatedVertex),
+              modelInstances[j].getVertexCount(),
+              vk::BufferUsageFlagBits::eStorageBuffer |
+                  vk::BufferUsageFlagBits::eVertexBuffer,
+              VMA_MEMORY_USAGE_AUTO,
+              VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT)));
+    }
+  }
+}
+
+void VgeExample::createUniformBuffers() {
+  common.alignedSizeDynamicUboElt =
+      vgeu::padBufferSize(physicalDevice, sizeof(DynamicUboElt), true);
+  common.dynamicUniformBuffers.reserve(MAX_CONCURRENT_FRAMES);
+  for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    common.dynamicUniformBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
+        globalAllocator->getAllocator(), common.alignedSizeDynamicUboElt,
+        common.dynamicUbo.size(), vk::BufferUsageFlagBits::eUniformBuffer,
+        VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT |
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT));
+    for (size_t j = 0; j < common.dynamicUbo.size(); j++) {
+      std::memcpy(
+          static_cast<char*>(common.dynamicUniformBuffers[i]->getMappedData()) +
+              j * common.alignedSizeDynamicUboElt,
+          &common.dynamicUbo[j], common.alignedSizeDynamicUboElt);
+    }
+  }
+}
+
+void VgeExample::createDescriptorSetLayout() {
+  std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
+  layoutBindings.emplace_back(0 /*binding*/,
+                              vk::DescriptorType::eUniformBufferDynamic, 1,
+                              vk::ShaderStageFlagBits::eAll);
+  vk::DescriptorSetLayoutCreateInfo layoutCI({}, layoutBindings);
+  common.dynamicUboDescriptorSetLayout =
+      vk::raii::DescriptorSetLayout(device, layoutCI);
+}
+
+void VgeExample::createDescriptorSets() {
+  vk::DescriptorSetAllocateInfo allocInfo(
+      *descriptorPool, *common.dynamicUboDescriptorSetLayout);
+  common.dynamicUboDescriptorSets.reserve(MAX_CONCURRENT_FRAMES);
+  for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    common.dynamicUboDescriptorSets.push_back(
+        std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
+  }
+  std::vector<vk::DescriptorBufferInfo> bufferInfos;
+  bufferInfos.reserve(common.dynamicUniformBuffers.size());
+  std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
+  writeDescriptorSets.reserve(common.dynamicUniformBuffers.size());
+  for (int i = 0; i < common.dynamicUniformBuffers.size(); i++) {
+    // NOTE: descriptorBufferInfo range be alignedSizeDynamicUboElt
+    bufferInfos.push_back(common.dynamicUniformBuffers[i]->descriptorInfo(
+        common.alignedSizeDynamicUboElt, 0));
+    writeDescriptorSets.emplace_back(*common.dynamicUboDescriptorSets[i], 0, 0,
+                                     vk::DescriptorType::eUniformBufferDynamic,
+                                     nullptr, bufferInfos.back());
+  }
+  device.updateDescriptorSets(writeDescriptorSets, nullptr);
+}
+
+void VgeExample::prepareGraphics() {
+  createGraphicsUniformBuffers();
+  createGraphicsDescriptorSetLayout();
+  createGraphicsDescriptorSets();
+  createVertexSCI();
+  createGraphicsPipelines();
+}
+
+void VgeExample::createComputeUniformBuffers() {
+  // compute UBO
+  compute.uniformBuffers.reserve(MAX_CONCURRENT_FRAMES);
+  for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    compute.uniformBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
+        globalAllocator->getAllocator(), sizeof(compute.ubo), 1,
+        vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT |
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT));
+    std::memcpy(compute.uniformBuffers[i]->getMappedData(), &compute.ubo,
+                sizeof(compute.ubo));
+  }
+}
+
+void VgeExample::createComputeDescriptorSetLayout() {
+  std::vector<vk::DescriptorSetLayout> setLayouts;
+
+  // set 0 ubo
+  {
+    std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
+    layoutBindings.emplace_back(0 /* binding */,
+                                vk::DescriptorType::eUniformBuffer, 1,
+                                vk::ShaderStageFlagBits::eCompute);
+    vk::DescriptorSetLayoutCreateInfo layoutCI(
+        vk::DescriptorSetLayoutCreateFlags{}, layoutBindings);
+    compute.descriptorSetLayout =
+        vk::raii::DescriptorSetLayout(device, layoutCI);
+    setLayouts.push_back(*compute.descriptorSetLayout);
+  }
+
+  // set 1 input model vertex ssbo
+  setLayouts.push_back(*modelInstances[0].model->descriptorSetLayoutVertex);
+
+  // set 2 dynamic ubo
+  { setLayouts.push_back(*common.dynamicUboDescriptorSetLayout); }
+
+  // set 3 skin ssbo
+  {
+    std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
+    // skin SSBO for all model instances
+    layoutBindings.emplace_back(0 /*binding*/,
+                                vk::DescriptorType::eStorageBuffer, 1,
+                                vk::ShaderStageFlagBits::eCompute);
+    // animated vertex ssbo for all model instances
+    layoutBindings.emplace_back(1 /*binding*/,
+                                vk::DescriptorType::eStorageBuffer, 1,
+                                vk::ShaderStageFlagBits::eCompute);
+    vk::DescriptorSetLayoutCreateInfo layoutCI({}, layoutBindings);
+    compute.skinDescriptorSetLayout =
+        vk::raii::DescriptorSetLayout(device, layoutCI);
+    setLayouts.push_back(*compute.skinDescriptorSetLayout);
+  }
+
+  vk::PipelineLayoutCreateInfo pipelineLayoutCI({}, setLayouts);
+  compute.pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutCI);
+}
+
+void VgeExample::createComputeDescriptorSets() {
+  vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
+                                          *compute.skinDescriptorSetLayout);
+  compute.skinDescriptorSets.resize(MAX_CONCURRENT_FRAMES);
+  for (size_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    compute.skinDescriptorSets[i].reserve(modelInstances.size());
+    for (size_t j = 0; j < modelInstances.size(); j++) {
+      compute.skinDescriptorSets[i].push_back(
+          std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
+    }
+  }
+
+  std::vector<std::vector<vk::DescriptorBufferInfo>> skinMatricesBufferInfos;
+  skinMatricesBufferInfos.resize(compute.skinDescriptorSets.size());
+  std::vector<std::vector<vk::DescriptorBufferInfo>> animatedVertexBufferInfos;
+  animatedVertexBufferInfos.resize(compute.skinDescriptorSets.size());
+  for (size_t i = 0; i < compute.skinDescriptorSets.size(); i++) {
+    skinMatricesBufferInfos.reserve(compute.skinDescriptorSets[i].size());
+    animatedVertexBufferInfos.reserve(compute.skinDescriptorSets[i].size());
+    for (size_t j = 0; j < compute.skinDescriptorSets[i].size(); j++) {
+      skinMatricesBufferInfos[i].push_back(
+          compute.skinMatricesBuffers[i][j]->descriptorInfo());
+      animatedVertexBufferInfos[i].push_back(
+          common.animatedVertexBuffers[i][j]->descriptorInfo());
+    }
+  }
+  std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
+  writeDescriptorSets.reserve(compute.skinDescriptorSets.size() *
+                              compute.skinDescriptorSets[0].size());
+  for (size_t i = 0; i < compute.skinDescriptorSets.size(); i++) {
+    for (size_t j = 0; j < compute.skinDescriptorSets[i].size(); j++) {
+      writeDescriptorSets.emplace_back(*compute.skinDescriptorSets[i][j],
+                                       0 /*binding*/, 0,
+                                       vk::DescriptorType::eStorageBuffer,
+                                       nullptr, skinMatricesBufferInfos[i][j]);
+      writeDescriptorSets.emplace_back(
+          *compute.skinDescriptorSets[i][j], 1 /*binding*/, 0,
+          vk::DescriptorType::eStorageBuffer, nullptr,
+          animatedVertexBufferInfos[i][j]);
+    }
+  }
+  device.updateDescriptorSets(writeDescriptorSets, nullptr);
+}
+
+void VgeExample::createComputePipelines() {
+  uint32_t maxComputeSharedMemorySize =
+      physicalDevice.getProperties().limits.maxComputeSharedMemorySize;
+
+  sharedDataSize = std::min(
+      desiredSharedDataSize,
+      static_cast<uint32_t>(maxComputeSharedMemorySize / sizeof(glm::vec4)));
+  SpecializationData specializationData{};
+  specializationData.sharedDataSize = sharedDataSize;
+  specializationData.integrator = integrator;
+  specializationData.integrateStep = 0u;
+  specializationData.localSizeX = sharedDataSize;
+
+  std::vector<vk::SpecializationMapEntry> specializationMapEntries;
+  specializationMapEntries.emplace_back(
+      0u, offsetof(SpecializationData, sharedDataSize), sizeof(uint32_t));
+  specializationMapEntries.emplace_back(
+      1u, offsetof(SpecializationData, integrator), sizeof(uint32_t));
+  specializationMapEntries.emplace_back(
+      2u, offsetof(SpecializationData, integrateStep), sizeof(uint32_t));
+  specializationMapEntries.emplace_back(
+      3u, offsetof(SpecializationData, localSizeX), sizeof(uint32_t));
+
+  {
+    // compute animation
+    auto compIntegrateCode =
+        vgeu::readFile(getShadersPath() + "/pbd/model_animate.comp.spv");
+    vk::raii::ShaderModule compIntegrateShaderModule =
+        vgeu::createShaderModule(device, compIntegrateCode);
+    vk::SpecializationInfo specializationInfo(
+        specializationMapEntries,
+        vk::ArrayProxyNoTemporaries<const SpecializationData>(
+            specializationData));
+    vk::PipelineShaderStageCreateInfo computeShaderStageCI(
+        vk::PipelineShaderStageCreateFlags{}, vk::ShaderStageFlagBits::eCompute,
+        *compIntegrateShaderModule, "main", &specializationInfo);
+    vk::ComputePipelineCreateInfo computePipelineCI(vk::PipelineCreateFlags{},
+                                                    computeShaderStageCI,
+                                                    *compute.pipelineLayout);
+    compute.pipelines.pipelineModelAnimate =
+        vk::raii::Pipeline(device, pipelineCache, computePipelineCI);
   }
 }
 
 void VgeExample::prepareCompute() {
   // create ubo
-  {
-    // compute UBO
-    compute.uniformBuffers.reserve(MAX_CONCURRENT_FRAMES);
-    for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
-      compute.uniformBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
-          globalAllocator->getAllocator(), sizeof(compute.ubo), 1,
-          vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_AUTO,
-          VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-              VMA_ALLOCATION_CREATE_MAPPED_BIT |
-              VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT));
-      std::memcpy(compute.uniformBuffers[i]->getMappedData(), &compute.ubo,
-                  sizeof(compute.ubo));
-    }
-
-    // dynamic UBO
-    alignedSizeDynamicUboElt =
-        vgeu::padBufferSize(physicalDevice, sizeof(DynamicUboElt), true);
-    dynamicUniformBuffers.reserve(MAX_CONCURRENT_FRAMES);
-    for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
-      dynamicUniformBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
-          globalAllocator->getAllocator(), alignedSizeDynamicUboElt,
-          dynamicUbo.size(), vk::BufferUsageFlagBits::eUniformBuffer,
-          VMA_MEMORY_USAGE_AUTO,
-          VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-              VMA_ALLOCATION_CREATE_MAPPED_BIT |
-              VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT));
-      for (size_t j = 0; j < dynamicUbo.size(); j++) {
-        std::memcpy(
-            static_cast<char*>(dynamicUniformBuffers[i]->getMappedData()) +
-                j * alignedSizeDynamicUboElt,
-            &dynamicUbo[j], alignedSizeDynamicUboElt);
-      }
-    }
-  }
+  createComputeUniformBuffers();
+  // create ssbo
+  createComputeStorageBuffers();
   // create queue
   compute.queue = vk::raii::Queue(device, compute.queueFamilyIndex, 0);
   // create descriptorSetLayout
-  {
-    std::vector<vk::DescriptorSetLayout> setLayouts;
+  // create pipelineLayout
+  createComputeDescriptorSetLayout();
 
-    // set 0 ubo
-    {
-      std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
-      layoutBindings.emplace_back(0 /* binding */,
-                                  vk::DescriptorType::eUniformBuffer, 1,
-                                  vk::ShaderStageFlagBits::eCompute);
-      vk::DescriptorSetLayoutCreateInfo layoutCI(
-          vk::DescriptorSetLayoutCreateFlags{}, layoutBindings);
-      compute.descriptorSetLayout =
-          vk::raii::DescriptorSetLayout(device, layoutCI);
-      setLayouts.push_back(*compute.descriptorSetLayout);
-    }
-
-    // set 1 input model vertex ssbo
-    setLayouts.push_back(*modelInstances[0].model->descriptorSetLayoutVertex);
-
-    // set 2 dynamic ubo
-    {
-      std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
-      layoutBindings.emplace_back(0 /*binding*/,
-                                  vk::DescriptorType::eUniformBufferDynamic, 1,
-                                  vk::ShaderStageFlagBits::eAll);
-      vk::DescriptorSetLayoutCreateInfo layoutCI({}, layoutBindings);
-      dynamicUboDescriptorSetLayout =
-          vk::raii::DescriptorSetLayout(device, layoutCI);
-      setLayouts.push_back(*dynamicUboDescriptorSetLayout);
-    }
-
-    // set 3 skin ssbo
-    {
-      std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
-      // skin SSBO for all model instances
-      layoutBindings.emplace_back(0 /*binding*/,
-                                  vk::DescriptorType::eStorageBuffer, 1,
-                                  vk::ShaderStageFlagBits::eCompute);
-      // animated vertex ssbo for all model instances
-      layoutBindings.emplace_back(1 /*binding*/,
-                                  vk::DescriptorType::eStorageBuffer, 1,
-                                  vk::ShaderStageFlagBits::eCompute);
-      vk::DescriptorSetLayoutCreateInfo layoutCI({}, layoutBindings);
-      compute.skinDescriptorSetLayout =
-          vk::raii::DescriptorSetLayout(device, layoutCI);
-      setLayouts.push_back(*compute.skinDescriptorSetLayout);
-    }
-
-    // create pipelineLayout
-    vk::PipelineLayoutCreateInfo pipelineLayoutCI({}, setLayouts);
-    compute.pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutCI);
-  }
-
-  // dynamic UBO descriptorSet
-  {
-    vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
-                                            *dynamicUboDescriptorSetLayout);
-    dynamicUboDescriptorSets.reserve(MAX_CONCURRENT_FRAMES);
-    for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
-      dynamicUboDescriptorSets.push_back(
-          std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
-    }
-    std::vector<vk::DescriptorBufferInfo> bufferInfos;
-    bufferInfos.reserve(dynamicUniformBuffers.size());
-    std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
-    writeDescriptorSets.reserve(dynamicUniformBuffers.size());
-    for (int i = 0; i < dynamicUniformBuffers.size(); i++) {
-      // NOTE: descriptorBufferInfo range be alignedSizeDynamicUboElt
-      bufferInfos.push_back(dynamicUniformBuffers[i]->descriptorInfo(
-          alignedSizeDynamicUboElt, 0));
-      writeDescriptorSets.emplace_back(
-          *dynamicUboDescriptorSets[i], 0, 0,
-          vk::DescriptorType::eUniformBufferDynamic, nullptr,
-          bufferInfos.back());
-    }
-    device.updateDescriptorSets(writeDescriptorSets, nullptr);
-  }
-
+  // dynamic UBO descriptorSet -> common
   // skin ssbo descriptorSets
-  {
-    vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
-                                            *compute.skinDescriptorSetLayout);
-    compute.skinDescriptorSets.resize(MAX_CONCURRENT_FRAMES);
-    for (size_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
-      compute.skinDescriptorSets[i].reserve(modelInstances.size());
-      for (size_t j = 0; j < modelInstances.size(); j++) {
-        compute.skinDescriptorSets[i].push_back(
-            std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
-      }
-    }
-
-    std::vector<std::vector<vk::DescriptorBufferInfo>> skinMatricesBufferInfos;
-    skinMatricesBufferInfos.resize(compute.skinDescriptorSets.size());
-    std::vector<std::vector<vk::DescriptorBufferInfo>>
-        animatedVertexBufferInfos;
-    animatedVertexBufferInfos.resize(compute.skinDescriptorSets.size());
-    for (size_t i = 0; i < compute.skinDescriptorSets.size(); i++) {
-      skinMatricesBufferInfos.reserve(compute.skinDescriptorSets[i].size());
-      animatedVertexBufferInfos.reserve(compute.skinDescriptorSets[i].size());
-      for (size_t j = 0; j < compute.skinDescriptorSets[i].size(); j++) {
-        skinMatricesBufferInfos[i].push_back(
-            compute.skinMatricesBuffers[i][j]->descriptorInfo());
-        animatedVertexBufferInfos[i].push_back(
-            compute.animatedVertexBuffers[i][j]->descriptorInfo());
-      }
-    }
-    std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
-    writeDescriptorSets.reserve(compute.skinDescriptorSets.size() *
-                                compute.skinDescriptorSets[0].size());
-    for (size_t i = 0; i < compute.skinDescriptorSets.size(); i++) {
-      for (size_t j = 0; j < compute.skinDescriptorSets[i].size(); j++) {
-        writeDescriptorSets.emplace_back(
-            *compute.skinDescriptorSets[i][j], 0 /*binding*/, 0,
-            vk::DescriptorType::eStorageBuffer, nullptr,
-            skinMatricesBufferInfos[i][j]);
-        writeDescriptorSets.emplace_back(
-            *compute.skinDescriptorSets[i][j], 1 /*binding*/, 0,
-            vk::DescriptorType::eStorageBuffer, nullptr,
-            animatedVertexBufferInfos[i][j]);
-      }
-    }
-    device.updateDescriptorSets(writeDescriptorSets, nullptr);
-  }
+  createComputeDescriptorSets();
 
   // create pipelines
-  {
-    uint32_t maxComputeSharedMemorySize =
-        physicalDevice.getProperties().limits.maxComputeSharedMemorySize;
+  createComputePipelines();
 
-    sharedDataSize = std::min(
-        desiredSharedDataSize,
-        static_cast<uint32_t>(maxComputeSharedMemorySize / sizeof(glm::vec4)));
-    SpecializationData specializationData{};
-    specializationData.sharedDataSize = sharedDataSize;
-    specializationData.integrator = integrator;
-    specializationData.integrateStep = 0u;
-    specializationData.localSizeX = sharedDataSize;
-
-    std::vector<vk::SpecializationMapEntry> specializationMapEntries;
-    specializationMapEntries.emplace_back(
-        0u, offsetof(SpecializationData, sharedDataSize), sizeof(uint32_t));
-    specializationMapEntries.emplace_back(
-        1u, offsetof(SpecializationData, integrator), sizeof(uint32_t));
-    specializationMapEntries.emplace_back(
-        2u, offsetof(SpecializationData, integrateStep), sizeof(uint32_t));
-    specializationMapEntries.emplace_back(
-        3u, offsetof(SpecializationData, localSizeX), sizeof(uint32_t));
-
-    {
-      // compute animation
-      auto compIntegrateCode =
-          vgeu::readFile(getShadersPath() + "/pbd/model_animate.comp.spv");
-      vk::raii::ShaderModule compIntegrateShaderModule =
-          vgeu::createShaderModule(device, compIntegrateCode);
-      vk::SpecializationInfo specializationInfo(
-          specializationMapEntries,
-          vk::ArrayProxyNoTemporaries<const SpecializationData>(
-              specializationData));
-      vk::PipelineShaderStageCreateInfo computeShaderStageCI(
-          vk::PipelineShaderStageCreateFlags{},
-          vk::ShaderStageFlagBits::eCompute, *compIntegrateShaderModule, "main",
-          &specializationInfo);
-      vk::ComputePipelineCreateInfo computePipelineCI(vk::PipelineCreateFlags{},
-                                                      computeShaderStageCI,
-                                                      *compute.pipelineLayout);
-      compute.pipelineModelAnimate =
-          vk::raii::Pipeline(device, pipelineCache, computePipelineCI);
-    }
-  }
   // create commandPool
   {
     vk::CommandPoolCreateInfo cmdPoolCI(
@@ -375,12 +377,28 @@ void VgeExample::prepareCompute() {
 
   // create semaphore for compute-graphics sync
   {
-    compute.semaphores.reserve(MAX_CONCURRENT_FRAMES);
+    std::vector<vk::Semaphore> semaphoresToSignal;
+    semaphoresToSignal.reserve(MAX_CONCURRENT_FRAMES);
+    compute.semaphores.ready.reserve(MAX_CONCURRENT_FRAMES);
     for (size_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
-      compute.semaphores.emplace_back(device, vk::SemaphoreCreateInfo());
+      vk::raii::Semaphore& semaphore = compute.semaphores.ready.emplace_back(
+          device, vk::SemaphoreCreateInfo());
+      semaphoresToSignal.push_back(*semaphore);
+    }
+    // initial signaled
+    vk::SubmitInfo submitInfo({}, {}, {}, semaphoresToSignal);
+    compute.queue.submit(submitInfo);
+    compute.queue.waitIdle();
+  }
+  {
+    compute.semaphores.complete.reserve(MAX_CONCURRENT_FRAMES);
+    for (size_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      compute.semaphores.complete.emplace_back(device,
+                                               vk::SemaphoreCreateInfo());
     }
   }
 }
+
 void VgeExample::loadAssets() {
   // NOTE: no flip or preTransform for animation and skinning
   vgeu::FileLoadingFlags glTFLoadingFlags =
@@ -554,98 +572,84 @@ void VgeExample::loadAssets() {
   }
 }
 
-void VgeExample::createStorageBuffers() {
+void VgeExample::createComputeStorageBuffers() {
   // use loaded model to create skin ssbo
-  {
-    compute.skinMatricesData.resize(modelInstances.size());
-    // TODO: optimize for models without skin
-    for (size_t i = 0; i < modelInstances.size(); i++) {
-      if (modelInstances[i].model)
-        modelInstances[i].model->getSkinMatrices(compute.skinMatricesData[i]);
-      else {
-        compute.skinMatricesData[i].resize(1);
-      }
+
+  compute.skinMatricesData.resize(modelInstances.size());
+  // TODO: optimize for models without skin
+  for (size_t i = 0; i < modelInstances.size(); i++) {
+    if (modelInstances[i].model)
+      modelInstances[i].model->getSkinMatrices(compute.skinMatricesData[i]);
+    else {
+      compute.skinMatricesData[i].resize(1);
     }
-    compute.skinMatricesBuffers.resize(MAX_CONCURRENT_FRAMES);
-    for (auto i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
-      compute.skinMatricesBuffers[i].reserve(modelInstances.size());
-      for (size_t j = 0; j < modelInstances.size(); j++) {
-        // mapped
-        compute.skinMatricesBuffers[i].push_back(
-            std::move(std::make_unique<vgeu::VgeuBuffer>(
-                globalAllocator->getAllocator(),
-                sizeof(vgeu::glTF::MeshMatricesData),
-                compute.skinMatricesData[j].size(),
-                vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_AUTO,
-                VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-                    VMA_ALLOCATION_CREATE_MAPPED_BIT)));
-      }
-    }
-    // animated vertex ssbo wo transfer and mapped ptr
-    compute.animatedVertexBuffers.resize(MAX_CONCURRENT_FRAMES);
-    for (auto i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
-      compute.animatedVertexBuffers[i].reserve(modelInstances.size());
-      for (size_t j = 0; j < modelInstances.size(); j++) {
-        compute.animatedVertexBuffers[i].push_back(
-            std::move(std::make_unique<vgeu::VgeuBuffer>(
-                globalAllocator->getAllocator(), sizeof(AnimatedVertex),
-                modelInstances[j].getVertexCount(),
-                vk::BufferUsageFlagBits::eStorageBuffer |
-                    vk::BufferUsageFlagBits::eVertexBuffer,
-                VMA_MEMORY_USAGE_AUTO,
-                VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT)));
-      }
+  }
+  compute.skinMatricesBuffers.resize(MAX_CONCURRENT_FRAMES);
+  for (auto i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    compute.skinMatricesBuffers[i].reserve(modelInstances.size());
+    for (size_t j = 0; j < modelInstances.size(); j++) {
+      // mapped
+      compute.skinMatricesBuffers[i].push_back(
+          std::move(std::make_unique<vgeu::VgeuBuffer>(
+              globalAllocator->getAllocator(),
+              sizeof(vgeu::glTF::MeshMatricesData),
+              compute.skinMatricesData[j].size(),
+              vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_AUTO,
+              VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                  VMA_ALLOCATION_CREATE_MAPPED_BIT)));
     }
   }
 }
 
 void VgeExample::createVertexSCI() {
   // vertex binding and attribute descriptions
-  simpleVertexInfos.bindingDescriptions.emplace_back(
+  graphics.simpleVertexInfos.bindingDescriptions.emplace_back(
       0 /*binding*/, sizeof(SimpleModel::Vertex), vk::VertexInputRate::eVertex);
 
-  simpleVertexInfos.attributeDescriptions.emplace_back(
+  graphics.simpleVertexInfos.attributeDescriptions.emplace_back(
       0 /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
       offsetof(SimpleModel::Vertex, pos));
-  simpleVertexInfos.attributeDescriptions.emplace_back(
+  graphics.simpleVertexInfos.attributeDescriptions.emplace_back(
       1 /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
       offsetof(SimpleModel::Vertex, normal));
-  simpleVertexInfos.attributeDescriptions.emplace_back(
+  graphics.simpleVertexInfos.attributeDescriptions.emplace_back(
       2 /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
       offsetof(SimpleModel::Vertex, color));
-  simpleVertexInfos.attributeDescriptions.emplace_back(
+  graphics.simpleVertexInfos.attributeDescriptions.emplace_back(
       3 /*location*/, 0 /* binding */, vk::Format::eR32G32Sfloat,
       offsetof(SimpleModel::Vertex, uv));
 
-  simpleVertexInfos.vertexInputSCI = vk::PipelineVertexInputStateCreateInfo(
-      vk::PipelineVertexInputStateCreateFlags{},
-      simpleVertexInfos.bindingDescriptions,
-      simpleVertexInfos.attributeDescriptions);
+  graphics.simpleVertexInfos.vertexInputSCI =
+      vk::PipelineVertexInputStateCreateInfo(
+          vk::PipelineVertexInputStateCreateFlags{},
+          graphics.simpleVertexInfos.bindingDescriptions,
+          graphics.simpleVertexInfos.attributeDescriptions);
 
   // vertex binding and attribute descriptions
-  animatedVertexInfos.bindingDescriptions.emplace_back(
+  graphics.animatedVertexInfos.bindingDescriptions.emplace_back(
       0 /*binding*/, sizeof(AnimatedVertex), vk::VertexInputRate::eVertex);
 
-  animatedVertexInfos.attributeDescriptions.emplace_back(
+  graphics.animatedVertexInfos.attributeDescriptions.emplace_back(
       0 /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
       offsetof(AnimatedVertex, pos));
-  animatedVertexInfos.attributeDescriptions.emplace_back(
+  graphics.animatedVertexInfos.attributeDescriptions.emplace_back(
       1 /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
       offsetof(AnimatedVertex, normal));
-  animatedVertexInfos.attributeDescriptions.emplace_back(
+  graphics.animatedVertexInfos.attributeDescriptions.emplace_back(
       2 /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
       offsetof(AnimatedVertex, color));
-  animatedVertexInfos.attributeDescriptions.emplace_back(
+  graphics.animatedVertexInfos.attributeDescriptions.emplace_back(
       3 /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
       offsetof(AnimatedVertex, tangent));
-  animatedVertexInfos.attributeDescriptions.emplace_back(
+  graphics.animatedVertexInfos.attributeDescriptions.emplace_back(
       4 /*location*/, 0 /* binding */, vk::Format::eR32G32Sfloat,
       offsetof(AnimatedVertex, uv));
 
-  animatedVertexInfos.vertexInputSCI = vk::PipelineVertexInputStateCreateInfo(
-      vk::PipelineVertexInputStateCreateFlags{},
-      animatedVertexInfos.bindingDescriptions,
-      animatedVertexInfos.attributeDescriptions);
+  graphics.animatedVertexInfos.vertexInputSCI =
+      vk::PipelineVertexInputStateCreateInfo(
+          vk::PipelineVertexInputStateCreateFlags{},
+          graphics.animatedVertexInfos.bindingDescriptions,
+          graphics.animatedVertexInfos.attributeDescriptions);
 }
 
 void VgeExample::setupDynamicUbo() {
@@ -653,106 +657,111 @@ void VgeExample::setupDynamicUbo() {
   glm::vec3 up{0.f, -1.f, 0.f};
   glm::vec3 right{1.f, 0.f, 0.f};
   glm::vec3 forward{0.f, 0.f, 1.f};
-  dynamicUbo.resize(modelInstances.size());
+  common.dynamicUbo.resize(modelInstances.size());
   {
     size_t instanceIndex = findInstances("fox0")[0];
-    dynamicUbo[instanceIndex].modelMatrix =
+    common.dynamicUbo[instanceIndex].modelMatrix =
         glm::translate(glm::mat4{1.f}, glm::vec3{-6.f, 0.f, 0.f});
-    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
-        dynamicUbo[instanceIndex].modelMatrix, glm::radians(180.f), up);
+    common.dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
+        common.dynamicUbo[instanceIndex].modelMatrix, glm::radians(180.f), up);
     // FlipY manually
-    dynamicUbo[instanceIndex].modelMatrix =
-        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+    common.dynamicUbo[instanceIndex].modelMatrix =
+        glm::scale(common.dynamicUbo[instanceIndex].modelMatrix,
                    glm::vec3{foxScale, -foxScale, foxScale});
-    dynamicUbo[instanceIndex].modelColor = glm::vec4{1.0f, 0.f, 0.f, 0.3f};
+    common.dynamicUbo[instanceIndex].modelColor =
+        glm::vec4{1.0f, 0.f, 0.f, 0.3f};
   }
   {
     size_t instanceIndex = findInstances("fox1")[0];
-    dynamicUbo[instanceIndex].modelMatrix =
+    common.dynamicUbo[instanceIndex].modelMatrix =
         glm::translate(glm::mat4{1.f}, glm::vec3{6.f, 0.f, 0.f});
-    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
-        dynamicUbo[instanceIndex].modelMatrix, glm::radians(0.f), up);
+    common.dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
+        common.dynamicUbo[instanceIndex].modelMatrix, glm::radians(0.f), up);
     // FlipY manually
-    dynamicUbo[instanceIndex].modelMatrix =
-        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+    common.dynamicUbo[instanceIndex].modelMatrix =
+        glm::scale(common.dynamicUbo[instanceIndex].modelMatrix,
                    glm::vec3{foxScale, -foxScale, foxScale});
-    dynamicUbo[instanceIndex].modelColor = glm::vec4{0.0f, 0.f, 1.f, 0.3f};
+    common.dynamicUbo[instanceIndex].modelColor =
+        glm::vec4{0.0f, 0.f, 1.f, 0.3f};
   }
   {
     size_t instanceIndex = findInstances("fox2")[0];
-    dynamicUbo[instanceIndex].modelMatrix =
+    common.dynamicUbo[instanceIndex].modelMatrix =
         glm::translate(glm::mat4{1.f}, glm::vec3{-2.f, 0.f, 0.f});
-    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
-        dynamicUbo[instanceIndex].modelMatrix, glm::radians(180.f), up);
+    common.dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
+        common.dynamicUbo[instanceIndex].modelMatrix, glm::radians(180.f), up);
     // FlipY manually
-    dynamicUbo[instanceIndex].modelMatrix =
-        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+    common.dynamicUbo[instanceIndex].modelMatrix =
+        glm::scale(common.dynamicUbo[instanceIndex].modelMatrix,
                    glm::vec3{foxScale, -foxScale, foxScale});
     // default
-    dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
+    common.dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
   }
   {
     size_t instanceIndex = findInstances("fox3")[0];
-    dynamicUbo[instanceIndex].modelMatrix =
+    common.dynamicUbo[instanceIndex].modelMatrix =
         glm::translate(glm::mat4{1.f}, glm::vec3{+2.f, 0.f, 0.f});
-    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
-        dynamicUbo[instanceIndex].modelMatrix, glm::radians(180.f), up);
+    common.dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
+        common.dynamicUbo[instanceIndex].modelMatrix, glm::radians(180.f), up);
     // FlipY manually
-    dynamicUbo[instanceIndex].modelMatrix =
-        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+    common.dynamicUbo[instanceIndex].modelMatrix =
+        glm::scale(common.dynamicUbo[instanceIndex].modelMatrix,
                    glm::vec3{foxScale, -foxScale, foxScale});
-    dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f, 1.f, 1.f, 0.3f};
+    common.dynamicUbo[instanceIndex].modelColor =
+        glm::vec4{0.f, 1.f, 1.f, 0.3f};
   }
   {
     float appleScale = 10.f;
     size_t instanceIndex = findInstances("apple1")[0];
     // FlipY manually
-    dynamicUbo[instanceIndex].modelMatrix =
-        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+    common.dynamicUbo[instanceIndex].modelMatrix =
+        glm::scale(common.dynamicUbo[instanceIndex].modelMatrix,
                    glm::vec3{appleScale, -appleScale, appleScale});
   }
 
   float shipScale = .5f;
   {
     size_t instanceIndex = findInstances("dutchShipMedium")[0];
-    dynamicUbo[instanceIndex].modelMatrix =
+    common.dynamicUbo[instanceIndex].modelMatrix =
         glm::translate(glm::mat4{1.f}, glm::vec3{0.f, -5.f, 0.f});
-    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
-        dynamicUbo[instanceIndex].modelMatrix, glm::radians(180.f), up);
+    common.dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
+        common.dynamicUbo[instanceIndex].modelMatrix, glm::radians(180.f), up);
     // FlipY manually
-    dynamicUbo[instanceIndex].modelMatrix =
-        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+    common.dynamicUbo[instanceIndex].modelMatrix =
+        glm::scale(common.dynamicUbo[instanceIndex].modelMatrix,
                    glm::vec3{shipScale, -shipScale, shipScale});
     // default
-    dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
+    common.dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
   }
   float quadScale = 20.f;
   {
     size_t instanceIndex = findInstances("quad1")[0];
-    dynamicUbo[instanceIndex].modelMatrix =
+    common.dynamicUbo[instanceIndex].modelMatrix =
         glm::translate(glm::mat4{1.f}, glm::vec3{0.f, 0.f, 0.f});
-    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
-        dynamicUbo[instanceIndex].modelMatrix, glm::radians(90.f), right);
-    dynamicUbo[instanceIndex].modelMatrix =
-        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+    common.dynamicUbo[instanceIndex].modelMatrix =
+        glm::rotate(common.dynamicUbo[instanceIndex].modelMatrix,
+                    glm::radians(90.f), right);
+    common.dynamicUbo[instanceIndex].modelMatrix =
+        glm::scale(common.dynamicUbo[instanceIndex].modelMatrix,
                    glm::vec3{quadScale, quadScale, quadScale});
     // default
-    dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
+    common.dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
   }
   {
     size_t instanceIndex = findInstances("quad2")[0];
-    dynamicUbo[instanceIndex].modelMatrix =
+    common.dynamicUbo[instanceIndex].modelMatrix =
         glm::translate(glm::mat4{1.f}, glm::vec3{quadScale * 1.5f, 0.f, 0.f});
-    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
-        dynamicUbo[instanceIndex].modelMatrix, glm::radians(45.f), up);
-    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
-        dynamicUbo[instanceIndex].modelMatrix, glm::radians(90.f), right);
-    dynamicUbo[instanceIndex].modelMatrix = glm::scale(
-        dynamicUbo[instanceIndex].modelMatrix,
+    common.dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
+        common.dynamicUbo[instanceIndex].modelMatrix, glm::radians(45.f), up);
+    common.dynamicUbo[instanceIndex].modelMatrix =
+        glm::rotate(common.dynamicUbo[instanceIndex].modelMatrix,
+                    glm::radians(90.f), right);
+    common.dynamicUbo[instanceIndex].modelMatrix = glm::scale(
+        common.dynamicUbo[instanceIndex].modelMatrix,
         glm::vec3{quadScale * 0.5f * sqrt(2.f), quadScale * 0.5f * sqrt(2.f),
                   quadScale * 0.5f * sqrt(2.f)});
     // default
-    dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
+    common.dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
   }
 
   float rectScale = quadScale * sqrt(2.f);
@@ -761,19 +770,20 @@ void VgeExample::setupDynamicUbo() {
                  quadScale * sin(i * glm::half_pi<float>()));
     size_t instanceIndex =
         findInstances("rectLines" + std::to_string(i + 1))[0];
-    dynamicUbo[instanceIndex].modelMatrix = glm::translate(glm::mat4{1.f}, tr);
-    dynamicUbo[instanceIndex].modelMatrix =
-        glm::rotate(dynamicUbo[instanceIndex].modelMatrix,
+    common.dynamicUbo[instanceIndex].modelMatrix =
+        glm::translate(glm::mat4{1.f}, tr);
+    common.dynamicUbo[instanceIndex].modelMatrix =
+        glm::rotate(common.dynamicUbo[instanceIndex].modelMatrix,
                     glm::radians(((i + 1) % 4) * 90.f + 45.f), up);
-    dynamicUbo[instanceIndex].modelMatrix =
-        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+    common.dynamicUbo[instanceIndex].modelMatrix =
+        glm::scale(common.dynamicUbo[instanceIndex].modelMatrix,
                    glm::vec3{rectScale, -rectScale * 0.5f, rectScale});
     // default
-    dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
+    common.dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
   }
 }
 
-void VgeExample::createUniformBuffers() {
+void VgeExample::createGraphicsUniformBuffers() {
   // graphics UBO
   graphics.globalUniformBuffers.reserve(MAX_CONCURRENT_FRAMES);
   for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
@@ -806,7 +816,7 @@ void VgeExample::createDescriptorPool() {
   descriptorPool = vk::raii::DescriptorPool(device, descriptorPoolCI);
 }
 
-void VgeExample::createDescriptorSetLayout() {
+void VgeExample::createGraphicsDescriptorSetLayout() {
   std::vector<vk::DescriptorSetLayout> setLayouts;
 
   // set 0
@@ -829,9 +839,9 @@ void VgeExample::createDescriptorSetLayout() {
         0, vk::DescriptorType::eUniformBufferDynamic, 1,
         vk::ShaderStageFlagBits::eAll);
     vk::DescriptorSetLayoutCreateInfo layoutCI({}, 1, &layoutBinding);
-    dynamicUboDescriptorSetLayout =
+    common.dynamicUboDescriptorSetLayout =
         vk::raii::DescriptorSetLayout(device, layoutCI);
-    setLayouts.push_back(*dynamicUboDescriptorSetLayout);
+    setLayouts.push_back(*common.dynamicUboDescriptorSetLayout);
   }
 
   // set 2
@@ -842,7 +852,7 @@ void VgeExample::createDescriptorSetLayout() {
   graphics.pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutCI);
 }
 
-void VgeExample::createDescriptorSets() {
+void VgeExample::createGraphicsDescriptorSets() {
   // global UBO
   {
     vk::DescriptorSetAllocateInfo allocInfo(
@@ -869,9 +879,9 @@ void VgeExample::createDescriptorSets() {
   }
 }
 
-void VgeExample::createPipelines() {
+void VgeExample::createGraphicsPipelines() {
   vk::PipelineVertexInputStateCreateInfo vertexInputSCI =
-      animatedVertexInfos.vertexInputSCI;
+      graphics.animatedVertexInfos.vertexInputSCI;
 
   vk::PipelineInputAssemblyStateCreateInfo inputAssemblySCI(
       vk::PipelineInputAssemblyStateCreateFlags(),
@@ -939,13 +949,13 @@ void VgeExample::createPipelines() {
       &rasterizationSCI, &multisampleSCI, &depthStencilSCI, &colorBlendSCI,
       &dynamicSCI, *graphics.pipelineLayout, *renderPass);
 
-  graphics.pipelinePhong =
+  graphics.pipelines.pipelinePhong =
       vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
   {
     vertexInputSCI.setVertexBindingDescriptions(
-        simpleVertexInfos.bindingDescriptions);
+        graphics.simpleVertexInfos.bindingDescriptions);
     vertexInputSCI.setVertexAttributeDescriptions(
-        simpleVertexInfos.attributeDescriptions);
+        graphics.simpleVertexInfos.attributeDescriptions);
     vertCode = vgeu::readFile(getShadersPath() + "/pbd/simpleMesh.vert.spv");
     fragCode = vgeu::readFile(getShadersPath() + "/pbd/simpleMesh.frag.spv");
     // NOTE: after pipeline creation, shader modules can be destroyed.
@@ -957,7 +967,7 @@ void VgeExample::createPipelines() {
     shaderStageCIs[1] = vk::PipelineShaderStageCreateInfo(
         vk::PipelineShaderStageCreateFlags(),
         vk::ShaderStageFlagBits::eFragment, *fragShaderModule, "main", nullptr);
-    graphics.pipelineSimpleMesh =
+    graphics.pipelines.pipelineSimpleMesh =
         vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
   }
   {
@@ -973,7 +983,7 @@ void VgeExample::createPipelines() {
     shaderStageCIs[1] = vk::PipelineShaderStageCreateInfo(
         vk::PipelineShaderStageCreateFlags(),
         vk::ShaderStageFlagBits::eFragment, *fragShaderModule, "main", nullptr);
-    graphics.pipelineSimpleLine =
+    graphics.pipelines.pipelineSimpleLine =
         vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
   }
   {
@@ -990,7 +1000,7 @@ void VgeExample::createPipelines() {
     shaderStageCIs[1] = vk::PipelineShaderStageCreateInfo(
         vk::PipelineShaderStageCreateFlags(),
         vk::ShaderStageFlagBits::eFragment, *fragShaderModule, "main", nullptr);
-    graphics.pipelineWireMesh =
+    graphics.pipelines.pipelineWireMesh =
         vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
   }
 }
@@ -1028,10 +1038,10 @@ void VgeExample::draw() {
     buildComputeCommandBuffers();
     vk::PipelineStageFlags computeWaitDstStageMask(
         vk::PipelineStageFlagBits::eComputeShader);
-    vk::SubmitInfo computeSubmitInfo(*graphics.semaphores[currentFrameIndex],
-                                     computeWaitDstStageMask,
-                                     *compute.cmdBuffers[currentFrameIndex],
-                                     *compute.semaphores[currentFrameIndex]);
+    vk::SubmitInfo computeSubmitInfo(
+        *compute.semaphores.ready[currentFrameIndex], computeWaitDstStageMask,
+        *compute.cmdBuffers[currentFrameIndex],
+        *compute.semaphores.complete[currentFrameIndex]);
     compute.queue.submit(computeSubmitInfo);
   }
 
@@ -1045,12 +1055,12 @@ void VgeExample::draw() {
     };
 
     std::vector<vk::Semaphore> graphicsWaitSemaphores{
-        *compute.semaphores[currentFrameIndex],
+        *compute.semaphores.complete[currentFrameIndex],
         *presentCompleteSemaphores[currentFrameIndex],
     };
 
     std::vector<vk::Semaphore> graphicsSignalSemaphore{
-        *graphics.semaphores[currentFrameIndex],
+        *compute.semaphores.ready[currentFrameIndex],
         *renderCompleteSemaphores[currentFrameIndex],
     };
 
@@ -1084,7 +1094,7 @@ void VgeExample::buildCommandBuffers() {
   if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
     std::vector<vk::BufferMemoryBarrier> bufferBarriers;
     for (const auto& animatedVertexBuffer :
-         compute.animatedVertexBuffers[currentFrameIndex]) {
+         common.animatedVertexBuffers[currentFrameIndex]) {
       bufferBarriers.emplace_back(
           vk::AccessFlags{}, vk::AccessFlagBits::eVertexAttributeRead,
           compute.queueFamilyIndex, graphics.queueFamilyIndex,
@@ -1121,7 +1131,7 @@ void VgeExample::buildCommandBuffers() {
                      0.0f, 1.0f));
     // bind pipeline
     drawCmdBuffers[currentFrameIndex].bindPipeline(
-        vk::PipelineBindPoint::eGraphics, *graphics.pipelinePhong);
+        vk::PipelineBindPoint::eGraphics, *graphics.pipelines.pipelinePhong);
 
     // draw all instances including model based and bones.
     for (size_t instanceIdx = 0; instanceIdx < modelInstances.size();
@@ -1134,13 +1144,13 @@ void VgeExample::buildCommandBuffers() {
       // bind dynamic
       drawCmdBuffers[currentFrameIndex].bindDescriptorSets(
           vk::PipelineBindPoint::eGraphics, *graphics.pipelineLayout,
-          1 /*set 1*/, {*dynamicUboDescriptorSets[currentFrameIndex]},
-          alignedSizeDynamicUboElt * instanceIdx);
+          1 /*set 1*/, {*common.dynamicUboDescriptorSets[currentFrameIndex]},
+          common.alignedSizeDynamicUboElt * instanceIdx);
       // bind vertex buffer
       vk::DeviceSize offset(0);
       drawCmdBuffers[currentFrameIndex].bindVertexBuffers(
           0,
-          compute.animatedVertexBuffers[currentFrameIndex][instanceIdx]
+          common.animatedVertexBuffers[currentFrameIndex][instanceIdx]
               ->getBuffer(),
           offset);
       // bind index buffer
@@ -1164,17 +1174,19 @@ void VgeExample::buildCommandBuffers() {
       drawCmdBuffers[currentFrameIndex].setLineWidth(opts.lineWidth);
       // simpleLines
       drawCmdBuffers[currentFrameIndex].bindPipeline(
-          vk::PipelineBindPoint::eGraphics, *graphics.pipelineSimpleLine);
+          vk::PipelineBindPoint::eGraphics,
+          *graphics.pipelines.pipelineSimpleLine);
     } else {
       // simpleMesh
       drawCmdBuffers[currentFrameIndex].bindPipeline(
-          vk::PipelineBindPoint::eGraphics, *graphics.pipelineSimpleMesh);
+          vk::PipelineBindPoint::eGraphics,
+          *graphics.pipelines.pipelineSimpleMesh);
     }
     // bind dynamic
     drawCmdBuffers[currentFrameIndex].bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics, *graphics.pipelineLayout, 1 /*set 1*/,
-        {*dynamicUboDescriptorSets[currentFrameIndex]},
-        alignedSizeDynamicUboElt * instanceIdx);
+        {*common.dynamicUboDescriptorSets[currentFrameIndex]},
+        common.alignedSizeDynamicUboElt * instanceIdx);
     vk::DeviceSize offset(0);
     drawCmdBuffers[currentFrameIndex].bindVertexBuffers(
         0, modelInstance.simpleModel->vertexBuffer->getBuffer(), offset);
@@ -1196,7 +1208,7 @@ void VgeExample::buildCommandBuffers() {
   if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
     std::vector<vk::BufferMemoryBarrier> bufferBarriers;
     for (const auto& animatedVertexBuffer :
-         compute.animatedVertexBuffers[currentFrameIndex]) {
+         common.animatedVertexBuffers[currentFrameIndex]) {
       bufferBarriers.emplace_back(vk::AccessFlagBits::eVertexAttributeRead,
                                   vk::AccessFlags{}, graphics.queueFamilyIndex,
                                   compute.queueFamilyIndex,
@@ -1223,7 +1235,7 @@ void VgeExample::buildComputeCommandBuffers() {
     if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
       std::vector<vk::BufferMemoryBarrier> bufferBarriers;
       for (const auto& animatedVertexBuffer :
-           compute.animatedVertexBuffers[currentFrameIndex]) {
+           common.animatedVertexBuffers[currentFrameIndex]) {
         bufferBarriers.emplace_back(
             vk::AccessFlags{}, vk::AccessFlagBits::eShaderWrite,
             graphics.queueFamilyIndex, compute.queueFamilyIndex,
@@ -1240,7 +1252,8 @@ void VgeExample::buildComputeCommandBuffers() {
   // pre compute animation
   if (opts.computeModelAnimation) {
     compute.cmdBuffers[currentFrameIndex].bindPipeline(
-        vk::PipelineBindPoint::eCompute, *compute.pipelineModelAnimate);
+        vk::PipelineBindPoint::eCompute,
+        *compute.pipelines.pipelineModelAnimate);
     for (auto instanceIdx = 0; instanceIdx < modelInstances.size();
          instanceIdx++) {
       const auto& modelInstance = modelInstances[instanceIdx];
@@ -1254,8 +1267,8 @@ void VgeExample::buildComputeCommandBuffers() {
 
       compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
           vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 2 /*set*/,
-          {*dynamicUboDescriptorSets[currentFrameIndex]},
-          alignedSizeDynamicUboElt * instanceIdx);
+          {*common.dynamicUboDescriptorSets[currentFrameIndex]},
+          common.alignedSizeDynamicUboElt * instanceIdx);
 
       // bind SSBO for skin matrix and animated vertices
       compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
@@ -1272,10 +1285,10 @@ void VgeExample::buildComputeCommandBuffers() {
     // vk::BufferMemoryBarrier bufferBarrier(
     //     vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eShaderRead,
     //     VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
-    //     compute.animatedVertexBuffers[currentFrameIndex][opts.bindingModel]
+    //     common.animatedVertexBuffers[currentFrameIndex][opts.bindingModel]
     //         ->getBuffer(),
     //     0ull,
-    //     compute.animatedVertexBuffers[currentFrameIndex][opts.bindingModel]
+    //     common.animatedVertexBuffers[currentFrameIndex][opts.bindingModel]
     //         ->getBufferSize());
     // compute.cmdBuffers[currentFrameIndex].pipelineBarrier(
     //     vk::PipelineStageFlagBits::eComputeShader,
@@ -1287,7 +1300,7 @@ void VgeExample::buildComputeCommandBuffers() {
   if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
     std::vector<vk::BufferMemoryBarrier> bufferBarriers;
     for (const auto& animatedVertexBuffer :
-         compute.animatedVertexBuffers[currentFrameIndex]) {
+         common.animatedVertexBuffers[currentFrameIndex]) {
       bufferBarriers.emplace_back(vk::AccessFlagBits::eShaderWrite,
                                   vk::AccessFlags{}, compute.queueFamilyIndex,
                                   graphics.queueFamilyIndex,
@@ -1382,25 +1395,25 @@ void VgeExample::updateDynamicUbo() {
   float rotationVelocity = 50.f;
   {
     size_t instanceIndex = findInstances("fox0")[0];
-    dynamicUbo[instanceIndex].modelMatrix =
+    common.dynamicUbo[instanceIndex].modelMatrix =
         glm::rotate(glm::mat4{1.f},
                     glm::radians(rotationVelocity) * animationTimer, up) *
-        dynamicUbo[instanceIndex].modelMatrix;
+        common.dynamicUbo[instanceIndex].modelMatrix;
   }
   {
     size_t instanceIndex = findInstances("fox1")[0];
-    dynamicUbo[instanceIndex].modelMatrix =
+    common.dynamicUbo[instanceIndex].modelMatrix =
         glm::rotate(glm::mat4{1.f},
                     glm::radians(rotationVelocity) * animationTimer, up) *
-        dynamicUbo[instanceIndex].modelMatrix;
+        common.dynamicUbo[instanceIndex].modelMatrix;
   }
   {
     size_t instanceIndex = findInstances("dutchShipMedium")[0];
-    dynamicUbo[instanceIndex].modelMatrix =
+    common.dynamicUbo[instanceIndex].modelMatrix =
         glm::rotate(glm::mat4{1.f},
                     0.1f * glm::radians(rotationVelocity) * animationTimer,
                     up) *
-        dynamicUbo[instanceIndex].modelMatrix;
+        common.dynamicUbo[instanceIndex].modelMatrix;
   }
   // update animation joint matrices for each shared model
   {
@@ -1435,11 +1448,12 @@ void VgeExample::updateDynamicUbo() {
   }
 
   // update all dynamicUbo elements
-  for (size_t j = 0; j < dynamicUbo.size(); j++) {
-    std::memcpy(static_cast<char*>(
-                    dynamicUniformBuffers[currentFrameIndex]->getMappedData()) +
-                    j * alignedSizeDynamicUboElt,
-                &dynamicUbo[j], alignedSizeDynamicUboElt);
+  for (size_t j = 0; j < common.dynamicUbo.size(); j++) {
+    std::memcpy(
+        static_cast<char*>(
+            common.dynamicUniformBuffers[currentFrameIndex]->getMappedData()) +
+            j * common.alignedSizeDynamicUboElt,
+        &common.dynamicUbo[j], common.alignedSizeDynamicUboElt);
   }
 }
 
