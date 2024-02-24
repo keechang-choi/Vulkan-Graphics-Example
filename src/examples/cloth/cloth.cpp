@@ -319,7 +319,7 @@ void VgeExample::createComputePipelines() {
   {
     // compute animation
     auto compIntegrateCode =
-        vgeu::readFile(getShadersPath() + "/pbd/model_animate.comp.spv");
+        vgeu::readFile(getShadersPath() + "/cloth/model_animate.comp.spv");
     vk::raii::ShaderModule compIntegrateShaderModule =
         vgeu::createShaderModule(device, compIntegrateCode);
     vk::SpecializationInfo specializationInfo(
@@ -448,21 +448,6 @@ void VgeExample::loadAssets() {
     ModelInstance modelInstance{};
     modelInstance.model = fox2;
     modelInstance.name = "fox2";
-    modelInstance.animationIndex = -1;
-    addModelInstance(std::move(modelInstance));
-  }
-
-  std::shared_ptr<vgeu::glTF::Model> fox3;
-  fox3 = std::make_shared<vgeu::glTF::Model>(
-      device, globalAllocator->getAllocator(), queue, commandPool,
-      MAX_CONCURRENT_FRAMES);
-  fox3->additionalBufferUsageFlags = vk::BufferUsageFlagBits::eStorageBuffer;
-  fox3->loadFromFile(getAssetsPath() + "/models/fox-normal/fox-normal.gltf",
-                     glTFLoadingFlags);
-  {
-    ModelInstance modelInstance{};
-    modelInstance.model = fox3;
-    modelInstance.name = "fox3";
     modelInstance.animationIndex = 1;
     addModelInstance(std::move(modelInstance));
   }
@@ -478,23 +463,6 @@ void VgeExample::loadAssets() {
     ModelInstance modelInstance{};
     modelInstance.model = apple;
     modelInstance.name = "apple1";
-    addModelInstance(std::move(modelInstance));
-  }
-
-  std::shared_ptr<vgeu::glTF::Model> dutchShipMedium;
-  dutchShipMedium = std::make_shared<vgeu::glTF::Model>(
-      device, globalAllocator->getAllocator(), queue, commandPool,
-      MAX_CONCURRENT_FRAMES);
-  dutchShipMedium->additionalBufferUsageFlags =
-      vk::BufferUsageFlagBits::eStorageBuffer;
-  dutchShipMedium->loadFromFile(
-      getAssetsPath() +
-          "/models/dutch_ship_medium_1k/dutch_ship_medium_1k.gltf",
-      glTFLoadingFlags);
-  {
-    ModelInstance modelInstance{};
-    modelInstance.model = dutchShipMedium;
-    modelInstance.name = "dutchShipMedium";
     addModelInstance(std::move(modelInstance));
   }
 
@@ -657,11 +625,13 @@ void VgeExample::setupDynamicUbo() {
   glm::vec3 up{0.f, -1.f, 0.f};
   glm::vec3 right{1.f, 0.f, 0.f};
   glm::vec3 forward{0.f, 0.f, 1.f};
+  float quadScale = 20.f;
+
   common.dynamicUbo.resize(modelInstances.size());
   {
     size_t instanceIndex = findInstances("fox0")[0];
-    common.dynamicUbo[instanceIndex].modelMatrix =
-        glm::translate(glm::mat4{1.f}, glm::vec3{-6.f, 0.f, 0.f});
+    common.dynamicUbo[instanceIndex].modelMatrix = glm::translate(
+        glm::mat4{1.f}, glm::vec3{quadScale * 1.5f - 6.f, 0.f, 0.f});
     common.dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
         common.dynamicUbo[instanceIndex].modelMatrix, glm::radians(180.f), up);
     // FlipY manually
@@ -673,8 +643,8 @@ void VgeExample::setupDynamicUbo() {
   }
   {
     size_t instanceIndex = findInstances("fox1")[0];
-    common.dynamicUbo[instanceIndex].modelMatrix =
-        glm::translate(glm::mat4{1.f}, glm::vec3{6.f, 0.f, 0.f});
+    common.dynamicUbo[instanceIndex].modelMatrix = glm::translate(
+        glm::mat4{1.f}, glm::vec3{quadScale * 1.5f + 6.f, 0.f, 0.f});
     common.dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
         common.dynamicUbo[instanceIndex].modelMatrix, glm::radians(0.f), up);
     // FlipY manually
@@ -684,23 +654,11 @@ void VgeExample::setupDynamicUbo() {
     common.dynamicUbo[instanceIndex].modelColor =
         glm::vec4{0.0f, 0.f, 1.f, 0.3f};
   }
+
   {
     size_t instanceIndex = findInstances("fox2")[0];
     common.dynamicUbo[instanceIndex].modelMatrix =
-        glm::translate(glm::mat4{1.f}, glm::vec3{-2.f, 0.f, 0.f});
-    common.dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
-        common.dynamicUbo[instanceIndex].modelMatrix, glm::radians(180.f), up);
-    // FlipY manually
-    common.dynamicUbo[instanceIndex].modelMatrix =
-        glm::scale(common.dynamicUbo[instanceIndex].modelMatrix,
-                   glm::vec3{foxScale, -foxScale, foxScale});
-    // default
-    common.dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
-  }
-  {
-    size_t instanceIndex = findInstances("fox3")[0];
-    common.dynamicUbo[instanceIndex].modelMatrix =
-        glm::translate(glm::mat4{1.f}, glm::vec3{+2.f, 0.f, 0.f});
+        glm::translate(glm::mat4{1.f}, glm::vec3{3.f, 0.f, 0.f});
     common.dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
         common.dynamicUbo[instanceIndex].modelMatrix, glm::radians(180.f), up);
     // FlipY manually
@@ -711,29 +669,16 @@ void VgeExample::setupDynamicUbo() {
         glm::vec4{0.f, 1.f, 1.f, 0.3f};
   }
   {
-    float appleScale = 10.f;
+    float appleScale = 20.f;
     size_t instanceIndex = findInstances("apple1")[0];
+    common.dynamicUbo[instanceIndex].modelMatrix =
+        glm::translate(glm::mat4{1.f}, glm::vec3{-3.f, 0.f, 0.f});
     // FlipY manually
     common.dynamicUbo[instanceIndex].modelMatrix =
         glm::scale(common.dynamicUbo[instanceIndex].modelMatrix,
                    glm::vec3{appleScale, -appleScale, appleScale});
   }
 
-  float shipScale = .5f;
-  {
-    size_t instanceIndex = findInstances("dutchShipMedium")[0];
-    common.dynamicUbo[instanceIndex].modelMatrix =
-        glm::translate(glm::mat4{1.f}, glm::vec3{0.f, -5.f, 0.f});
-    common.dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
-        common.dynamicUbo[instanceIndex].modelMatrix, glm::radians(180.f), up);
-    // FlipY manually
-    common.dynamicUbo[instanceIndex].modelMatrix =
-        glm::scale(common.dynamicUbo[instanceIndex].modelMatrix,
-                   glm::vec3{shipScale, -shipScale, shipScale});
-    // default
-    common.dynamicUbo[instanceIndex].modelColor = glm::vec4{0.f};
-  }
-  float quadScale = 20.f;
   {
     size_t instanceIndex = findInstances("quad1")[0];
     common.dynamicUbo[instanceIndex].modelMatrix =
@@ -925,8 +870,8 @@ void VgeExample::createGraphicsPipelines() {
   vk::PipelineDynamicStateCreateInfo dynamicSCI(
       vk::PipelineDynamicStateCreateFlags(), dynamicStates);
 
-  auto vertCode = vgeu::readFile(getShadersPath() + "/pbd/phong.vert.spv");
-  auto fragCode = vgeu::readFile(getShadersPath() + "/pbd/phong.frag.spv");
+  auto vertCode = vgeu::readFile(getShadersPath() + "/cloth/phong.vert.spv");
+  auto fragCode = vgeu::readFile(getShadersPath() + "/cloth/phong.frag.spv");
   // NOTE: after pipeline creation, shader modules can be destroyed.
   vk::raii::ShaderModule vertShaderModule =
       vgeu::createShaderModule(device, vertCode);
@@ -956,8 +901,8 @@ void VgeExample::createGraphicsPipelines() {
         graphics.simpleVertexInfos.bindingDescriptions);
     vertexInputSCI.setVertexAttributeDescriptions(
         graphics.simpleVertexInfos.attributeDescriptions);
-    vertCode = vgeu::readFile(getShadersPath() + "/pbd/simpleMesh.vert.spv");
-    fragCode = vgeu::readFile(getShadersPath() + "/pbd/simpleMesh.frag.spv");
+    vertCode = vgeu::readFile(getShadersPath() + "/cloth/simpleMesh.vert.spv");
+    fragCode = vgeu::readFile(getShadersPath() + "/cloth/simpleMesh.frag.spv");
     // NOTE: after pipeline creation, shader modules can be destroyed.
     vertShaderModule = vgeu::createShaderModule(device, vertCode);
     fragShaderModule = vgeu::createShaderModule(device, fragCode);
@@ -972,8 +917,8 @@ void VgeExample::createGraphicsPipelines() {
   }
   {
     inputAssemblySCI.topology = vk::PrimitiveTopology::eLineList;
-    vertCode = vgeu::readFile(getShadersPath() + "/pbd/simpleLine.vert.spv");
-    fragCode = vgeu::readFile(getShadersPath() + "/pbd/simpleLine.frag.spv");
+    vertCode = vgeu::readFile(getShadersPath() + "/cloth/simpleLine.vert.spv");
+    fragCode = vgeu::readFile(getShadersPath() + "/cloth/simpleLine.frag.spv");
     // NOTE: after pipeline creation, shader modules can be destroyed.
     vertShaderModule = vgeu::createShaderModule(device, vertCode);
     fragShaderModule = vgeu::createShaderModule(device, fragCode);
@@ -989,8 +934,8 @@ void VgeExample::createGraphicsPipelines() {
   {
     inputAssemblySCI.topology = vk::PrimitiveTopology::eTriangleList;
     rasterizationSCI.polygonMode = vk::PolygonMode::eLine;
-    vertCode = vgeu::readFile(getShadersPath() + "/pbd/simpleLine.vert.spv");
-    fragCode = vgeu::readFile(getShadersPath() + "/pbd/simpleLine.frag.spv");
+    vertCode = vgeu::readFile(getShadersPath() + "/cloth/simpleLine.vert.spv");
+    fragCode = vgeu::readFile(getShadersPath() + "/cloth/simpleLine.frag.spv");
     // NOTE: after pipeline creation, shader modules can be destroyed.
     vertShaderModule = vgeu::createShaderModule(device, vertCode);
     fragShaderModule = vgeu::createShaderModule(device, fragCode);
@@ -1386,6 +1331,7 @@ void VgeExample::updateComputeUbo() {
 }
 
 void VgeExample::updateDynamicUbo() {
+  float quadScale = 20.f;
   float animationTimer =
       (animationTime - animationLastTime) * opts.animationSpeed;
   // model move
@@ -1395,26 +1341,25 @@ void VgeExample::updateDynamicUbo() {
   float rotationVelocity = 50.f;
   {
     size_t instanceIndex = findInstances("fox0")[0];
+    glm::mat4 trt = glm::mat4{1.f};
+    trt = glm::translate(trt, glm::vec3{quadScale * 1.5f, 0.f, 0.f});
+    trt = glm::rotate(trt, glm::radians(rotationVelocity) * animationTimer, up);
+    trt = glm::translate(trt, glm::vec3{quadScale * -1.5f, 0.f, 0.f});
+
     common.dynamicUbo[instanceIndex].modelMatrix =
-        glm::rotate(glm::mat4{1.f},
-                    glm::radians(rotationVelocity) * animationTimer, up) *
-        common.dynamicUbo[instanceIndex].modelMatrix;
+        trt * common.dynamicUbo[instanceIndex].modelMatrix;
   }
   {
     size_t instanceIndex = findInstances("fox1")[0];
+    glm::mat4 trt = glm::mat4{1.f};
+    trt = glm::translate(trt, glm::vec3{quadScale * 1.5f, 0.f, 0.f});
+    trt = glm::rotate(trt, glm::radians(rotationVelocity) * animationTimer, up);
+    trt = glm::translate(trt, glm::vec3{quadScale * -1.5f, 0.f, 0.f});
+
     common.dynamicUbo[instanceIndex].modelMatrix =
-        glm::rotate(glm::mat4{1.f},
-                    glm::radians(rotationVelocity) * animationTimer, up) *
-        common.dynamicUbo[instanceIndex].modelMatrix;
+        trt * common.dynamicUbo[instanceIndex].modelMatrix;
   }
-  {
-    size_t instanceIndex = findInstances("dutchShipMedium")[0];
-    common.dynamicUbo[instanceIndex].modelMatrix =
-        glm::rotate(glm::mat4{1.f},
-                    0.1f * glm::radians(rotationVelocity) * animationTimer,
-                    up) *
-        common.dynamicUbo[instanceIndex].modelMatrix;
-  }
+
   // update animation joint matrices for each shared model
   {
     std::unordered_set<const vgeu::glTF::Model*> updatedSharedModelSet;
