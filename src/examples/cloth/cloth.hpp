@@ -109,12 +109,21 @@ struct DynamicUboElt {
 };
 
 // cloth particle
-struct Particle {
-  glm::vec4 pos;
+struct ParticleCalculate {
+  glm::vec4 prevPos;
   glm::vec4 vel;
+  glm::vec4 corr;
+};
+
+struct DistConstraint {
+  glm::ivec2 constIds;
+  float restLength;
+};
+struct ParticleRender {
+  glm::vec4 pos;
   glm::vec4 normal;
   glm::vec2 uv;
-};
+}
 
 struct SpecializationData {
   uint32_t sharedDataSize;
@@ -227,11 +236,18 @@ class VgeExample : public VgeBase {
   struct Cloth {
     glm::uvec2 gridSize{60, 60};
     glm::vec2 size{5.f, 5.f};
+    // used in both of the pipelines
+    std::vector<std::unique_ptr<vgeu::VgeuBuffer>> calculationSBs;
+    std::vector<std::unique_ptr<vgeu::VgeuBuffer>> renderSBs;
+    // initial setting
+    std::unique_ptr<vgeu::VgeuBuffer> constraintSBs;
+    std::unique_ptr<vgeu::VgeuBuffer> indexBuffer;
+
+    std::vector<uint32_t> triIds;
+
   } cloth;
 
   struct {
-    // used in both of the pipelines
-    std::vector<std::unique_ptr<vgeu::VgeuBuffer>> storageBuffers;
     // each frames in flight, each model
     std::vector<std::vector<std::unique_ptr<vgeu::VgeuBuffer>>>
         animatedVertexBuffers;
