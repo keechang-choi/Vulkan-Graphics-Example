@@ -466,6 +466,21 @@ void VgeExample::loadAssets() {
     addModelInstance(std::move(modelInstance));
   }
 
+  std::shared_ptr<vgeu::glTF::Model> koreanFlag;
+  koreanFlag = std::make_shared<vgeu::glTF::Model>(
+      device, globalAllocator->getAllocator(), queue, commandPool,
+      MAX_CONCURRENT_FRAMES);
+  koreanFlag->additionalBufferUsageFlags =
+      vk::BufferUsageFlagBits::eStorageBuffer;
+  koreanFlag->loadFromFile(getAssetsPath() + "/models/koreanFlag/k-flag.gltf",
+                           glTFLoadingFlags);
+  {
+    ModelInstance modelInstance{};
+    modelInstance.model = koreanFlag;
+    modelInstance.name = "koreanFlag1";
+    addModelInstance(std::move(modelInstance));
+  }
+
   std::shared_ptr<SimpleModel> circle = std::make_shared<SimpleModel>(
       device, globalAllocator->getAllocator(), queue, commandPool);
   circle->setNgon(32, {1.0f, 1.0f, 1.0f, 1.f});
@@ -621,7 +636,7 @@ void VgeExample::createVertexSCI() {
 }
 
 void VgeExample::setupDynamicUbo() {
-  const float foxScale = 0.03f;
+  const float foxScale = 0.05f;
   glm::vec3 up{0.f, -1.f, 0.f};
   glm::vec3 right{1.f, 0.f, 0.f};
   glm::vec3 forward{0.f, 0.f, 1.f};
@@ -669,7 +684,7 @@ void VgeExample::setupDynamicUbo() {
         glm::vec4{0.f, 1.f, 1.f, 0.3f};
   }
   {
-    float appleScale = 20.f;
+    float appleScale = 40.f;
     size_t instanceIndex = findInstances("apple1")[0];
     common.dynamicUbo[instanceIndex].modelMatrix =
         glm::translate(glm::mat4{1.f}, glm::vec3{-3.f, 0.f, 0.f});
@@ -677,6 +692,20 @@ void VgeExample::setupDynamicUbo() {
     common.dynamicUbo[instanceIndex].modelMatrix =
         glm::scale(common.dynamicUbo[instanceIndex].modelMatrix,
                    glm::vec3{appleScale, -appleScale, appleScale});
+  }
+  {
+    float kFlagScale = 10.f;
+    size_t instanceIndex = findInstances("koreanFlag1")[0];
+    common.dynamicUbo[instanceIndex].modelMatrix =
+        glm::translate(glm::mat4{1.f}, glm::vec3{0.f, -10.f, 0.f});
+    // FlipY manually
+    // NOTE: not only flip Y, also need flip z to preserve orientation
+    common.dynamicUbo[instanceIndex].modelMatrix =
+        glm::scale(common.dynamicUbo[instanceIndex].modelMatrix,
+                   glm::vec3{kFlagScale, -kFlagScale, -kFlagScale});
+    // -1 alpha for wire frame color
+    common.dynamicUbo[instanceIndex].modelColor =
+        glm::vec4{0.f, 0.f, 1.f, -1.f};
   }
 
   {
@@ -897,6 +926,23 @@ void VgeExample::createGraphicsPipelines() {
   graphics.pipelines.pipelinePhong =
       vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
   {
+    rasterizationSCI.polygonMode = vk::PolygonMode::eLine;
+    vertCode = vgeu::readFile(getShadersPath() + "/cloth/wireframe.vert.spv");
+    fragCode = vgeu::readFile(getShadersPath() + "/cloth/wireframe.frag.spv");
+    // NOTE: after pipeline creation, shader modules can be destroyed.
+    vertShaderModule = vgeu::createShaderModule(device, vertCode);
+    fragShaderModule = vgeu::createShaderModule(device, fragCode);
+    shaderStageCIs[0] = vk::PipelineShaderStageCreateInfo(
+        vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eVertex,
+        *vertShaderModule, "main", nullptr);
+    shaderStageCIs[1] = vk::PipelineShaderStageCreateInfo(
+        vk::PipelineShaderStageCreateFlags(),
+        vk::ShaderStageFlagBits::eFragment, *fragShaderModule, "main", nullptr);
+    graphics.pipelines.pipelineWireMesh =
+        vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
+  }
+  {
+    rasterizationSCI.polygonMode = vk::PolygonMode::eFill;
     vertexInputSCI.setVertexBindingDescriptions(
         graphics.simpleVertexInfos.bindingDescriptions);
     vertexInputSCI.setVertexAttributeDescriptions(
@@ -929,23 +975,6 @@ void VgeExample::createGraphicsPipelines() {
         vk::PipelineShaderStageCreateFlags(),
         vk::ShaderStageFlagBits::eFragment, *fragShaderModule, "main", nullptr);
     graphics.pipelines.pipelineSimpleLine =
-        vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
-  }
-  {
-    inputAssemblySCI.topology = vk::PrimitiveTopology::eTriangleList;
-    rasterizationSCI.polygonMode = vk::PolygonMode::eLine;
-    vertCode = vgeu::readFile(getShadersPath() + "/cloth/simpleLine.vert.spv");
-    fragCode = vgeu::readFile(getShadersPath() + "/cloth/simpleLine.frag.spv");
-    // NOTE: after pipeline creation, shader modules can be destroyed.
-    vertShaderModule = vgeu::createShaderModule(device, vertCode);
-    fragShaderModule = vgeu::createShaderModule(device, fragCode);
-    shaderStageCIs[0] = vk::PipelineShaderStageCreateInfo(
-        vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eVertex,
-        *vertShaderModule, "main", nullptr);
-    shaderStageCIs[1] = vk::PipelineShaderStageCreateInfo(
-        vk::PipelineShaderStageCreateFlags(),
-        vk::ShaderStageFlagBits::eFragment, *fragShaderModule, "main", nullptr);
-    graphics.pipelines.pipelineWireMesh =
         vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
   }
 }
@@ -1074,10 +1103,16 @@ void VgeExample::buildCommandBuffers() {
                      static_cast<float>(swapChainData->swapChainExtent.width),
                      static_cast<float>(swapChainData->swapChainExtent.height),
                      0.0f, 1.0f));
-    // bind pipeline
-    drawCmdBuffers[currentFrameIndex].bindPipeline(
-        vk::PipelineBindPoint::eGraphics, *graphics.pipelines.pipelinePhong);
+    if (opts.renderWireMesh) {
+      drawCmdBuffers[currentFrameIndex].bindPipeline(
+          vk::PipelineBindPoint::eGraphics,
+          *graphics.pipelines.pipelineWireMesh);
 
+    } else {
+      // bind pipeline
+      drawCmdBuffers[currentFrameIndex].bindPipeline(
+          vk::PipelineBindPoint::eGraphics, *graphics.pipelines.pipelinePhong);
+    }
     // draw all instances including model based and bones.
     for (size_t instanceIdx = 0; instanceIdx < modelInstances.size();
          instanceIdx++) {
@@ -1195,7 +1230,7 @@ void VgeExample::buildComputeCommandBuffers() {
   }
 
   // pre compute animation
-  if (opts.computeModelAnimation) {
+  {
     compute.cmdBuffers[currentFrameIndex].bindPipeline(
         vk::PipelineBindPoint::eCompute,
         *compute.pipelines.pipelineModelAnimate);
@@ -1467,9 +1502,8 @@ void VgeExample::onUpdateUIOverlay() {
 
       uiOverlay->inputFloat("power", &opts.power, 0.01f, "%.3f");
       uiOverlay->inputFloat("soften", &opts.soften, 0.0001f, "%.4f");
-      if (ImGui::RadioButton("computeModelAnimation",
-                             opts.computeModelAnimation)) {
-        opts.computeModelAnimation = !opts.computeModelAnimation;
+      if (ImGui::RadioButton("renderWireMesh", opts.renderWireMesh)) {
+        opts.renderWireMesh = !opts.renderWireMesh;
       }
       uiOverlay->inputFloat("animationSpeed", &opts.animationSpeed, 0.001f,
                             "%.3f");

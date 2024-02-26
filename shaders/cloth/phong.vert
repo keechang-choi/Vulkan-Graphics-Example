@@ -31,6 +31,7 @@ layout (location = 4) out vec3 outLightVec;
 void main() 
 {
 	outColor = modelUbo.modelColor;
+	outColor.a = clamp(outColor.a, 0.0, 1.0);
 	outUV = inUV;
 	// TODO: animation pre-compute
 	mat4 worldTransform = modelUbo.modelMatrix;
