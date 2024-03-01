@@ -123,7 +123,7 @@ struct ParticleRender {
   glm::vec4 pos;
   glm::vec4 normal;
   glm::vec2 uv;
-}
+};
 
 struct SpecializationData {
   uint32_t sharedDataSize;
@@ -258,7 +258,7 @@ class VgeExample : public VgeBase {
     std::vector<vk::raii::DescriptorSet> dynamicUboDescriptorSets;
     vk::raii::DescriptorSetLayout dynamicUboDescriptorSetLayout = nullptr;
 
-  } common;
+    } common;
   struct {
     uint32_t queueFamilyIndex;
 

@@ -69,7 +69,7 @@
 		{
 			"bufferView":0,
 			"componentType":5126,
-			"count":10404,
+			"count":10000,
 			"max":[
 				1,
 				0,
@@ -85,45 +85,45 @@
 		{
 			"bufferView":1,
 			"componentType":5126,
-			"count":10404,
+			"count":10000,
 			"type":"VEC3"
 		},
 		{
 			"bufferView":2,
 			"componentType":5126,
-			"count":10404,
+			"count":10000,
 			"type":"VEC2"
 		},
 		{
 			"bufferView":3,
 			"componentType":5123,
-			"count":61206,
+			"count":58806,
 			"type":"SCALAR"
 		}
 	],
 	"bufferViews":[
 		{
 			"buffer":0,
-			"byteLength":124848,
+			"byteLength":120000,
 			"byteOffset":0,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":124848,
-			"byteOffset":124848,
+			"byteLength":120000,
+			"byteOffset":120000,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":83232,
-			"byteOffset":249696,
+			"byteLength":80000,
+			"byteOffset":240000,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":122412,
-			"byteOffset":332928,
+			"byteLength":117612,
+			"byteOffset":320000,
 			"target":34963
 		}
 	],
@@ -135,7 +135,7 @@
 	],
 	"buffers":[
 		{
-			"byteLength":455340,
+			"byteLength":437612,
 			"uri":"k-flag.bin"
 		}
 	]
