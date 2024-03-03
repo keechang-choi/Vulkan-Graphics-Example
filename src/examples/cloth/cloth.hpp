@@ -233,19 +233,26 @@ class VgeExample : public VgeBase {
   void setOptions(const std::optional<Options>& opts);
 
   bool dedicatedComputeQueue{false};
-  struct Cloth {
-    glm::uvec2 gridSize{60, 60};
-    glm::vec2 size{5.f, 5.f};
+
+  // only support grid type now
+  class Cloth {
+   public:
+    Cloth(const std::vector<ParticleRender>& vertices,
+          const std::vector<uint32_t>& indices, uint32_t numX, uint32_t numY,
+          glm::vec3 scale);
+
+   private:
+    // TODO: use in cloth initializing compute with UBO
+    glm::vec3 scale;
     // used in both of the pipelines
     std::vector<std::unique_ptr<vgeu::VgeuBuffer>> calculationSBs;
     std::vector<std::unique_ptr<vgeu::VgeuBuffer>> renderSBs;
     // initial setting
     std::unique_ptr<vgeu::VgeuBuffer> constraintSBs;
-    std::unique_ptr<vgeu::VgeuBuffer> indexBuffer;
+    std::vector<DistConstraint> Distconstraints;
 
     std::vector<uint32_t> triIds;
-
-  } cloth;
+  };
 
   struct {
     // each frames in flight, each model
@@ -258,7 +265,7 @@ class VgeExample : public VgeBase {
     std::vector<vk::raii::DescriptorSet> dynamicUboDescriptorSets;
     vk::raii::DescriptorSetLayout dynamicUboDescriptorSetLayout = nullptr;
 
-    } common;
+  } common;
   struct {
     uint32_t queueFamilyIndex;
 
