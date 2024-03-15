@@ -510,7 +510,7 @@ void VgeExample::loadAssets() {
     ModelInstance modelInstance{};
     modelInstance.model = koreanFlag;
     modelInstance.name = "koreanFlag1";
-    modelInstance.clothModel = std::make_shared<Cloth>(
+    modelInstance.clothModel = std::make_unique<Cloth>(
         device, globalAllocator->getAllocator(), queue, commandPool,
         descriptorPool, common.descriptorSetLayoutParticle,
         compute.descriptorSetLayoutConstraint, MAX_CONCURRENT_FRAMES);
@@ -1477,6 +1477,7 @@ void VgeExample::updateDynamicUbo() {
 ModelInstance::ModelInstance(ModelInstance&& other) {
   model = other.model;
   simpleModel = other.simpleModel;
+  clothModel = std::move(other.clothModel);
   name = other.name;
   isBone = other.isBone;
   animationIndex = other.animationIndex;
@@ -1487,6 +1488,7 @@ ModelInstance::ModelInstance(ModelInstance&& other) {
 ModelInstance& ModelInstance::operator=(ModelInstance&& other) {
   model = other.model;
   simpleModel = other.simpleModel;
+  clothModel = std::move(other.clothModel);
   name = other.name;
   isBone = other.isBone;
   animationIndex = other.animationIndex;
@@ -1842,7 +1844,7 @@ void Cloth::initParticlesData(const std::vector<vgeu::glTF::Vertex>& vertices,
     pos.w = 1.0;
     glm::vec4 normal = normalTransform * vertices[i].normal;
     glm::vec2 uv = vertices[i].uv;
-    particlesRender.emplace_back(pos, normal, uv);
+    particlesRender.push_back({pos, normal, uv});
   }
 
   createParticleStorageBuffers(particlesRender, indices);
@@ -1876,7 +1878,7 @@ void Cloth::initDistConstraintsData(const uint32_t numX, const uint32_t numY) {
       for (auto yi = 0; yi < numY; yi++) {
         glm::ivec2 ids(yi * numX + xi * 2 + isOdd,
                        yi * numX + xi * 2 + isOdd + 1);
-        distConstraints.emplace_back(ids, 0.f);
+        distConstraints.push_back({ids, 0.f});
       }
     }
   }
@@ -1886,7 +1888,7 @@ void Cloth::initDistConstraintsData(const uint32_t numX, const uint32_t numY) {
       for (auto yi = 0; yi < (numY + 1) / 2; yi++) {
         glm::ivec2 ids((2 * yi + isOdd) * numX + xi,
                        (2 * yi + isOdd + 1) * numX + xi);
-        distConstraints.emplace_back(ids, 0.f);
+        distConstraints.push_back({ids, 0.f});
       }
     }
   }
@@ -1895,11 +1897,11 @@ void Cloth::initDistConstraintsData(const uint32_t numX, const uint32_t numY) {
     for (auto yi = 0; yi < numY - 1; yi++) {
       {
         glm::ivec2 ids(yi * numX + xi, (yi + 1) * numX + (xi + 1));
-        distConstraints.emplace_back(ids, 0.f);
+        distConstraints.push_back({ids, 0.f});
       }
       {
         glm::ivec2 ids(yi * numX + (xi + 1), (yi + 1) * numX + xi);
-        distConstraints.emplace_back(ids, 0.f);
+        distConstraints.push_back({ids, 0.f});
       }
     }
   }
@@ -1907,14 +1909,14 @@ void Cloth::initDistConstraintsData(const uint32_t numX, const uint32_t numY) {
   for (auto xi = 0; xi < numX - 2; xi++) {
     for (auto yi = 0; yi < numY; yi++) {
       glm::ivec2 ids(yi * numX + xi, yi * numX + (xi + 2));
-      distConstraints.emplace_back(ids, 0.f);
+      distConstraints.push_back({ids, 0.f});
     }
   }
   // bending y
   for (auto xi = 0; xi < numX; xi++) {
     for (auto yi = 0; yi < numY - 2; yi++) {
       glm::ivec2 ids(yi * numX + xi, (yi + 2) * numX + xi);
-      distConstraints.emplace_back(ids, 0.f);
+      distConstraints.push_back({ids, 0.f});
     }
   }
 

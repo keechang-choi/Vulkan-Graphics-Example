@@ -83,26 +83,6 @@ class SpatialHash {
   uint32_t objectIndex;
 };
 
-// NOTE: for current animation implementation,
-// each instance need its own uniformBuffers
-struct ModelInstance {
-  std::shared_ptr<vgeu::glTF::Model> model;
-  std::shared_ptr<SimpleModel> simpleModel;
-  std::shared_ptr<Cloth> clothModel;
-  std::string name;
-  bool isBone = false;
-  int animationIndex = -1;
-  float animationTime = 0.f;
-  // initial offset and scale
-  vgeu::TransformComponent transform;
-  uint32_t getVertexCount() const;
-  ModelInstance(){};
-  ModelInstance(const ModelInstance& o) = delete;
-  ModelInstance& operator=(const ModelInstance& other) = delete;
-  ModelInstance(ModelInstance&& other);
-  ModelInstance& operator=(ModelInstance&& other);
-};
-
 struct DynamicUboElt {
   glm::mat4 modelMatrix{1.f};
   // color.alpha used for mix between color.rgb and original color
@@ -191,6 +171,8 @@ class Cloth {
   // not copyable
   Cloth(const Cloth&) = delete;
   Cloth& operator=(const Cloth&) = delete;
+  Cloth(Cloth&&) = default;
+  Cloth& operator=(Cloth&&) = default;
 
   // not mendatory for cloth-cloth constraints only instance
   // combined with resource creation not to store vertex data in host
@@ -236,8 +218,8 @@ class Cloth {
   const vk::raii::DescriptorPool& descriptorPool;
   const vk::raii::DescriptorSetLayout& descriptorSetLayoutParticle;
   const vk::raii::DescriptorSetLayout& descriptorSetLayoutConstraint;
- const uint32_t framesInFlight;
-  
+  const uint32_t framesInFlight;
+
   uint32_t numParticles;
   uint32_t numConstraints;
   uint32_t numTris;
@@ -263,6 +245,26 @@ class Cloth {
   uint32_t numPasses;
   std::vector<bool> passIndependent;
   std::vector<uint32_t> passSizes;
+};
+
+// NOTE: for current animation implementation,
+// each instance need its own uniformBuffers
+struct ModelInstance {
+  std::shared_ptr<vgeu::glTF::Model> model;
+  std::shared_ptr<SimpleModel> simpleModel;
+  std::unique_ptr<Cloth> clothModel;
+  std::string name;
+  bool isBone = false;
+  int animationIndex = -1;
+  float animationTime = 0.f;
+  // initial offset and scale
+  vgeu::TransformComponent transform;
+  uint32_t getVertexCount() const;
+  ModelInstance(){};
+  ModelInstance(const ModelInstance& o) = delete;
+  ModelInstance& operator=(const ModelInstance& other) = delete;
+  ModelInstance(ModelInstance&& other);
+  ModelInstance& operator=(ModelInstance&& other);
 };
 
 class VgeExample : public VgeBase {
