@@ -88,6 +88,7 @@ class SpatialHash {
 struct ModelInstance {
   std::shared_ptr<vgeu::glTF::Model> model;
   std::shared_ptr<SimpleModel> simpleModel;
+  std::shared_ptr<Cloth> clothModel;
   std::string name;
   bool isBone = false;
   int animationIndex = -1;
@@ -176,6 +177,94 @@ struct VertexInfos {
   std::vector<vk::VertexInputAttributeDescription> attributeDescriptions;
 };
 
+// only support grid type now
+class Cloth {
+ public:
+  Cloth(const vk::raii::Device& device, VmaAllocator allocator,
+        const vk::raii::Queue& transferQueue,
+        const vk::raii::CommandPool& commandPool,
+        const vk::raii::DescriptorPool& descriptorPool,
+        const vk::raii::DescriptorSetLayout& descriptorSetLayoutParticle,
+        const vk::raii::DescriptorSetLayout& descriptorSetLayoutConstraint,
+        const uint32_t framesInFlight);
+
+  // not copyable
+  Cloth(const Cloth&) = delete;
+  Cloth& operator=(const Cloth&) = delete;
+
+  // not mendatory for cloth-cloth constraints only instance
+  // combined with resource creation not to store vertex data in host
+  void initParticlesData(const std::vector<vgeu::glTF::Vertex>& vertices,
+                         const std::vector<uint32_t>& indices,
+                         const glm::mat4& translate, const glm::mat4& rotate,
+                         const glm::mat4& scale);
+
+  // default grid dist constraints using number of particles in each axis.
+  // assert numParticles.
+  void initDistConstraintsData(const uint32_t numX, const uint32_t numY);
+  // cloth-cloth constraints or external fixed point
+  void initDistConstraintsData(
+      const std::vector<DistConstraint>& distConstraints);
+  // TODO: dispatch group size
+  // integrate and prevPos store
+  void integrate(const uint32_t frameIndex,
+                 const vk::raii::CommandBuffer& cmdBuffer);
+  // bind two?
+  // Gauss-Seidel, Jacobi, correction adder -> by specialize
+  void solveConstraints(const uint32_t frameIndex,
+                        const vk::raii::CommandBuffer& cmdBuffer);
+  // vel update
+  void updateVel(const uint32_t frameIndex,
+                 const vk::raii::CommandBuffer& cmdBuffer);
+  // use model->bindSSBO for getting index buffer as storage buffer
+  void updateMesh(const uint32_t frameIndex,
+                  const vk::raii::CommandBuffer& cmdBuffer);
+
+ private:
+  void createParticleStorageBuffers(const std::vector<ParticleRender>& vertices,
+                                    const std::vector<uint32_t>& indices);
+  void createParticleDecriptorSets();
+
+  void createDistConstraintStorageBuffers(
+      const std::vector<DistConstraint>& distConstraints);
+  void createDistConstraintDecriptorSets();
+
+  const vk::raii::Device& device;
+  VmaAllocator allocator;
+  const vk::raii::Queue& transferQueue;
+  const vk::raii::CommandPool& commandPool;
+  const vk::raii::DescriptorPool& descriptorPool;
+  const vk::raii::DescriptorSetLayout& descriptorSetLayoutParticle;
+  const vk::raii::DescriptorSetLayout& descriptorSetLayoutConstraint;
+ const uint32_t framesInFlight;
+  
+  uint32_t numParticles;
+  uint32_t numConstraints;
+  uint32_t numTris;
+  // used in both of the pipelines
+  std::vector<std::unique_ptr<vgeu::VgeuBuffer>> calculationSBs;
+  std::vector<std::unique_ptr<vgeu::VgeuBuffer>> renderSBs;
+  // initial setting
+  std::unique_ptr<vgeu::VgeuBuffer> constraintSBs;
+  // TODO: put descriptor set layouts outside of the object
+  // add descriptor sets
+  // set 1 -> cal sb, render sb
+  // set 2 -> constraints
+  // not explicitly created
+  // set 3 -> other?? cal sb, render sb
+
+  // TODO: need to delete in host memory if too many
+  std::vector<ParticleRender> particlesRender;
+  // std::vector<DistConstraint> distconstraints;
+
+  bool hasParticleBuffer{false};
+  bool hasConstraintBuffer{false};
+
+  uint32_t numPasses;
+  std::vector<bool> passIndependent;
+  std::vector<uint32_t> passSizes;
+};
+
 class VgeExample : public VgeBase {
  public:
   VgeExample();
@@ -235,77 +324,6 @@ class VgeExample : public VgeBase {
 
   bool dedicatedComputeQueue{false};
 
-  // only support grid type now
-  class Cloth {
-   public:
-    Cloth(const vk::raii::Device& device, VmaAllocator allocator,
-          const vk::raii::Queue& transferQueue,
-          const vk::raii::CommandPool& commandPool,
-          const uint32_t framesInFlight);
-
-    // not mendatory for cloth-cloth constraints only instance
-    // combined with resource creation not to store vertex data in host
-    void InitParticlesData(const std::vector<vgeu::glTF::Vertex>& vertices,
-                           const std::vector<uint32_t>& indices,
-                           const glm::mat4& transform);
-
-    // default grid dist constraints
-    // assert numParticles
-    void InitDistConstraintsData(const uint32_t numX, const uint32_t numY);
-    // cloth-cloth constraints or external fixed point
-    void InitDistConstraintsData(
-        const std::vector<DistConstraint>& distConstraints);
-    // TODO: dispatch group size
-    // integrate and prevPos store
-    void integrate(const uint32_t frameIndex,
-                   const vk::raii::CommandBuffer& cmdBuffer);
-    // bind two?
-    // Gauss-Seidel, Jacobi, correction adder -> by specialize
-    void solveConstraints(const uint32_t frameIndex,
-                          const vk::raii::CommandBuffer& cmdBuffer);
-    // vel update
-    void updateVel(const uint32_t frameIndex,
-                   const vk::raii::CommandBuffer& cmdBuffer);
-    // use model->bindSSBO for getting index buffer as storage buffer
-    void updateMesh(const uint32_t frameIndex,
-                    const vk::raii::CommandBuffer& cmdBuffer);
-
-   private:
-    void CreateParticleStorageBuffers(
-        const std::vector<ParticleRender>& vertices,
-        const std::vector<uint32_t>& indices);
-    void CreateParticleDecriptorSets();
-
-    void CreateDistConstraintStorageBuffers(
-        const std::vector<DistConstraint>& distConstraints);
-    void CreateDistConstraintDecriptorSets();
-
-    uint32_t numParticles;
-    uint32_t numConstraints;
-    uint32_t numTris;
-    // used in both of the pipelines
-    std::vector<std::unique_ptr<vgeu::VgeuBuffer>> calculationSBs;
-    std::vector<std::unique_ptr<vgeu::VgeuBuffer>> renderSBs;
-    // initial setting
-    std::unique_ptr<vgeu::VgeuBuffer> constraintSBs;
-    // TODO: put descriptor set layouts outside of the object
-    // add descriptor sets
-    // set 1 -> cal sb, render sb
-    // set 2 -> constraints
-    // set 3 -> other?? cal sb, render sb
-
-    // TODO: need to delete in host memory if too many
-    // std::vector<DistConstraint> distconstraints;
-
-    bool hasParticleBuffer{false};
-    bool hasConstraintBuffer{false};
-
-    uint32_t numPasses;
-    std::vector<bool> passIndependent;
-    std::vector<uint32_t> passSizes;
-    std::vector<uint32_t> triIds;
-  };
-
   struct {
     // each frames in flight, each model
     std::vector<std::vector<std::unique_ptr<vgeu::VgeuBuffer>>>
@@ -316,6 +334,8 @@ class VgeExample : public VgeBase {
     std::vector<std::unique_ptr<vgeu::VgeuBuffer>> dynamicUniformBuffers;
     std::vector<vk::raii::DescriptorSet> dynamicUboDescriptorSets;
     vk::raii::DescriptorSetLayout dynamicUboDescriptorSetLayout = nullptr;
+
+    vk::raii::DescriptorSetLayout descriptorSetLayoutParticle = nullptr;
 
   } common;
   struct {
@@ -364,6 +384,10 @@ class VgeExample : public VgeBase {
     } ubo;
 
     std::vector<bool> firstCompute;
+
+    // cloth
+    vk::raii::DescriptorSetLayout descriptorSetLayoutConstraint = nullptr;
+
   } compute;
 
   struct {

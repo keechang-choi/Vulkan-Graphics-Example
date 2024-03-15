@@ -101,8 +101,9 @@ void VgeExample::prepare() {
 }
 
 void VgeExample::prepareCommon() {
-  loadAssets();
   createDescriptorPool();
+  // NOTE: use global descriptor pool for cloth
+  loadAssets();
   createStorageBuffers();
   // dynamic UBO
   setupDynamicUbo();
@@ -151,13 +152,44 @@ void VgeExample::createUniformBuffers() {
 }
 
 void VgeExample::createDescriptorSetLayout() {
-  std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
-  layoutBindings.emplace_back(0 /*binding*/,
-                              vk::DescriptorType::eUniformBufferDynamic, 1,
-                              vk::ShaderStageFlagBits::eAll);
-  vk::DescriptorSetLayoutCreateInfo layoutCI({}, layoutBindings);
-  common.dynamicUboDescriptorSetLayout =
-      vk::raii::DescriptorSetLayout(device, layoutCI);
+  {
+    std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
+    layoutBindings.emplace_back(0 /*binding*/,
+                                vk::DescriptorType::eUniformBufferDynamic, 1,
+                                vk::ShaderStageFlagBits::eAll);
+    vk::DescriptorSetLayoutCreateInfo layoutCI({}, layoutBindings);
+    common.dynamicUboDescriptorSetLayout =
+        vk::raii::DescriptorSetLayout(device, layoutCI);
+  }
+
+  // descriptor set layout for cloth vertex
+  // descriptor set layout for cloth constraints
+  // since it needs to be created before load Asset,
+  // but load Asset shoud be done before create compute descriptor set layout
+  // TODO: pull out model descriptor set layout from the model class
+  // and re-order load asset call after create descriptor set layout
+  {
+    std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
+    layoutBindings.emplace_back(0 /*binding*/,
+                                vk::DescriptorType::eStorageBuffer, 1,
+                                vk::ShaderStageFlagBits::eAll);
+    layoutBindings.emplace_back(1 /*binding*/,
+                                vk::DescriptorType::eStorageBuffer, 1,
+                                vk::ShaderStageFlagBits::eAll);
+    vk::DescriptorSetLayoutCreateInfo layoutCI({}, layoutBindings);
+    common.descriptorSetLayoutParticle =
+        vk::raii::DescriptorSetLayout(device, layoutCI);
+  }
+
+  {
+    std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
+    layoutBindings.emplace_back(0 /*binding*/,
+                                vk::DescriptorType::eUniformBufferDynamic, 1,
+                                vk::ShaderStageFlagBits::eCompute);
+    vk::DescriptorSetLayoutCreateInfo layoutCI({}, layoutBindings);
+    compute.descriptorSetLayoutConstraint =
+        vk::raii::DescriptorSetLayout(device, layoutCI);
+  }
 }
 
 void VgeExample::createDescriptorSets() {
@@ -478,6 +510,10 @@ void VgeExample::loadAssets() {
     ModelInstance modelInstance{};
     modelInstance.model = koreanFlag;
     modelInstance.name = "koreanFlag1";
+    modelInstance.clothModel = std::make_shared<Cloth>(
+        device, globalAllocator->getAllocator(), queue, commandPool,
+        descriptorPool, common.descriptorSetLayoutParticle,
+        compute.descriptorSetLayoutConstraint, MAX_CONCURRENT_FRAMES);
     addModelInstance(std::move(modelInstance));
   }
 
@@ -694,8 +730,9 @@ void VgeExample::setupDynamicUbo() {
                    glm::vec3{appleScale, -appleScale, appleScale});
   }
   {
-    float kFlagScale = 10.f;
     size_t instanceIndex = findInstances("koreanFlag1")[0];
+    // NOTE: transformation moved into cloth initialization
+    float kFlagScale = 10.f;
     common.dynamicUbo[instanceIndex].modelMatrix =
         glm::translate(glm::mat4{1.f}, glm::vec3{0.f, -10.f, 0.f});
     // FlipY manually
@@ -1768,6 +1805,174 @@ int SpatialHash::discreteCoord(const double coord) {
 uint32_t SpatialHash::hashPos(const glm::dvec3& pos) {
   return hashDiscreteCoords(discreteCoord(pos.x), discreteCoord(pos.y),
                             discreteCoord(pos.z));
+}
+
+Cloth::Cloth(const vk::raii::Device& device, VmaAllocator allocator,
+             const vk::raii::Queue& transferQueue,
+             const vk::raii::CommandPool& commandPool,
+             const vk::raii::DescriptorPool& descriptorPool,
+             const vk::raii::DescriptorSetLayout& descriptorSetLayoutParticle,
+             const vk::raii::DescriptorSetLayout& descriptorSetLayoutConstraint,
+             const uint32_t framesInFlight)
+    : device(device),
+      allocator(allocator),
+      transferQueue(transferQueue),
+      commandPool(commandPool),
+      descriptorPool(descriptorPool),
+      descriptorSetLayoutParticle{descriptorSetLayoutParticle},
+      descriptorSetLayoutConstraint{descriptorSetLayoutConstraint},
+      framesInFlight{framesInFlight} {}
+
+void Cloth::initParticlesData(const std::vector<vgeu::glTF::Vertex>& vertices,
+                              const std::vector<uint32_t>& indices,
+                              const glm::mat4& translate,
+                              const glm::mat4& rotate, const glm::mat4& scale) {
+  hasParticleBuffer = true;
+  numParticles = vertices.size();
+  numTris = indices.size() / 3;
+
+  glm::mat4 transform = translate * rotate * scale;
+  glm::mat4 normalTransform = rotate * glm::inverse(scale);
+  // TODO: initialize using compute shader cosidering performance.
+  // std::vector<ParticleRender> particlesRender;
+  particlesRender.reserve(numParticles);
+  for (auto i = 0; i < numParticles; i++) {
+    glm::vec4 pos = transform * vertices[i].pos;
+    // inv mass
+    pos.w = 1.0;
+    glm::vec4 normal = normalTransform * vertices[i].normal;
+    glm::vec2 uv = vertices[i].uv;
+    particlesRender.emplace_back(pos, normal, uv);
+  }
+
+  createParticleStorageBuffers(particlesRender, indices);
+  createParticleDecriptorSets();
+}
+
+void Cloth::initDistConstraintsData(const uint32_t numX, const uint32_t numY) {
+  assert(numX * numY == numParticles);
+  passSizes.resize(5);
+  // stretch x
+  passSizes[0] = ((numX + 1) / 2) * numY;
+  passSizes[1] = (numX / 2) * numY;
+  // stretch y
+  passSizes[2] = numX * ((numY + 1) / 2);
+  passSizes[3] = numX * (numY / 2);
+  // shear and bending constraints
+  passSizes[4] = 2 * (numX - 1) * (numY - 1);
+  passSizes[4] += (numX - 2) * numY + numX * (numY - 2);
+  passIndependent.assign(5, true);
+  passIndependent[4] = false;
+
+  numConstraints = 0;
+  for (auto n : passSizes) {
+    numConstraints += n;
+  }
+  std::vector<DistConstraint> distConstraints;
+  distConstraints.reserve(numConstraints);
+  // stretch x
+  for (auto isOdd = 0; isOdd < 2; isOdd++) {
+    for (auto xi = 0; xi < (numX + 1) / 2; xi++) {
+      for (auto yi = 0; yi < numY; yi++) {
+        glm::ivec2 ids(yi * numX + xi * 2 + isOdd,
+                       yi * numX + xi * 2 + isOdd + 1);
+        distConstraints.emplace_back(ids, 0.f);
+      }
+    }
+  }
+  // stretch y
+  for (auto isOdd = 0; isOdd < 2; isOdd++) {
+    for (auto xi = 0; xi < numX; xi++) {
+      for (auto yi = 0; yi < (numY + 1) / 2; yi++) {
+        glm::ivec2 ids((2 * yi + isOdd) * numX + xi,
+                       (2 * yi + isOdd + 1) * numX + xi);
+        distConstraints.emplace_back(ids, 0.f);
+      }
+    }
+  }
+  // shearing
+  for (auto xi = 0; xi < numX - 1; xi++) {
+    for (auto yi = 0; yi < numY - 1; yi++) {
+      {
+        glm::ivec2 ids(yi * numX + xi, (yi + 1) * numX + (xi + 1));
+        distConstraints.emplace_back(ids, 0.f);
+      }
+      {
+        glm::ivec2 ids(yi * numX + (xi + 1), (yi + 1) * numX + xi);
+        distConstraints.emplace_back(ids, 0.f);
+      }
+    }
+  }
+  // bending x
+  for (auto xi = 0; xi < numX - 2; xi++) {
+    for (auto yi = 0; yi < numY; yi++) {
+      glm::ivec2 ids(yi * numX + xi, yi * numX + (xi + 2));
+      distConstraints.emplace_back(ids, 0.f);
+    }
+  }
+  // bending y
+  for (auto xi = 0; xi < numX; xi++) {
+    for (auto yi = 0; yi < numY - 2; yi++) {
+      glm::ivec2 ids(yi * numX + xi, (yi + 2) * numX + xi);
+      distConstraints.emplace_back(ids, 0.f);
+    }
+  }
+
+  // TODO: pre compute rest length in compute shader
+  // now using internal temporary particlesRender
+  for (auto i = 0; i < distConstraints.size(); i++) {
+    glm::vec3 pos1(particlesRender[distConstraints[i].constIds.x].pos);
+    glm::vec3 pos2(particlesRender[distConstraints[i].constIds.y].pos);
+    float restLength = glm::distance(pos1, pos2);
+    distConstraints[i].restLength = restLength;
+  }
+
+  createDistConstraintStorageBuffers(distConstraints);
+  createDistConstraintDecriptorSets();
+}
+
+void Cloth::initDistConstraintsData(
+    const std::vector<DistConstraint>& distConstraints) {
+  // TODO: not implemented yet
+}
+
+void Cloth::integrate(const uint32_t frameIndex,
+                      const vk::raii::CommandBuffer& cmdBuffer) {
+  // TODO: not implemented yet
+}
+
+void Cloth::solveConstraints(const uint32_t frameIndex,
+                             const vk::raii::CommandBuffer& cmdBuffer) {
+  // TODO: not implemented yet
+}
+
+void Cloth::updateVel(const uint32_t frameIndex,
+                      const vk::raii::CommandBuffer& cmdBuffer) {
+  // TODO: not implemented yet
+}
+
+void Cloth::updateMesh(const uint32_t frameIndex,
+                       const vk::raii::CommandBuffer& cmdBuffer) {
+  // TODO: not implemented yet
+}
+
+void Cloth::createParticleStorageBuffers(
+    const std::vector<ParticleRender>& vertices,
+    const std::vector<uint32_t>& indices) {
+  // TODO: not implemented yet
+}
+
+void Cloth::createParticleDecriptorSets() {
+  // TODO: not implemented yet
+}
+
+void Cloth::createDistConstraintStorageBuffers(
+    const std::vector<DistConstraint>& distConstraints) {
+  // TODO: not implemented yet
+}
+
+void Cloth::createDistConstraintDecriptorSets() {
+  // TODO: not implemented yet
 }
 
 }  // namespace vge
