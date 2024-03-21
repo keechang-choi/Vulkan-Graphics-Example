@@ -101,14 +101,22 @@ void VgeExample::prepare() {
 }
 
 void VgeExample::prepareCommon() {
-  createDescriptorPool();
-  // NOTE: use global descriptor pool for cloth
   loadAssets();
-  createStorageBuffers();
-  // dynamic UBO
-  setupDynamicUbo();
-  createUniformBuffers();
+  // use model's descriptor set layout
   createDescriptorSetLayout();
+
+  // use modelInstances size
+  // TODO: add maximum cloth model size
+  createDescriptorPool();
+
+  // NOTE: use global descriptor pool for cloth
+  initClothModels();
+  // use model instance size
+  createStorageBuffers();
+  // use model instance size
+  setupDynamicUbo();
+  // dynamic ubo need to be set
+  createUniformBuffers();
   createDescriptorSets();
 }
 
@@ -213,6 +221,49 @@ void VgeExample::createDescriptorSets() {
                                      nullptr, bufferInfos.back());
   }
   device.updateDescriptorSets(writeDescriptorSets, nullptr);
+}
+
+void VgeExample::initClothModels() {
+  vgeu::FileLoadingFlags glTFLoadingFlags =
+      vgeu::FileLoadingFlagBits::kPreMultiplyVertexColors;
+  std::vector<vgeu::glTF::Vertex> modelVertices;
+  std::vector<uint32_t> indices;
+  // loading cloth models
+  std::shared_ptr<vgeu::glTF::Model> koreanFlag;
+  koreanFlag = std::make_shared<vgeu::glTF::Model>(
+      device, globalAllocator->getAllocator(), queue, commandPool,
+      MAX_CONCURRENT_FRAMES);
+  koreanFlag->additionalBufferUsageFlags =
+      vk::BufferUsageFlagBits::eStorageBuffer;
+  koreanFlag->loadFromFile(getAssetsPath() + "/models/koreanFlag/k-flag.gltf",
+                           glTFLoadingFlags, 1.0f, &modelVertices, &indices);
+
+  {
+    ModelInstance modelInstance{};
+    modelInstance.model = koreanFlag;
+    modelInstance.name = "koreanFlag1";
+    auto& clothModel = modelInstance.clothModel;
+    clothModel = std::make_unique<Cloth>(
+        device, globalAllocator->getAllocator(), queue, commandPool,
+        descriptorPool, common.descriptorSetLayoutParticle,
+        compute.descriptorSetLayoutConstraint, MAX_CONCURRENT_FRAMES);
+
+    float kFlagScale = 10.f;
+    glm::mat4 translateMat =
+        glm::translate(glm::mat4{1.f}, glm::vec3{0.f, -10.f, 0.f});
+    glm::mat4 rotateMat{1.f};
+    // FlipY manually
+    // NOTE: not only flip Y, also need flip z to preserve orientation
+    glm::mat4 scaleMat = glm::scale(
+        glm::mat4{1.f}, glm::vec3{kFlagScale, -kFlagScale, -kFlagScale});
+
+    clothModel->initParticlesData(modelVertices, indices, translateMat,
+                                  rotateMat, scaleMat);
+    // model specific infos
+    clothModel->initDistConstraintsData(100, 100);
+
+    addModelInstance(std::move(modelInstance));
+  }
 }
 
 void VgeExample::prepareGraphics() {
@@ -498,25 +549,6 @@ void VgeExample::loadAssets() {
     addModelInstance(std::move(modelInstance));
   }
 
-  std::shared_ptr<vgeu::glTF::Model> koreanFlag;
-  koreanFlag = std::make_shared<vgeu::glTF::Model>(
-      device, globalAllocator->getAllocator(), queue, commandPool,
-      MAX_CONCURRENT_FRAMES);
-  koreanFlag->additionalBufferUsageFlags =
-      vk::BufferUsageFlagBits::eStorageBuffer;
-  koreanFlag->loadFromFile(getAssetsPath() + "/models/koreanFlag/k-flag.gltf",
-                           glTFLoadingFlags);
-  {
-    ModelInstance modelInstance{};
-    modelInstance.model = koreanFlag;
-    modelInstance.name = "koreanFlag1";
-    modelInstance.clothModel = std::make_unique<Cloth>(
-        device, globalAllocator->getAllocator(), queue, commandPool,
-        descriptorPool, common.descriptorSetLayoutParticle,
-        compute.descriptorSetLayoutConstraint, MAX_CONCURRENT_FRAMES);
-    addModelInstance(std::move(modelInstance));
-  }
-
   std::shared_ptr<SimpleModel> circle = std::make_shared<SimpleModel>(
       device, globalAllocator->getAllocator(), queue, commandPool);
   circle->setNgon(32, {1.0f, 1.0f, 1.0f, 1.f});
@@ -732,14 +764,7 @@ void VgeExample::setupDynamicUbo() {
   {
     size_t instanceIndex = findInstances("koreanFlag1")[0];
     // NOTE: transformation moved into cloth initialization
-    float kFlagScale = 10.f;
-    common.dynamicUbo[instanceIndex].modelMatrix =
-        glm::translate(glm::mat4{1.f}, glm::vec3{0.f, -10.f, 0.f});
-    // FlipY manually
-    // NOTE: not only flip Y, also need flip z to preserve orientation
-    common.dynamicUbo[instanceIndex].modelMatrix =
-        glm::scale(common.dynamicUbo[instanceIndex].modelMatrix,
-                   glm::vec3{kFlagScale, -kFlagScale, -kFlagScale});
+
     // -1 alpha for wire frame color
     common.dynamicUbo[instanceIndex].modelColor =
         glm::vec4{0.f, 0.f, 1.f, -1.f};
@@ -1179,6 +1204,7 @@ void VgeExample::buildCommandBuffers() {
                                 vgeu::RenderFlagBits::kBindImages,
                                 *graphics.pipelineLayout, 2u /*set 2*/);
     }
+    // TODO: add cloth draw commands
   }
 
   for (auto instanceIdx = 0; instanceIdx < modelInstances.size();

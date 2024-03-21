@@ -294,6 +294,7 @@ class VgeExample : public VgeBase {
   void createUniformBuffers();
   void createDescriptorSetLayout();
   void createDescriptorSets();
+  void initClothModels();
 
   // compute resources
   void prepareCompute();
