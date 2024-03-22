@@ -1177,6 +1177,15 @@ void VgeExample::buildCommandBuffers() {
          common.animatedVertexBuffers[currentFrameIndex]) {
       targetBufferPtrs.push_back(animatedVertexBuffer.get());
     }
+    for (size_t instanceIdx = 0; instanceIdx < modelInstances.size();
+         instanceIdx++) {
+      const auto& modelInstance = modelInstances[instanceIdx];
+      if (!modelInstance.clothModel) {
+        continue;
+      }
+      targetBufferPtrs.push_back(
+          modelInstance.clothModel->getRenderSBPtr(currentFrameIndex));
+    }
     vgeu::addQueueFamilyOwnershipTransferBarriers(
         compute.queueFamilyIndex, graphics.queueFamilyIndex,
         drawCmdBuffers[currentFrameIndex], targetBufferPtrs, vk::AccessFlags{},
@@ -1320,6 +1329,15 @@ void VgeExample::buildCommandBuffers() {
     for (const auto& animatedVertexBuffer :
          common.animatedVertexBuffers[currentFrameIndex]) {
       targetBufferPtrs.push_back(animatedVertexBuffer.get());
+    }
+    for (size_t instanceIdx = 0; instanceIdx < modelInstances.size();
+         instanceIdx++) {
+      const auto& modelInstance = modelInstances[instanceIdx];
+      if (!modelInstance.clothModel) {
+        continue;
+      }
+      targetBufferPtrs.push_back(
+          modelInstance.clothModel->getRenderSBPtr(currentFrameIndex));
     }
     vgeu::addQueueFamilyOwnershipTransferBarriers(
         graphics.queueFamilyIndex, compute.queueFamilyIndex,

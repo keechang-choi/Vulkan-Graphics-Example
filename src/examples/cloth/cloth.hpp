@@ -209,6 +209,9 @@ class Cloth {
     cmdBuffer.bindVertexBuffers(0, renderSBs[currentFrameIndex]->getBuffer(),
                                 {0});
   }
+  const vgeu::VgeuBuffer* getRenderSBPtr(const uint32_t currentFrameIndex) {
+    return renderSBs[currentFrameIndex].get();
+  }
 
  private:
   void createParticleStorageBuffers(const std::vector<ParticleRender>& vertices,
