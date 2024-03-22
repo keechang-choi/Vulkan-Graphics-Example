@@ -705,17 +705,17 @@ void VgeExample::createVertexSCI() {
 
   // vertex binding and attribute descriptions
   graphics.clothVertexInfos.bindingDescriptions.emplace_back(
-      0 /*binding*/, sizeof(AnimatedVertex), vk::VertexInputRate::eVertex);
+      0 /*binding*/, sizeof(ParticleRender), vk::VertexInputRate::eVertex);
 
   graphics.clothVertexInfos.attributeDescriptions.emplace_back(
       0 /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
-      offsetof(AnimatedVertex, pos));
+      offsetof(ParticleRender, pos));
   graphics.clothVertexInfos.attributeDescriptions.emplace_back(
       1 /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
-      offsetof(AnimatedVertex, normal));
+      offsetof(ParticleRender, normal));
   graphics.clothVertexInfos.attributeDescriptions.emplace_back(
       2 /*location*/, 0 /* binding */, vk::Format::eR32G32Sfloat,
-      offsetof(AnimatedVertex, uv));
+      offsetof(ParticleRender, uv));
 
   graphics.clothVertexInfos.vertexInputSCI =
       vk::PipelineVertexInputStateCreateInfo(
@@ -1932,7 +1932,11 @@ void Cloth::initParticlesData(const std::vector<vgeu::glTF::Vertex>& vertices,
   // std::vector<ParticleRender> particlesRender;
   particlesRender.reserve(numParticles);
   for (auto i = 0; i < numParticles; i++) {
-    glm::vec4 pos = transform * vertices[i].pos;
+    // NOTE: put skin index as w
+    glm::vec4 pos = vertices[i].pos;
+    // w as 1 for translation
+    pos.w = 1.0;
+    pos = transform * pos;
     // inv mass
     pos.w = 1.0;
     glm::vec4 normal = normalTransform * vertices[i].normal;
