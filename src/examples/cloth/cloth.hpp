@@ -166,8 +166,8 @@ class Cloth {
         const uint32_t computeQueueFamilyIndex,
         const vk::raii::CommandPool& commandPool,
         const vk::raii::DescriptorPool& descriptorPool,
-        const vk::raii::DescriptorSetLayout& descriptorSetLayoutParticle,
-        const vk::raii::DescriptorSetLayout& descriptorSetLayoutConstraint,
+        const vk::raii::DescriptorSetLayout& particleDescriptorSetLayout,
+        const vk::raii::DescriptorSetLayout& constraintDescriptorSetLayout,
         const uint32_t framesInFlight);
 
   // not copyable
@@ -216,11 +216,11 @@ class Cloth {
  private:
   void createParticleStorageBuffers(const std::vector<ParticleRender>& vertices,
                                     const std::vector<uint32_t>& indices);
-  void createParticleDecriptorSets();
+  void createParticleDescriptorSets();
 
   void createDistConstraintStorageBuffers(
       const std::vector<DistConstraint>& distConstraints);
-  void createDistConstraintDecriptorSets();
+  void createDistConstraintDescriptorSets();
 
   const vk::raii::Device& device;
   VmaAllocator allocator;
@@ -229,8 +229,8 @@ class Cloth {
   const uint32_t computeQueueFamilyIndex;
   const vk::raii::CommandPool& commandPool;
   const vk::raii::DescriptorPool& descriptorPool;
-  const vk::raii::DescriptorSetLayout& descriptorSetLayoutParticle;
-  const vk::raii::DescriptorSetLayout& descriptorSetLayoutConstraint;
+  const vk::raii::DescriptorSetLayout& particleDescriptorSetLayout;
+  const vk::raii::DescriptorSetLayout& constraintDescriptorSetLayout;
   const uint32_t framesInFlight;
 
   uint32_t numParticles;
@@ -244,16 +244,16 @@ class Cloth {
 
   // initial setting
   std::unique_ptr<vgeu::VgeuBuffer> constraintSBs;
-  // TODO: put descriptor set layouts outside of the object
-  // add descriptor sets
+  // descriptor sets
   // set 1 -> cal sb, render sb
   // set 2 -> constraints
   // not explicitly created
   // set 3 -> other?? cal sb, render sb
+  std::vector<vk::raii::DescriptorSet> particleDescriptorSets;
+  vk::raii::DescriptorSet constraintDescriptorSet = nullptr;
 
-  // TODO: need to delete in host memory if too many
+  // TODO: need to delete in host memory
   std::vector<ParticleRender> particlesRender;
-  // std::vector<DistConstraint> distconstraints;
 
   bool hasParticleBuffer{false};
   bool hasConstraintBuffer{false};
@@ -355,7 +355,7 @@ class VgeExample : public VgeBase {
     std::vector<vk::raii::DescriptorSet> dynamicUboDescriptorSets;
     vk::raii::DescriptorSetLayout dynamicUboDescriptorSetLayout = nullptr;
 
-    vk::raii::DescriptorSetLayout descriptorSetLayoutParticle = nullptr;
+    vk::raii::DescriptorSetLayout particleDescriptorSetLayout = nullptr;
 
   } common;
   struct {
@@ -406,7 +406,7 @@ class VgeExample : public VgeBase {
     std::vector<bool> firstCompute;
 
     // cloth
-    vk::raii::DescriptorSetLayout descriptorSetLayoutConstraint = nullptr;
+    vk::raii::DescriptorSetLayout constraintDescriptorSetLayout = nullptr;
 
   } compute;
 

@@ -185,17 +185,17 @@ void VgeExample::createDescriptorSetLayout() {
                                 vk::DescriptorType::eStorageBuffer, 1,
                                 vk::ShaderStageFlagBits::eAll);
     vk::DescriptorSetLayoutCreateInfo layoutCI({}, layoutBindings);
-    common.descriptorSetLayoutParticle =
+    common.particleDescriptorSetLayout =
         vk::raii::DescriptorSetLayout(device, layoutCI);
   }
 
   {
     std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
     layoutBindings.emplace_back(0 /*binding*/,
-                                vk::DescriptorType::eUniformBufferDynamic, 1,
+                                vk::DescriptorType::eStorageBuffer, 1,
                                 vk::ShaderStageFlagBits::eCompute);
     vk::DescriptorSetLayoutCreateInfo layoutCI({}, layoutBindings);
-    compute.descriptorSetLayoutConstraint =
+    compute.constraintDescriptorSetLayout =
         vk::raii::DescriptorSetLayout(device, layoutCI);
   }
 }
@@ -246,8 +246,8 @@ void VgeExample::initClothModels() {
     clothModel = std::make_unique<Cloth>(
         device, globalAllocator->getAllocator(), queue,
         graphics.queueFamilyIndex, compute.queueFamilyIndex, commandPool,
-        descriptorPool, common.descriptorSetLayoutParticle,
-        compute.descriptorSetLayoutConstraint, MAX_CONCURRENT_FRAMES);
+        descriptorPool, common.particleDescriptorSetLayout,
+        compute.constraintDescriptorSetLayout, MAX_CONCURRENT_FRAMES);
 
     float kFlagScale = 10.f;
     glm::mat4 translateMat =
@@ -1904,8 +1904,8 @@ Cloth::Cloth(const vk::raii::Device& device, VmaAllocator allocator,
              const uint32_t computeQueueFamilyIndex,
              const vk::raii::CommandPool& commandPool,
              const vk::raii::DescriptorPool& descriptorPool,
-             const vk::raii::DescriptorSetLayout& descriptorSetLayoutParticle,
-             const vk::raii::DescriptorSetLayout& descriptorSetLayoutConstraint,
+             const vk::raii::DescriptorSetLayout& particleDescriptorSetLayout,
+             const vk::raii::DescriptorSetLayout& constraintDescriptorSetLayout,
              const uint32_t framesInFlight)
     : device{device},
       allocator{allocator},
@@ -1914,8 +1914,8 @@ Cloth::Cloth(const vk::raii::Device& device, VmaAllocator allocator,
       computeQueueFamilyIndex{computeQueueFamilyIndex},
       commandPool{commandPool},
       descriptorPool{descriptorPool},
-      descriptorSetLayoutParticle{descriptorSetLayoutParticle},
-      descriptorSetLayoutConstraint{descriptorSetLayoutConstraint},
+      particleDescriptorSetLayout{particleDescriptorSetLayout},
+      constraintDescriptorSetLayout{constraintDescriptorSetLayout},
       framesInFlight{framesInFlight} {}
 
 void Cloth::initParticlesData(const std::vector<vgeu::glTF::Vertex>& vertices,
@@ -1945,7 +1945,7 @@ void Cloth::initParticlesData(const std::vector<vgeu::glTF::Vertex>& vertices,
   }
 
   createParticleStorageBuffers(particlesRender, indices);
-  createParticleDecriptorSets();
+  createParticleDescriptorSets();
 }
 
 void Cloth::initDistConstraintsData(const uint32_t numX, const uint32_t numY) {
@@ -2027,7 +2027,7 @@ void Cloth::initDistConstraintsData(const uint32_t numX, const uint32_t numY) {
   }
 
   createDistConstraintStorageBuffers(distConstraints);
-  createDistConstraintDecriptorSets();
+  createDistConstraintDescriptorSets();
 }
 
 void Cloth::initDistConstraintsData(
@@ -2107,23 +2107,73 @@ void Cloth::createParticleStorageBuffers(
   }
 }
 
-void Cloth::createParticleDecriptorSets() {
-  // TODO: not implemented yet
+void Cloth::createParticleDescriptorSets() {
+  vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
+                                          *particleDescriptorSetLayout);
+  particleDescriptorSets.reserve(framesInFlight);
+  for (int i = 0; i < framesInFlight; i++) {
+    particleDescriptorSets.push_back(
+        std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
+  }
+  std::vector<vk::DescriptorBufferInfo> bufferInfos;
+  bufferInfos.reserve(particleDescriptorSets.size() * 2);
+  std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
+  writeDescriptorSets.reserve(particleDescriptorSets.size() * 2);
+  for (int i = 0; i < particleDescriptorSets.size(); i++) {
+    bufferInfos.push_back(calculateSBs[i]->descriptorInfo());
+    writeDescriptorSets.emplace_back(*particleDescriptorSets[i], 0, 0,
+                                     vk::DescriptorType::eStorageBuffer,
+                                     nullptr, bufferInfos.back());
+    bufferInfos.push_back(renderSBs[i]->descriptorInfo());
+    writeDescriptorSets.emplace_back(*particleDescriptorSets[i], 1, 0,
+                                     vk::DescriptorType::eStorageBuffer,
+                                     nullptr, bufferInfos.back());
+  }
+  device.updateDescriptorSets(writeDescriptorSets, nullptr);
 }
 
 void Cloth::createDistConstraintStorageBuffers(
     const std::vector<DistConstraint>& distConstraints) {
-  // TODO: not implemented yet
-
   constraintSBs = std::make_unique<vgeu::VgeuBuffer>(
       allocator, sizeof(DistConstraint), numConstraints,
       vk::BufferUsageFlagBits::eStorageBuffer |
           vk::BufferUsageFlagBits::eTransferDst,
       VMA_MEMORY_USAGE_AUTO, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
+
+  // copy
+  {
+    vgeu::VgeuBuffer stagingBuffer(
+        allocator, sizeof(DistConstraint), numConstraints,
+        vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT);
+    std::memcpy(stagingBuffer.getMappedData(), distConstraints.data(),
+                stagingBuffer.getBufferSize());
+
+    vgeu::oneTimeSubmit(
+        device, commandPool, transferQueue,
+        [&](const vk::raii::CommandBuffer& cmdBuffer) {
+          cmdBuffer.copyBuffer(
+              stagingBuffer.getBuffer(), constraintSBs->getBuffer(),
+              vk::BufferCopy(0, 0, stagingBuffer.getBufferSize()));
+        });
+  }
 }
 
-void Cloth::createDistConstraintDecriptorSets() {
-  // TODO: not implemented yet
+void Cloth::createDistConstraintDescriptorSets() {
+  vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
+                                          *constraintDescriptorSetLayout);
+  constraintDescriptorSet =
+      std::move(vk::raii::DescriptorSets(device, allocInfo).front());
+
+  std::vector<vk::DescriptorBufferInfo> bufferInfos;
+  std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
+  bufferInfos.push_back(constraintSBs->descriptorInfo());
+  writeDescriptorSets.emplace_back(*constraintDescriptorSet, 0, 0,
+                                   vk::DescriptorType::eStorageBuffer, nullptr,
+                                   bufferInfos.back());
+
+  device.updateDescriptorSets(writeDescriptorSets, nullptr);
 }
 
 }  // namespace vge
