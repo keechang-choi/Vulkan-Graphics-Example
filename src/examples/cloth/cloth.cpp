@@ -702,6 +702,26 @@ void VgeExample::createVertexSCI() {
           vk::PipelineVertexInputStateCreateFlags{},
           graphics.animatedVertexInfos.bindingDescriptions,
           graphics.animatedVertexInfos.attributeDescriptions);
+
+  // vertex binding and attribute descriptions
+  graphics.clothVertexInfos.bindingDescriptions.emplace_back(
+      0 /*binding*/, sizeof(AnimatedVertex), vk::VertexInputRate::eVertex);
+
+  graphics.clothVertexInfos.attributeDescriptions.emplace_back(
+      0 /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
+      offsetof(AnimatedVertex, pos));
+  graphics.clothVertexInfos.attributeDescriptions.emplace_back(
+      1 /*location*/, 0 /* binding */, vk::Format::eR32G32B32A32Sfloat,
+      offsetof(AnimatedVertex, normal));
+  graphics.clothVertexInfos.attributeDescriptions.emplace_back(
+      2 /*location*/, 0 /* binding */, vk::Format::eR32G32Sfloat,
+      offsetof(AnimatedVertex, uv));
+
+  graphics.clothVertexInfos.vertexInputSCI =
+      vk::PipelineVertexInputStateCreateInfo(
+          vk::PipelineVertexInputStateCreateFlags{},
+          graphics.clothVertexInfos.bindingDescriptions,
+          graphics.clothVertexInfos.attributeDescriptions);
 }
 
 void VgeExample::setupDynamicUbo() {
@@ -993,6 +1013,25 @@ void VgeExample::createGraphicsPipelines() {
   graphics.pipelines.pipelinePhong =
       vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
   {
+    vertexInputSCI.setVertexBindingDescriptions(
+        graphics.clothVertexInfos.bindingDescriptions);
+    vertexInputSCI.setVertexAttributeDescriptions(
+        graphics.clothVertexInfos.attributeDescriptions);
+    vertCode = vgeu::readFile(getShadersPath() + "/cloth/cloth.vert.spv");
+    // NOTE: share fragment shader w/ phong shader.
+    // NOTE: after pipeline creation, shader modules can be destroyed.
+    vertShaderModule = vgeu::createShaderModule(device, vertCode);
+    shaderStageCIs[0] = vk::PipelineShaderStageCreateInfo(
+        vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eVertex,
+        *vertShaderModule, "main", nullptr);
+    graphics.pipelines.pipelineCloth =
+        vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
+  }
+  {
+    vertexInputSCI.setVertexBindingDescriptions(
+        graphics.animatedVertexInfos.bindingDescriptions);
+    vertexInputSCI.setVertexAttributeDescriptions(
+        graphics.animatedVertexInfos.attributeDescriptions);
     rasterizationSCI.polygonMode = vk::PolygonMode::eLine;
     vertCode = vgeu::readFile(getShadersPath() + "/cloth/wireframe.vert.spv");
     fragCode = vgeu::readFile(getShadersPath() + "/cloth/wireframe.frag.spv");
@@ -1182,7 +1221,7 @@ void VgeExample::buildCommandBuffers() {
     for (size_t instanceIdx = 0; instanceIdx < modelInstances.size();
          instanceIdx++) {
       const auto& modelInstance = modelInstances[instanceIdx];
-      if (!modelInstance.model) {
+      if (!modelInstance.model || modelInstance.clothModel) {
         continue;
       }
 
@@ -1207,9 +1246,34 @@ void VgeExample::buildCommandBuffers() {
                                 vgeu::RenderFlagBits::kBindImages,
                                 *graphics.pipelineLayout, 2u /*set 2*/);
     }
-    // TODO: add cloth draw commands
+  }
+  // draw cloth models
+  drawCmdBuffers[currentFrameIndex].bindPipeline(
+      vk::PipelineBindPoint::eGraphics, *graphics.pipelines.pipelineCloth);
+  for (size_t instanceIdx = 0; instanceIdx < modelInstances.size();
+       instanceIdx++) {
+    const auto& modelInstance = modelInstances[instanceIdx];
+    if (!modelInstance.clothModel) {
+      continue;
+    }
+    // bind dynamic
+    drawCmdBuffers[currentFrameIndex].bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics, *graphics.pipelineLayout, 1 /*set 1*/,
+        {*common.dynamicUboDescriptorSets[currentFrameIndex]},
+        common.alignedSizeDynamicUboElt * instanceIdx);
+    // bind vertex buffer
+    modelInstance.clothModel->bindVertexBuffer(
+        drawCmdBuffers[currentFrameIndex], currentFrameIndex);
+    // bind index buffer
+    modelInstance.model->bindIndexBufferOnly(drawCmdBuffers[currentFrameIndex]);
+    // draw indexed
+    modelInstance.model->draw(currentFrameIndex,
+                              drawCmdBuffers[currentFrameIndex],
+                              vgeu::RenderFlagBits::kBindImages,
+                              *graphics.pipelineLayout, 2u /*set 2*/);
   }
 
+  // draw simple models
   for (auto instanceIdx = 0; instanceIdx < modelInstances.size();
        instanceIdx++) {
     const auto& modelInstance = modelInstances[instanceIdx];

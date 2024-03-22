@@ -204,6 +204,12 @@ class Cloth {
   void updateMesh(const uint32_t frameIndex,
                   const vk::raii::CommandBuffer& cmdBuffer);
 
+  void bindVertexBuffer(const vk::raii::CommandBuffer& cmdBuffer,
+                        const uint32_t currentFrameIndex) {
+    cmdBuffer.bindVertexBuffers(0, renderSBs[currentFrameIndex]->getBuffer(),
+                                {0});
+  }
+
  private:
   void createParticleStorageBuffers(const std::vector<ParticleRender>& vertices,
                                     const std::vector<uint32_t>& indices);
@@ -406,6 +412,8 @@ class VgeExample : public VgeBase {
     VertexInfos simpleVertexInfos;
     // for animated vertex
     VertexInfos animatedVertexInfos;
+    // for cloth model
+    VertexInfos clothVertexInfos;
 
     // NOTE: movable element;
     uint32_t queueFamilyIndex;
@@ -420,6 +428,7 @@ class VgeExample : public VgeBase {
       vk::raii::Pipeline pipelineSimpleMesh = nullptr;
       vk::raii::Pipeline pipelineWireMesh = nullptr;
       vk::raii::Pipeline pipelineSimpleLine = nullptr;
+      vk::raii::Pipeline pipelineCloth = nullptr;
     } pipelines;
 
   } graphics;
