@@ -43,7 +43,7 @@ layout (std430, set = 3, binding = 1) writeonly buffer VertexOutSSBO{
 	VertexOut verticesOut[ ];
 };
 
-layout (local_size_x_id = 3) in;
+layout (local_size_x_id = 2) in;
 
 void main() 
 {

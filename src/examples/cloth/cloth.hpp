@@ -23,6 +23,20 @@ struct GlobalUbo {
   glm::vec2 pointSize{1.f, 64.f};
 };
 
+// NOTE: std140 alignment
+struct ComputeUbo {
+  glm::vec4 clickData;
+  glm::vec4 gravity;
+  glm::ivec2 particleCount;
+  float dt;
+  float stiffness;
+  float alpha;
+  float jacobiScale;
+  float thickness;
+  float friction;
+  bool solveType;
+};
+
 // NOTE: simple model for circle, quad, lines
 struct SimpleModel {
   SimpleModel(const vk::raii::Device& device, VmaAllocator allocator,
@@ -89,34 +103,44 @@ struct DynamicUboElt {
   glm::vec4 modelColor{0.f};
 };
 
+// NOTE: std430 alignment
 // cloth particle
 struct ParticleCalculate {
-  glm::vec4 prevPos;
+  alignas(16) glm::vec4 prevPos;
   glm::vec4 vel;
   glm::vec4 corr;
 };
 
 struct DistConstraint {
-  glm::ivec2 constIds;
+  alignas(8) glm::ivec2 constIds;
   float restLength;
 };
 struct ParticleRender {
   // w component as inv mass
-  glm::vec4 pos;
+  alignas(16) glm::vec4 pos;
   glm::vec4 normal;
   glm::vec2 uv;
 };
 
+/*
+compute type:
+0-> integrate
+1-> solve constraints
+2-> update vel
+3-> update mesh
+4-> initialize? (TODO)
+*/
 struct SpecializationData {
   uint32_t sharedDataSize;
-  uint32_t integrator;
-  uint32_t integrateStep;
+  uint32_t computeType;
   uint32_t localSizeX;
+  uint32_t localSizeY;
+  uint32_t localSizeZ;
 };
 
 struct Options {
   int32_t numParticles{1};
-  float coefficientDeltaTime = 0.05f;
+  float coefficientDeltaTime = 0.5f;
   float gravity = 10.f;
   float power = 1.f;
   float soften = 0.001f;
@@ -212,6 +236,13 @@ class Cloth {
   const vgeu::VgeuBuffer* getRenderSBPtr(const uint32_t currentFrameIndex) {
     return renderSBs[currentFrameIndex].get();
   }
+
+  const vk::DescriptorSet getParticleDescriptorSet(
+      const uint32_t currentFrameIndex) {
+    return *particleDescriptorSets[currentFrameIndex];
+  }
+
+  const uint32_t getNumParticles() { return numParticles; }
 
  private:
   void createParticleStorageBuffers(const std::vector<ParticleRender>& vertices,
@@ -356,7 +387,8 @@ class VgeExample : public VgeBase {
     vk::raii::DescriptorSetLayout dynamicUboDescriptorSetLayout = nullptr;
 
     vk::raii::DescriptorSetLayout particleDescriptorSetLayout = nullptr;
-
+    std::vector<const vgeu::VgeuBuffer*> ownershipTransferParticleBufferPtrs;
+    std::vector<const vgeu::VgeuBuffer*> ownershipTransferBufferPtrs;
   } common;
   struct {
     uint32_t queueFamilyIndex;
@@ -388,20 +420,11 @@ class VgeExample : public VgeBase {
       // for compute animation
       vk::raii::Pipeline pipelineModelAnimate = nullptr;
       // cloth simulation calculation and integration
-      vk::raii::Pipeline pipelineCloth = nullptr;
+      std::vector<vk::raii::Pipeline> pipelinesCloth;
     } pipelines;
 
     std::vector<std::unique_ptr<vgeu::VgeuBuffer>> uniformBuffers;
-    struct computeUbo {
-      glm::vec4 clickData;
-      float dt;
-      glm::ivec2 particleCount;
-      float particleMass;
-      float springStiffness;
-      float damping;
-      glm::vec4 restDist;
-      glm::vec4 gravity;
-    } ubo;
+    ComputeUbo ubo;
 
     std::vector<bool> firstCompute;
 

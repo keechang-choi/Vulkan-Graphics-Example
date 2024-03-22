@@ -97,6 +97,25 @@ void VgeExample::prepare() {
   prepareCommon();
   prepareGraphics();
   prepareCompute();
+  {
+    for (const auto& animatedVertexBuffer :
+         common.animatedVertexBuffers[currentFrameIndex]) {
+      common.ownershipTransferBufferPtrs.push_back(animatedVertexBuffer.get());
+    }
+    for (size_t instanceIdx = 0; instanceIdx < modelInstances.size();
+         instanceIdx++) {
+      const auto& modelInstance = modelInstances[instanceIdx];
+      if (!modelInstance.clothModel) {
+        continue;
+      }
+      common.ownershipTransferParticleBufferPtrs.push_back(
+          modelInstance.clothModel->getRenderSBPtr(currentFrameIndex));
+    }
+    common.ownershipTransferBufferPtrs.insert(
+        common.ownershipTransferBufferPtrs.end(),
+        common.ownershipTransferParticleBufferPtrs.begin(),
+        common.ownershipTransferParticleBufferPtrs.end());
+  }
   prepared = true;
 }
 
@@ -178,9 +197,11 @@ void VgeExample::createDescriptorSetLayout() {
   // and re-order load asset call after create descriptor set layout
   {
     std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
+    // calculation particles
     layoutBindings.emplace_back(0 /*binding*/,
                                 vk::DescriptorType::eStorageBuffer, 1,
                                 vk::ShaderStageFlagBits::eAll);
+    // render particles
     layoutBindings.emplace_back(1 /*binding*/,
                                 vk::DescriptorType::eStorageBuffer, 1,
                                 vk::ShaderStageFlagBits::eAll);
@@ -256,7 +277,7 @@ void VgeExample::initClothModels() {
     // FlipY manually
     // NOTE: not only flip Y, also need flip z to preserve orientation
     glm::mat4 scaleMat = glm::scale(
-        glm::mat4{1.f}, glm::vec3{kFlagScale, -kFlagScale, -kFlagScale});
+        glm::mat4{1.f}, glm::vec3{1.5f * kFlagScale, -kFlagScale, -kFlagScale});
 
     clothModel->initParticlesData(modelVertices, indices, translateMat,
                                   rotateMat, scaleMat);
@@ -329,52 +350,86 @@ void VgeExample::createComputeDescriptorSetLayout() {
     setLayouts.push_back(*compute.skinDescriptorSetLayout);
   }
 
+  // set 4 particle ssbo
+  setLayouts.push_back(*common.particleDescriptorSetLayout);
+  // set 5 constraint ssbo
+  setLayouts.push_back(*compute.constraintDescriptorSetLayout);
+
   vk::PipelineLayoutCreateInfo pipelineLayoutCI({}, setLayouts);
   compute.pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutCI);
 }
 
 void VgeExample::createComputeDescriptorSets() {
-  vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
-                                          *compute.skinDescriptorSetLayout);
-  compute.skinDescriptorSets.resize(MAX_CONCURRENT_FRAMES);
-  for (size_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
-    compute.skinDescriptorSets[i].reserve(modelInstances.size());
-    for (size_t j = 0; j < modelInstances.size(); j++) {
-      compute.skinDescriptorSets[i].push_back(
+  // ubo descriptor set
+  {
+    vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
+                                            *compute.descriptorSetLayout);
+    compute.descriptorSets.reserve(MAX_CONCURRENT_FRAMES);
+    for (size_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      compute.descriptorSets.push_back(
           std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
     }
+
+    std::vector<vk::DescriptorBufferInfo> uniformBufferInfos;
+    uniformBufferInfos.reserve(compute.descriptorSets.size());
+    for (size_t i = 0; i < compute.descriptorSets.size(); i++) {
+      uniformBufferInfos.push_back(compute.uniformBuffers[i]->descriptorInfo());
+    }
+    std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
+    writeDescriptorSets.reserve(compute.descriptorSets.size());
+    for (int i = 0; i < compute.descriptorSets.size(); i++) {
+      writeDescriptorSets.emplace_back(
+          *compute.descriptorSets[i], 0 /*binding*/, 0,
+          vk::DescriptorType::eUniformBuffer, nullptr, uniformBufferInfos[i]);
+    }
+    device.updateDescriptorSets(writeDescriptorSets, nullptr);
   }
 
-  std::vector<std::vector<vk::DescriptorBufferInfo>> skinMatricesBufferInfos;
-  skinMatricesBufferInfos.resize(compute.skinDescriptorSets.size());
-  std::vector<std::vector<vk::DescriptorBufferInfo>> animatedVertexBufferInfos;
-  animatedVertexBufferInfos.resize(compute.skinDescriptorSets.size());
-  for (size_t i = 0; i < compute.skinDescriptorSets.size(); i++) {
-    skinMatricesBufferInfos.reserve(compute.skinDescriptorSets[i].size());
-    animatedVertexBufferInfos.reserve(compute.skinDescriptorSets[i].size());
-    for (size_t j = 0; j < compute.skinDescriptorSets[i].size(); j++) {
-      skinMatricesBufferInfos[i].push_back(
-          compute.skinMatricesBuffers[i][j]->descriptorInfo());
-      animatedVertexBufferInfos[i].push_back(
-          common.animatedVertexBuffers[i][j]->descriptorInfo());
+  // skin descriptor set
+  {
+    vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
+                                            *compute.skinDescriptorSetLayout);
+    compute.skinDescriptorSets.resize(MAX_CONCURRENT_FRAMES);
+    for (size_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      compute.skinDescriptorSets[i].reserve(modelInstances.size());
+      for (size_t j = 0; j < modelInstances.size(); j++) {
+        compute.skinDescriptorSets[i].push_back(
+            std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
+      }
     }
-  }
-  std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
-  writeDescriptorSets.reserve(compute.skinDescriptorSets.size() *
-                              compute.skinDescriptorSets[0].size());
-  for (size_t i = 0; i < compute.skinDescriptorSets.size(); i++) {
-    for (size_t j = 0; j < compute.skinDescriptorSets[i].size(); j++) {
-      writeDescriptorSets.emplace_back(*compute.skinDescriptorSets[i][j],
-                                       0 /*binding*/, 0,
-                                       vk::DescriptorType::eStorageBuffer,
-                                       nullptr, skinMatricesBufferInfos[i][j]);
-      writeDescriptorSets.emplace_back(
-          *compute.skinDescriptorSets[i][j], 1 /*binding*/, 0,
-          vk::DescriptorType::eStorageBuffer, nullptr,
-          animatedVertexBufferInfos[i][j]);
+
+    std::vector<std::vector<vk::DescriptorBufferInfo>> skinMatricesBufferInfos;
+    skinMatricesBufferInfos.resize(compute.skinDescriptorSets.size());
+    std::vector<std::vector<vk::DescriptorBufferInfo>>
+        animatedVertexBufferInfos;
+    animatedVertexBufferInfos.resize(compute.skinDescriptorSets.size());
+    for (size_t i = 0; i < compute.skinDescriptorSets.size(); i++) {
+      skinMatricesBufferInfos.reserve(compute.skinDescriptorSets[i].size());
+      animatedVertexBufferInfos.reserve(compute.skinDescriptorSets[i].size());
+      for (size_t j = 0; j < compute.skinDescriptorSets[i].size(); j++) {
+        skinMatricesBufferInfos[i].push_back(
+            compute.skinMatricesBuffers[i][j]->descriptorInfo());
+        animatedVertexBufferInfos[i].push_back(
+            common.animatedVertexBuffers[i][j]->descriptorInfo());
+      }
     }
+    std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
+    writeDescriptorSets.reserve(compute.skinDescriptorSets.size() *
+                                compute.skinDescriptorSets[0].size());
+    for (size_t i = 0; i < compute.skinDescriptorSets.size(); i++) {
+      for (size_t j = 0; j < compute.skinDescriptorSets[i].size(); j++) {
+        writeDescriptorSets.emplace_back(
+            *compute.skinDescriptorSets[i][j], 0 /*binding*/, 0,
+            vk::DescriptorType::eStorageBuffer, nullptr,
+            skinMatricesBufferInfos[i][j]);
+        writeDescriptorSets.emplace_back(
+            *compute.skinDescriptorSets[i][j], 1 /*binding*/, 0,
+            vk::DescriptorType::eStorageBuffer, nullptr,
+            animatedVertexBufferInfos[i][j]);
+      }
+    }
+    device.updateDescriptorSets(writeDescriptorSets, nullptr);
   }
-  device.updateDescriptorSets(writeDescriptorSets, nullptr);
 }
 
 void VgeExample::createComputePipelines() {
@@ -386,19 +441,22 @@ void VgeExample::createComputePipelines() {
       static_cast<uint32_t>(maxComputeSharedMemorySize / sizeof(glm::vec4)));
   SpecializationData specializationData{};
   specializationData.sharedDataSize = sharedDataSize;
-  specializationData.integrator = integrator;
-  specializationData.integrateStep = 0u;
+  specializationData.computeType = 0u;
   specializationData.localSizeX = sharedDataSize;
+  specializationData.localSizeY = 1u;
+  specializationData.localSizeZ = 1u;
 
   std::vector<vk::SpecializationMapEntry> specializationMapEntries;
   specializationMapEntries.emplace_back(
       0u, offsetof(SpecializationData, sharedDataSize), sizeof(uint32_t));
   specializationMapEntries.emplace_back(
-      1u, offsetof(SpecializationData, integrator), sizeof(uint32_t));
+      1u, offsetof(SpecializationData, computeType), sizeof(uint32_t));
   specializationMapEntries.emplace_back(
-      2u, offsetof(SpecializationData, integrateStep), sizeof(uint32_t));
+      2u, offsetof(SpecializationData, localSizeX), sizeof(uint32_t));
   specializationMapEntries.emplace_back(
-      3u, offsetof(SpecializationData, localSizeX), sizeof(uint32_t));
+      3u, offsetof(SpecializationData, localSizeY), sizeof(uint32_t));
+  specializationMapEntries.emplace_back(
+      4u, offsetof(SpecializationData, localSizeZ), sizeof(uint32_t));
 
   {
     // compute animation
@@ -418,6 +476,30 @@ void VgeExample::createComputePipelines() {
                                                     *compute.pipelineLayout);
     compute.pipelines.pipelineModelAnimate =
         vk::raii::Pipeline(device, pipelineCache, computePipelineCI);
+  }
+  {
+    auto compClothCode =
+        vgeu::readFile(getShadersPath() + "/cloth/cloth.comp.spv");
+    vk::raii::ShaderModule compClothShaderModule =
+        vgeu::createShaderModule(device, compClothCode);
+    // TODO: change specialization data for each type
+    for (auto i = 0; i < 5; i++) {
+      // compute cloth
+      specializationData.computeType = i;
+      vk::SpecializationInfo specializationInfo(
+          specializationMapEntries,
+          vk::ArrayProxyNoTemporaries<const SpecializationData>(
+              specializationData));
+      vk::PipelineShaderStageCreateInfo computeShaderStageCI(
+          vk::PipelineShaderStageCreateFlags{},
+          vk::ShaderStageFlagBits::eCompute, *compClothShaderModule, "main",
+          &specializationInfo);
+      vk::ComputePipelineCreateInfo computePipelineCI(vk::PipelineCreateFlags{},
+                                                      computeShaderStageCI,
+                                                      *compute.pipelineLayout);
+      compute.pipelines.pipelinesCloth.emplace_back(device, pipelineCache,
+                                                    computePipelineCI);
+    }
   }
 }
 
@@ -1172,24 +1254,10 @@ void VgeExample::buildCommandBuffers() {
 
   //  acquire barrier compute -> graphics
   {
-    std::vector<const vgeu::VgeuBuffer*> targetBufferPtrs;
-    for (const auto& animatedVertexBuffer :
-         common.animatedVertexBuffers[currentFrameIndex]) {
-      targetBufferPtrs.push_back(animatedVertexBuffer.get());
-    }
-    for (size_t instanceIdx = 0; instanceIdx < modelInstances.size();
-         instanceIdx++) {
-      const auto& modelInstance = modelInstances[instanceIdx];
-      if (!modelInstance.clothModel) {
-        continue;
-      }
-      targetBufferPtrs.push_back(
-          modelInstance.clothModel->getRenderSBPtr(currentFrameIndex));
-    }
     vgeu::addQueueFamilyOwnershipTransferBarriers(
         compute.queueFamilyIndex, graphics.queueFamilyIndex,
-        drawCmdBuffers[currentFrameIndex], targetBufferPtrs, vk::AccessFlags{},
-        vk::AccessFlagBits::eVertexAttributeRead,
+        drawCmdBuffers[currentFrameIndex], common.ownershipTransferBufferPtrs,
+        vk::AccessFlags{}, vk::AccessFlagBits::eVertexAttributeRead,
         vk::PipelineStageFlagBits::eTopOfPipe,
         vk::PipelineStageFlagBits::eVertexInput);
   }
@@ -1325,23 +1393,9 @@ void VgeExample::buildCommandBuffers() {
 
   // release graphics -> compute
   {
-    std::vector<const vgeu::VgeuBuffer*> targetBufferPtrs;
-    for (const auto& animatedVertexBuffer :
-         common.animatedVertexBuffers[currentFrameIndex]) {
-      targetBufferPtrs.push_back(animatedVertexBuffer.get());
-    }
-    for (size_t instanceIdx = 0; instanceIdx < modelInstances.size();
-         instanceIdx++) {
-      const auto& modelInstance = modelInstances[instanceIdx];
-      if (!modelInstance.clothModel) {
-        continue;
-      }
-      targetBufferPtrs.push_back(
-          modelInstance.clothModel->getRenderSBPtr(currentFrameIndex));
-    }
     vgeu::addQueueFamilyOwnershipTransferBarriers(
         graphics.queueFamilyIndex, compute.queueFamilyIndex,
-        drawCmdBuffers[currentFrameIndex], targetBufferPtrs,
+        drawCmdBuffers[currentFrameIndex], common.ownershipTransferBufferPtrs,
         vk::AccessFlagBits::eVertexAttributeRead, vk::AccessFlags{},
         vk::PipelineStageFlagBits::eVertexInput,
         vk::PipelineStageFlagBits::eBottomOfPipe);
@@ -1355,18 +1409,21 @@ void VgeExample::buildComputeCommandBuffers() {
   compute.cmdBuffers[currentFrameIndex].begin({});
 
   // no matching release at first
-  if (!compute.firstCompute[currentFrameIndex]) {
-    // acquire barrier graphics -> compute
-    std::vector<const vgeu::VgeuBuffer*> targetBufferPtrs;
-    for (const auto& animatedVertexBuffer :
-         common.animatedVertexBuffers[currentFrameIndex]) {
-      targetBufferPtrs.push_back(animatedVertexBuffer.get());
-    }
+  if (compute.firstCompute[currentFrameIndex]) {
+    // only particle buffer tranferred from graphics(transfer queue)
     vgeu::addQueueFamilyOwnershipTransferBarriers(
         graphics.queueFamilyIndex, compute.queueFamilyIndex,
-        compute.cmdBuffers[currentFrameIndex], targetBufferPtrs,
-        vk::AccessFlags{}, vk::AccessFlagBits::eShaderWrite,
-        vk::PipelineStageFlagBits::eTopOfPipe,
+        compute.cmdBuffers[currentFrameIndex],
+        common.ownershipTransferParticleBufferPtrs, vk::AccessFlags{},
+        vk::AccessFlagBits::eShaderWrite, vk::PipelineStageFlagBits::eTopOfPipe,
+        vk::PipelineStageFlagBits::eComputeShader);
+  } else {
+    // acquire barrier graphics -> compute
+    vgeu::addQueueFamilyOwnershipTransferBarriers(
+        graphics.queueFamilyIndex, compute.queueFamilyIndex,
+        compute.cmdBuffers[currentFrameIndex],
+        common.ownershipTransferBufferPtrs, vk::AccessFlags{},
+        vk::AccessFlagBits::eShaderWrite, vk::PipelineStageFlagBits::eTopOfPipe,
         vk::PipelineStageFlagBits::eComputeShader);
   }
 
@@ -1382,7 +1439,7 @@ void VgeExample::buildComputeCommandBuffers() {
       if (!modelInstance.model) {
         continue;
       }
-      // bind SSBO for particle attraction, input vertices
+      // bind SSBO for animation input vertices
       modelInstance.model->bindSSBO(compute.cmdBuffers[currentFrameIndex],
                                     *compute.pipelineLayout, 1 /*set*/);
 
@@ -1400,23 +1457,46 @@ void VgeExample::buildComputeCommandBuffers() {
               1,
           1, 1);
     }
-
-    // TODO: compute execution memory barrier
-    // use addComputeToComputeBarriers()
   }
+
+  // compute execution memory barrier
+  vgeu::addComputeToComputeBarriers(compute.cmdBuffers[currentFrameIndex],
+                                    common.ownershipTransferBufferPtrs);
+
+  // compute ubo
+  compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+      vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 0 /*set*/,
+      *compute.descriptorSets[currentFrameIndex], nullptr);
+  // integrate
+  {
+    compute.cmdBuffers[currentFrameIndex].bindPipeline(
+        vk::PipelineBindPoint::eCompute, *compute.pipelines.pipelinesCloth[0]);
+    for (auto instanceIdx = 0; instanceIdx < modelInstances.size();
+         instanceIdx++) {
+      const auto& modelInstance = modelInstances[instanceIdx];
+      if (!modelInstance.clothModel) {
+        continue;
+      }
+      compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+          vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 4 /*set*/,
+          modelInstance.clothModel->getParticleDescriptorSet(currentFrameIndex),
+          nullptr);
+      compute.cmdBuffers[currentFrameIndex].dispatch(
+          modelInstance.clothModel->getNumParticles() / sharedDataSize + 1, 1,
+          1);
+    }
+  }
+
+  // TODO: other compute shader dispatch call
+  // support [one animated model - multi clothes] interation
 
   // release barrier
   {
-    std::vector<const vgeu::VgeuBuffer*> targetBufferPtrs;
-    for (const auto& animatedVertexBuffer :
-         common.animatedVertexBuffers[currentFrameIndex]) {
-      targetBufferPtrs.push_back(animatedVertexBuffer.get());
-    }
     vgeu::addQueueFamilyOwnershipTransferBarriers(
         compute.queueFamilyIndex, graphics.queueFamilyIndex,
-        compute.cmdBuffers[currentFrameIndex], targetBufferPtrs,
-        vk::AccessFlagBits::eShaderWrite, vk::AccessFlags{},
-        vk::PipelineStageFlagBits::eComputeShader,
+        compute.cmdBuffers[currentFrameIndex],
+        common.ownershipTransferBufferPtrs, vk::AccessFlagBits::eShaderWrite,
+        vk::AccessFlags{}, vk::PipelineStageFlagBits::eComputeShader,
         vk::PipelineStageFlagBits::eBottomOfPipe);
   }
   compute.cmdBuffers[currentFrameIndex].end();
@@ -1489,6 +1569,14 @@ void VgeExample::updateComputeUbo() {
 
     compute.ubo.clickData = clickPos;
   }
+
+  // TODO: update ubo options
+  compute.ubo.thickness = 0.05f;
+  compute.ubo.friction = 0.f;
+
+  compute.ubo.gravity = glm::vec4(0.f, opts.gravity, 0.f, 0.f);
+  std::memcpy(compute.uniformBuffers[currentFrameIndex]->getMappedData(),
+              &compute.ubo, sizeof(compute.ubo));
 }
 
 void VgeExample::updateDynamicUbo() {

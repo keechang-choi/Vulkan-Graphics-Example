@@ -1,0 +1,121 @@
+
+#version 450
+
+
+struct VertexIn{
+	vec4 pos; // w as skinIndex
+	vec4 normal; // w not used
+	vec4 color;  
+	vec4 joint0;
+	vec4 weight0;
+	vec4 tangent;
+	vec2 uv;
+};
+
+struct VertexOut{
+	vec4 pos; // w as skinIndex
+	vec4 normal; // w not used
+	vec4 color;
+	vec4 tangent;
+	vec2 uv;
+};
+
+struct MeshMatrices{
+	mat4 nodeMatrix;
+	mat4 jointMatrices[64];
+	vec4 jointCount;
+};
+
+struct ParticleCalculate{
+	vec4 prevPos;
+	vec4 vel;
+	vec4 corr;	
+};
+
+struct ParticleRender{
+	vec4 pos;
+	vec4 normal;
+	vec2 uv;
+};
+
+struct DistConstraint{
+	ivec2 constIds;
+	float restLength;
+};
+
+layout (std140, set = 0, binding = 0) uniform ComputeUbo
+{
+	vec4 clickData;
+	vec4 gravity;
+	ivec2 particleCount;
+	float dt;
+	float stiffness;
+	float alpha;
+	float jacobiScale;
+	float thickness;
+	float friction;
+	bool solveType;
+} computeUbo;
+
+layout (std430, set = 1, binding = 0) readonly buffer VertexInSSBO{
+	VertexIn verticesIn[ ];
+};
+
+layout (set = 2, binding = 0) uniform ModelUbo 
+{
+	mat4 modelMatrix;
+	vec4 modelColor;
+} modelUbo;
+
+
+layout (std430, set = 3, binding = 0) readonly buffer SkinSSBO{
+	MeshMatrices meshMatrices[ ];
+};
+// animation output, used in cloth calculation
+layout (std430, set = 3, binding = 1) buffer VertexOutSSBO{
+	VertexOut verticesOut[ ];
+};
+
+layout (std430, set = 4, binding = 0) buffer CalculateParticleSSBO{
+	ParticleCalculate calculateParticles[ ];
+};
+
+layout (std430, set = 4, binding = 1) buffer RenderParticleSSBO{
+	ParticleRender renderParticles[ ];
+};
+
+layout (std430, set = 5, binding = 0) buffer DistConstraintSSBO{
+	DistConstraint distConstraints[ ];
+};
+
+layout (constant_id = 0) const int SHARED_DATA_SIZE = 512;
+layout (constant_id = 1) const int COMPUTE_TYPE = 0;
+layout (local_size_x_id = 2) in;
+
+
+void integrate(in uint index){
+	calculateParticles[index].vel += computeUbo.gravity * computeUbo.dt;
+	renderParticles[index].pos += calculateParticles[index].vel * computeUbo.dt;
+	if(renderParticles[index].pos.y > -computeUbo.thickness){
+		vec3 p = renderParticles[index].pos.xyz * (1.0 - computeUbo.friction) + calculateParticles[index].prevPos.xyz * computeUbo.friction;
+		renderParticles[index].pos.x = p.x;
+		renderParticles[index].pos.y = -computeUbo.thickness;
+		renderParticles[index].pos.z = p.z;
+	}
+}
+
+void main() 
+{
+	// Current SSBO index
+	uint index = gl_GlobalInvocationID.x;
+	// should not return early for barrier
+	if (index >= calculateParticles.length()) 
+		return;	
+
+
+	if(COMPUTE_TYPE == 0){
+		integrate(index);
+	}	
+	// calculateParticles[index].vel += computeUbo.gravity * computeUbo.dt;
+	// renderParticles[index].pos += calculateParticles[index].vel * computeUbo.dt;
+}
