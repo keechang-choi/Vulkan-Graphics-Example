@@ -162,6 +162,8 @@ class Cloth {
  public:
   Cloth(const vk::raii::Device& device, VmaAllocator allocator,
         const vk::raii::Queue& transferQueue,
+        const uint32_t transferQueueFamilyIndex,
+        const uint32_t computeQueueFamilyIndex,
         const vk::raii::CommandPool& commandPool,
         const vk::raii::DescriptorPool& descriptorPool,
         const vk::raii::DescriptorSetLayout& descriptorSetLayoutParticle,
@@ -214,6 +216,8 @@ class Cloth {
   const vk::raii::Device& device;
   VmaAllocator allocator;
   const vk::raii::Queue& transferQueue;
+  const uint32_t transferQueueFamilyIndex;
+  const uint32_t computeQueueFamilyIndex;
   const vk::raii::CommandPool& commandPool;
   const vk::raii::DescriptorPool& descriptorPool;
   const vk::raii::DescriptorSetLayout& descriptorSetLayoutParticle;
@@ -224,8 +228,11 @@ class Cloth {
   uint32_t numConstraints;
   uint32_t numTris;
   // used in both of the pipelines
-  std::vector<std::unique_ptr<vgeu::VgeuBuffer>> calculationSBs;
+  std::vector<std::unique_ptr<vgeu::VgeuBuffer>> calculateSBs;
   std::vector<std::unique_ptr<vgeu::VgeuBuffer>> renderSBs;
+  // TODO: use model's compute only vertex and index buffer
+  // to initialize storage buffers
+
   // initial setting
   std::unique_ptr<vgeu::VgeuBuffer> constraintSBs;
   // TODO: put descriptor set layouts outside of the object
@@ -325,7 +332,8 @@ class VgeExample : public VgeBase {
 
   void setOptions(const std::optional<Options>& opts);
 
-  bool dedicatedComputeQueue{false};
+  // used in allocating descriptor pool
+  const uint32_t kMaxNumClothModels = 10u;
 
   struct {
     // each frames in flight, each model

@@ -244,7 +244,8 @@ void VgeExample::initClothModels() {
     modelInstance.name = "koreanFlag1";
     auto& clothModel = modelInstance.clothModel;
     clothModel = std::make_unique<Cloth>(
-        device, globalAllocator->getAllocator(), queue, commandPool,
+        device, globalAllocator->getAllocator(), queue,
+        graphics.queueFamilyIndex, compute.queueFamilyIndex, commandPool,
         descriptorPool, common.descriptorSetLayoutParticle,
         compute.descriptorSetLayoutConstraint, MAX_CONCURRENT_FRAMES);
 
@@ -841,13 +842,17 @@ void VgeExample::createDescriptorPool() {
   poolSizes.emplace_back(vk::DescriptorType::eUniformBufferDynamic,
                          MAX_CONCURRENT_FRAMES);
   poolSizes.emplace_back(vk::DescriptorType::eStorageBuffer,
-                         MAX_CONCURRENT_FRAMES * modelInstances.size() * 2);
+                         MAX_CONCURRENT_FRAMES * modelInstances.size() * 2 +
+                             MAX_CONCURRENT_FRAMES * kMaxNumClothModels * 3);
   // NOTE: need to check flag
   vk::DescriptorPoolCreateInfo descriptorPoolCI(
       vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-      MAX_CONCURRENT_FRAMES * 3 /*set globalUBO, dynamicUBO, computeUbo*/ +
-          MAX_CONCURRENT_FRAMES *
-              modelInstances.size() /*skin & animated vertex ssbo*/,
+      /*set globalUBO, dynamicUBO, computeUbo*/
+      MAX_CONCURRENT_FRAMES * 3 +
+          /*skin & animated vertex ssbo*/
+          MAX_CONCURRENT_FRAMES * modelInstances.size() +
+          /* calSB, renSB would be in a same set*/
+          MAX_CONCURRENT_FRAMES * kMaxNumClothModels * 2,
       poolSizes);
   descriptorPool = vk::raii::DescriptorPool(device, descriptorPoolCI);
 }
@@ -1127,20 +1132,18 @@ void VgeExample::buildCommandBuffers() {
       clearValues);
 
   //  acquire barrier compute -> graphics
-  if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
-    std::vector<vk::BufferMemoryBarrier> bufferBarriers;
+  {
+    std::vector<const vgeu::VgeuBuffer*> targetBufferPtrs;
     for (const auto& animatedVertexBuffer :
          common.animatedVertexBuffers[currentFrameIndex]) {
-      bufferBarriers.emplace_back(
-          vk::AccessFlags{}, vk::AccessFlagBits::eVertexAttributeRead,
-          compute.queueFamilyIndex, graphics.queueFamilyIndex,
-          animatedVertexBuffer->getBuffer(), 0ull,
-          animatedVertexBuffer->getBufferSize());
+      targetBufferPtrs.push_back(animatedVertexBuffer.get());
     }
-    drawCmdBuffers[currentFrameIndex].pipelineBarrier(
+    vgeu::addQueueFamilyOwnershipTransferBarriers(
+        compute.queueFamilyIndex, graphics.queueFamilyIndex,
+        drawCmdBuffers[currentFrameIndex], targetBufferPtrs, vk::AccessFlags{},
+        vk::AccessFlagBits::eVertexAttributeRead,
         vk::PipelineStageFlagBits::eTopOfPipe,
-        vk::PipelineStageFlagBits::eVertexInput, vk::DependencyFlags{}, nullptr,
-        bufferBarriers, nullptr);
+        vk::PipelineStageFlagBits::eVertexInput);
   }
 
   // NOTE: no secondary cmd buffers
@@ -1248,21 +1251,18 @@ void VgeExample::buildCommandBuffers() {
   drawCmdBuffers[currentFrameIndex].endRenderPass();
 
   // release graphics -> compute
-  if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
-    std::vector<vk::BufferMemoryBarrier> bufferBarriers;
+  {
+    std::vector<const vgeu::VgeuBuffer*> targetBufferPtrs;
     for (const auto& animatedVertexBuffer :
          common.animatedVertexBuffers[currentFrameIndex]) {
-      bufferBarriers.emplace_back(vk::AccessFlagBits::eVertexAttributeRead,
-                                  vk::AccessFlags{}, graphics.queueFamilyIndex,
-                                  compute.queueFamilyIndex,
-                                  animatedVertexBuffer->getBuffer(), 0ull,
-                                  animatedVertexBuffer->getBufferSize());
+      targetBufferPtrs.push_back(animatedVertexBuffer.get());
     }
-
-    drawCmdBuffers[currentFrameIndex].pipelineBarrier(
+    vgeu::addQueueFamilyOwnershipTransferBarriers(
+        graphics.queueFamilyIndex, compute.queueFamilyIndex,
+        drawCmdBuffers[currentFrameIndex], targetBufferPtrs,
+        vk::AccessFlagBits::eVertexAttributeRead, vk::AccessFlags{},
         vk::PipelineStageFlagBits::eVertexInput,
-        vk::PipelineStageFlagBits::eBottomOfPipe, vk::DependencyFlags{},
-        nullptr, bufferBarriers, nullptr);
+        vk::PipelineStageFlagBits::eBottomOfPipe);
   }
 
   // end command buffer
@@ -1275,21 +1275,17 @@ void VgeExample::buildComputeCommandBuffers() {
   // no matching release at first
   if (!compute.firstCompute[currentFrameIndex]) {
     // acquire barrier graphics -> compute
-    if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
-      std::vector<vk::BufferMemoryBarrier> bufferBarriers;
-      for (const auto& animatedVertexBuffer :
-           common.animatedVertexBuffers[currentFrameIndex]) {
-        bufferBarriers.emplace_back(
-            vk::AccessFlags{}, vk::AccessFlagBits::eShaderWrite,
-            graphics.queueFamilyIndex, compute.queueFamilyIndex,
-            animatedVertexBuffer->getBuffer(), 0ull,
-            animatedVertexBuffer->getBufferSize());
-      }
-      compute.cmdBuffers[currentFrameIndex].pipelineBarrier(
-          vk::PipelineStageFlagBits::eTopOfPipe,
-          vk::PipelineStageFlagBits::eComputeShader, vk::DependencyFlags{},
-          nullptr, bufferBarriers, nullptr);
+    std::vector<const vgeu::VgeuBuffer*> targetBufferPtrs;
+    for (const auto& animatedVertexBuffer :
+         common.animatedVertexBuffers[currentFrameIndex]) {
+      targetBufferPtrs.push_back(animatedVertexBuffer.get());
     }
+    vgeu::addQueueFamilyOwnershipTransferBarriers(
+        graphics.queueFamilyIndex, compute.queueFamilyIndex,
+        compute.cmdBuffers[currentFrameIndex], targetBufferPtrs,
+        vk::AccessFlags{}, vk::AccessFlagBits::eShaderWrite,
+        vk::PipelineStageFlagBits::eTopOfPipe,
+        vk::PipelineStageFlagBits::eComputeShader);
   }
 
   // pre compute animation
@@ -1323,38 +1319,23 @@ void VgeExample::buildComputeCommandBuffers() {
           1, 1);
     }
 
-    // TODO: enable when use future compute
-    // memory barrier
-    // vk::BufferMemoryBarrier bufferBarrier(
-    //     vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eShaderRead,
-    //     VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
-    //     common.animatedVertexBuffers[currentFrameIndex][opts.bindingModel]
-    //         ->getBuffer(),
-    //     0ull,
-    //     common.animatedVertexBuffers[currentFrameIndex][opts.bindingModel]
-    //         ->getBufferSize());
-    // compute.cmdBuffers[currentFrameIndex].pipelineBarrier(
-    //     vk::PipelineStageFlagBits::eComputeShader,
-    //     vk::PipelineStageFlagBits::eComputeShader, vk::DependencyFlags{},
-    //     nullptr, bufferBarrier, nullptr);
+    // TODO: compute execution memory barrier
+    // use addComputeToComputeBarriers()
   }
 
   // release barrier
-  if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
-    std::vector<vk::BufferMemoryBarrier> bufferBarriers;
+  {
+    std::vector<const vgeu::VgeuBuffer*> targetBufferPtrs;
     for (const auto& animatedVertexBuffer :
          common.animatedVertexBuffers[currentFrameIndex]) {
-      bufferBarriers.emplace_back(vk::AccessFlagBits::eShaderWrite,
-                                  vk::AccessFlags{}, compute.queueFamilyIndex,
-                                  graphics.queueFamilyIndex,
-                                  animatedVertexBuffer->getBuffer(), 0ull,
-                                  animatedVertexBuffer->getBufferSize());
+      targetBufferPtrs.push_back(animatedVertexBuffer.get());
     }
-
-    compute.cmdBuffers[currentFrameIndex].pipelineBarrier(
+    vgeu::addQueueFamilyOwnershipTransferBarriers(
+        compute.queueFamilyIndex, graphics.queueFamilyIndex,
+        compute.cmdBuffers[currentFrameIndex], targetBufferPtrs,
+        vk::AccessFlagBits::eShaderWrite, vk::AccessFlags{},
         vk::PipelineStageFlagBits::eComputeShader,
-        vk::PipelineStageFlagBits::eBottomOfPipe, vk::DependencyFlags{},
-        nullptr, bufferBarriers, nullptr);
+        vk::PipelineStageFlagBits::eBottomOfPipe);
   }
   compute.cmdBuffers[currentFrameIndex].end();
   compute.firstCompute[currentFrameIndex] = false;
@@ -1837,16 +1818,20 @@ uint32_t SpatialHash::hashPos(const glm::dvec3& pos) {
 
 Cloth::Cloth(const vk::raii::Device& device, VmaAllocator allocator,
              const vk::raii::Queue& transferQueue,
+             const uint32_t transferQueueFamilyIndex,
+             const uint32_t computeQueueFamilyIndex,
              const vk::raii::CommandPool& commandPool,
              const vk::raii::DescriptorPool& descriptorPool,
              const vk::raii::DescriptorSetLayout& descriptorSetLayoutParticle,
              const vk::raii::DescriptorSetLayout& descriptorSetLayoutConstraint,
              const uint32_t framesInFlight)
-    : device(device),
-      allocator(allocator),
-      transferQueue(transferQueue),
-      commandPool(commandPool),
-      descriptorPool(descriptorPool),
+    : device{device},
+      allocator{allocator},
+      transferQueue{transferQueue},
+      transferQueueFamilyIndex{transferQueueFamilyIndex},
+      computeQueueFamilyIndex{computeQueueFamilyIndex},
+      commandPool{commandPool},
+      descriptorPool{descriptorPool},
       descriptorSetLayoutParticle{descriptorSetLayoutParticle},
       descriptorSetLayoutConstraint{descriptorSetLayoutConstraint},
       framesInFlight{framesInFlight} {}
@@ -1987,7 +1972,53 @@ void Cloth::updateMesh(const uint32_t frameIndex,
 void Cloth::createParticleStorageBuffers(
     const std::vector<ParticleRender>& vertices,
     const std::vector<uint32_t>& indices) {
-  // TODO: not implemented yet
+  // buffer creation
+  calculateSBs.resize(framesInFlight);
+  for (auto i = 0; i < calculateSBs.size(); i++) {
+    calculateSBs[i] = std::make_unique<vgeu::VgeuBuffer>(
+        allocator, sizeof(ParticleCalculate), numParticles,
+        vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
+  }
+
+  renderSBs.resize(framesInFlight);
+  for (auto i = 0; i < renderSBs.size(); i++) {
+    renderSBs[i] = std::make_unique<vgeu::VgeuBuffer>(
+        allocator, sizeof(ParticleRender), numParticles,
+        vk::BufferUsageFlagBits::eStorageBuffer |
+            vk::BufferUsageFlagBits::eVertexBuffer |
+            vk::BufferUsageFlagBits::eTransferDst,
+        VMA_MEMORY_USAGE_AUTO, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
+  }
+
+  // copy
+  {
+    vgeu::VgeuBuffer stagingBuffer(
+        allocator, sizeof(ParticleRender), numParticles,
+        vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT);
+    std::memcpy(stagingBuffer.getMappedData(), vertices.data(),
+                stagingBuffer.getBufferSize());
+
+    vgeu::oneTimeSubmit(
+        device, commandPool, transferQueue,
+        [&](const vk::raii::CommandBuffer& cmdBuffer) {
+          std::vector<const vgeu::VgeuBuffer*> targetBufferPtrs;
+          for (size_t i = 0; i < renderSBs.size(); i++) {
+            cmdBuffer.copyBuffer(
+                stagingBuffer.getBuffer(), renderSBs[i]->getBuffer(),
+                vk::BufferCopy(0, 0, stagingBuffer.getBufferSize()));
+            targetBufferPtrs.push_back(renderSBs[i].get());
+          }
+          // release
+          vgeu::addQueueFamilyOwnershipTransferBarriers(
+              transferQueueFamilyIndex, computeQueueFamilyIndex, cmdBuffer,
+              targetBufferPtrs, vk::AccessFlagBits::eTransferWrite,
+              vk::AccessFlags{}, vk::PipelineStageFlagBits::eTransfer,
+              vk::PipelineStageFlagBits::eBottomOfPipe);
+        });
+  }
 }
 
 void Cloth::createParticleDecriptorSets() {
@@ -1997,6 +2028,12 @@ void Cloth::createParticleDecriptorSets() {
 void Cloth::createDistConstraintStorageBuffers(
     const std::vector<DistConstraint>& distConstraints) {
   // TODO: not implemented yet
+
+  constraintSBs = std::make_unique<vgeu::VgeuBuffer>(
+      allocator, sizeof(DistConstraint), numConstraints,
+      vk::BufferUsageFlagBits::eStorageBuffer |
+          vk::BufferUsageFlagBits::eTransferDst,
+      VMA_MEMORY_USAGE_AUTO, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
 }
 
 void Cloth::createDistConstraintDecriptorSets() {

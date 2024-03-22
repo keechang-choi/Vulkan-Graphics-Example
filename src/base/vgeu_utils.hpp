@@ -7,6 +7,9 @@ https://github.com/KhronosGroup/Vulkan-Hpp
 
 */
 
+//
+#include "vgeu_buffer.hpp"
+
 // libs
 #include <Vulkan-Hpp/vulkan/vulkan.hpp>
 #include <Vulkan-Hpp/vulkan/vulkan_raii.hpp>
@@ -186,5 +189,19 @@ void setImageLayout(const vk::raii::CommandBuffer& commandBuffer,
 // get aligned size of uniform/storage buffer
 size_t padBufferSize(const vk::raii::PhysicalDevice physicalDevice,
                      size_t originalSize, bool isUniformType);
+
+// mainly used for ownership release and acquire
+void addQueueFamilyOwnershipTransferBarriers(
+    uint32_t srcQueueFamilyIndex, uint32_t dstQueueFamilyIndex,
+
+    const vk::raii::CommandBuffer& cmdBuffer,
+    const std::vector<const vgeu::VgeuBuffer*> targetBufferPtrs,
+    vk::AccessFlags srcAccessMask, vk::AccessFlags dstAccessMask,
+    vk::PipelineStageFlags srcStageMask, vk::PipelineStageFlags dstStageMask);
+
+// mainly used for compute dispatch execution order
+void addComputeToComputeBarriers(
+    const vk::raii::CommandBuffer& cmdBuffer,
+    const std::vector<const vgeu::VgeuBuffer*> targetBufferPtrs);
 
 }  // namespace vgeu

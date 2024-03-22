@@ -690,4 +690,42 @@ size_t padBufferSize(const vk::raii::PhysicalDevice physicalDevice,
   return alignedSize;
 }
 
+void addQueueFamilyOwnershipTransferBarriers(
+    uint32_t srcQueueFamilyIndex, uint32_t dstQueueFamilyIndex,
+    const vk::raii::CommandBuffer& cmdBuffer,
+    const std::vector<const vgeu::VgeuBuffer*> targetBufferPtrs,
+    vk::AccessFlags srcAccessMask, vk::AccessFlags dstAccessMask,
+    vk::PipelineStageFlags srcStageMask, vk::PipelineStageFlags dstStageMask) {
+  bool dedicatedComputeQueue = (srcQueueFamilyIndex == dstQueueFamilyIndex);
+
+  if (dedicatedComputeQueue) {
+    std::vector<vk::BufferMemoryBarrier> bufferBarriers;
+    for (const auto targetBuffer : targetBufferPtrs) {
+      bufferBarriers.emplace_back(srcAccessMask, dstAccessMask,
+                                  srcQueueFamilyIndex, dstQueueFamilyIndex,
+                                  targetBuffer->getBuffer(), 0ull,
+                                  targetBuffer->getBufferSize());
+    }
+
+    cmdBuffer.pipelineBarrier(srcStageMask, dstStageMask, vk::DependencyFlags{},
+                              nullptr, bufferBarriers, nullptr);
+  }
+}
+
+void addComputeToComputeBarriers(
+    const vk::raii::CommandBuffer& cmdBuffer,
+    const std::vector<const vgeu::VgeuBuffer*> targetBufferPtrs) {
+  std::vector<vk::BufferMemoryBarrier> bufferBarriers;
+  for (const auto targetBuffer : targetBufferPtrs) {
+    bufferBarriers.emplace_back(
+        vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eShaderRead,
+        VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+        targetBuffer->getBuffer(), 0ull, targetBuffer->getBufferSize());
+  }
+  cmdBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,
+                            vk::PipelineStageFlagBits::eComputeShader,
+                            vk::DependencyFlags{}, nullptr, bufferBarriers,
+                            nullptr);
+}
+
 }  // namespace vgeu
