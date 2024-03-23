@@ -33,6 +33,7 @@ struct ComputeUbo {
   float alpha;
   float jacobiScale;
   float thickness;
+  float radius;
   float friction;
   bool solveType;
 };
@@ -125,11 +126,21 @@ struct ParticleRender {
 /*
 compute type:
 0-> integrate
-1-> solve constraints
-2-> update vel
-3-> update mesh
-4-> initialize? (TODO)
+1-> solve collision
+2-> solve distance constraints
+3-> update vel
+4-> update mesh
+5-> initialize? (TODO)
 */
+enum class ComputeType {
+  kIntegrate = 0,
+  kSolveCollision,
+  kSolveDistanceConstraints,
+  kUpdateVel,
+  kUpdateMesh,
+  kInitialize,
+};
+
 struct SpecializationData {
   uint32_t sharedDataSize;
   uint32_t computeType;
@@ -139,31 +150,20 @@ struct SpecializationData {
 };
 
 struct Options {
-  int32_t numParticles{1};
   float coefficientDeltaTime = 0.5f;
-  float gravity = 10.f;
-  float power = 1.f;
-  float soften = 0.001f;
-  int32_t integrator = 1;
   float moveSpeed = 10.f;
   float lineWidth = 2.0f;
   float pointSize[2] = {1.f, 128.f};
-  int32_t desiredSharedDataSize = 256u;
+  int32_t desiredSharedDataSize = 64u;
   float animationSpeed = 0.5f;
-  float restitution = 1.0f;
-  std::vector<bool> enableSimulation;
   bool renderWireMesh{false};
-  int32_t numSubsteps = 10;
 
   // save camera view. not configurable by pannel
   glm::mat4 cameraView{1.f};
-  float edgeCompliance = 0.1f;
-  float areaCompliance = 0.001f;
 
-  float lengthStiffness = 0.001;
-  float compressionStiffness = 0.001;
-  float stretchStiffness = 0.000;
-  float collisionStiffness = 0.01;
+  int32_t numSubsteps = 10;
+  float gravity = 10.f;
+  float collisionRadius = 0.1f;
 };
 
 // NOTE: ssbo usage alignment
@@ -471,7 +471,9 @@ class VgeExample : public VgeBase {
 
   Options opts{};
 
-  uint32_t desiredSharedDataSize = 256u;
+  uint32_t desiredSharedDataSize = 64u;
   uint32_t sharedDataSize;
+  uint32_t desiredCollisionWorkGroupSize = 16u;
+  uint32_t collisionWorkGroupSize;
 };
 }  // namespace vge

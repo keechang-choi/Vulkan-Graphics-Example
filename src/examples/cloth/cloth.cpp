@@ -439,6 +439,14 @@ void VgeExample::createComputePipelines() {
   sharedDataSize = std::min(
       desiredSharedDataSize,
       static_cast<uint32_t>(maxComputeSharedMemorySize / sizeof(glm::vec4)));
+
+  collisionWorkGroupSize = std::min(
+      desiredCollisionWorkGroupSize,
+      physicalDevice.getProperties().limits.maxComputeWorkGroupSize[2]);
+  // NOTE x*y*1 <= 1024 (maxComputeWorkGroupInvocations)
+  assert(sharedDataSize * collisionWorkGroupSize <=
+         physicalDevice.getProperties().limits.maxComputeWorkGroupInvocations);
+
   SpecializationData specializationData{};
   specializationData.sharedDataSize = sharedDataSize;
   specializationData.computeType = 0u;
@@ -483,9 +491,25 @@ void VgeExample::createComputePipelines() {
     vk::raii::ShaderModule compClothShaderModule =
         vgeu::createShaderModule(device, compClothCode);
     // TODO: change specialization data for each type
-    for (auto i = 0; i < 5; i++) {
+    for (auto i = 0; i < 6; i++) {
       // compute cloth
       specializationData.computeType = i;
+      switch (static_cast<ComputeType>(i)) {
+        case ComputeType::kIntegrate:
+          specializationData.localSizeX = sharedDataSize;
+          specializationData.localSizeY = 1u;
+          specializationData.localSizeZ = 1u;
+          break;
+        case ComputeType::kSolveCollision:
+          specializationData.localSizeX = sharedDataSize;
+          specializationData.localSizeY = collisionWorkGroupSize;
+          specializationData.localSizeZ = 1u;
+          break;
+        default:
+          specializationData.localSizeX = 1;
+          specializationData.localSizeY = 1;
+          specializationData.localSizeZ = 1;
+      }
       vk::SpecializationInfo specializationInfo(
           specializationMapEntries,
           vk::ArrayProxyNoTemporaries<const SpecializationData>(
@@ -1436,7 +1460,7 @@ void VgeExample::buildComputeCommandBuffers() {
          instanceIdx++) {
       const auto& modelInstance = modelInstances[instanceIdx];
       // animate only gltf models (modelMatrix)
-      if (!modelInstance.model) {
+      if (!modelInstance.model || modelInstance.clothModel) {
         continue;
       }
       // bind SSBO for animation input vertices
@@ -1463,14 +1487,16 @@ void VgeExample::buildComputeCommandBuffers() {
   vgeu::addComputeToComputeBarriers(compute.cmdBuffers[currentFrameIndex],
                                     common.ownershipTransferBufferPtrs);
 
-  // compute ubo
-  compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
-      vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 0 /*set*/,
-      *compute.descriptorSets[currentFrameIndex], nullptr);
   // integrate
   {
+    // compute ubo
+    compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+        vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 0 /*set*/,
+        *compute.descriptorSets[currentFrameIndex], nullptr);
     compute.cmdBuffers[currentFrameIndex].bindPipeline(
-        vk::PipelineBindPoint::eCompute, *compute.pipelines.pipelinesCloth[0]);
+        vk::PipelineBindPoint::eCompute,
+        *compute.pipelines
+             .pipelinesCloth[static_cast<uint32_t>(ComputeType::kIntegrate)]);
     for (auto instanceIdx = 0; instanceIdx < modelInstances.size();
          instanceIdx++) {
       const auto& modelInstance = modelInstances[instanceIdx];
@@ -1483,6 +1509,46 @@ void VgeExample::buildComputeCommandBuffers() {
           nullptr);
       compute.cmdBuffers[currentFrameIndex].dispatch(
           modelInstance.clothModel->getNumParticles() / sharedDataSize + 1, 1,
+          1);
+    }
+  }
+  // compute execution memory barrier
+  vgeu::addComputeToComputeBarriers(compute.cmdBuffers[currentFrameIndex],
+                                    common.ownershipTransferBufferPtrs);
+  // solve collision
+  {
+    // compute ubo
+    compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+        vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 0 /*set*/,
+        *compute.descriptorSets[currentFrameIndex], nullptr);
+
+    uint32_t collisionInstanceIdx = findInstances("fox2")[0];
+    // bind SSBO for skin matrix and animated vertices
+    compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+        vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 3 /*set*/,
+        *compute.skinDescriptorSets[currentFrameIndex][collisionInstanceIdx],
+        nullptr);
+    const auto& collisionModelInstance = modelInstances[collisionInstanceIdx];
+
+    compute.cmdBuffers[currentFrameIndex].bindPipeline(
+        vk::PipelineBindPoint::eCompute,
+        *compute.pipelines.pipelinesCloth[static_cast<uint32_t>(
+            ComputeType::kSolveCollision)]);
+    for (auto instanceIdx = 0; instanceIdx < modelInstances.size();
+         instanceIdx++) {
+      const auto& modelInstance = modelInstances[instanceIdx];
+      if (!modelInstance.clothModel) {
+        continue;
+      }
+      compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+          vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 4 /*set*/,
+          modelInstance.clothModel->getParticleDescriptorSet(currentFrameIndex),
+          nullptr);
+      compute.cmdBuffers[currentFrameIndex].dispatch(
+          modelInstance.clothModel->getNumParticles() / sharedDataSize + 1,
+          collisionModelInstance.model->getVertexCount() /
+                  collisionWorkGroupSize +
+              1,
           1);
     }
   }
@@ -1573,6 +1639,7 @@ void VgeExample::updateComputeUbo() {
   // TODO: update ubo options
   compute.ubo.thickness = 0.05f;
   compute.ubo.friction = 0.f;
+  compute.ubo.radius = opts.collisionRadius;
 
   compute.ubo.gravity = glm::vec4(0.f, opts.gravity, 0.f, 0.f);
   std::memcpy(compute.uniformBuffers[currentFrameIndex]->getMappedData(),
@@ -1712,12 +1779,7 @@ void VgeExample::onUpdateUIOverlay() {
 
       ImGui::DragFloat2("Drag pointSize min/max", opts.pointSize, 1.f, 1.f,
                         128.f, "%.0f");
-      uiOverlay->inputFloat("gravity", &opts.gravity, 0.001f, "%.3f");
-      ImGui::DragFloat("restitution", &opts.restitution, 0.01f, 0.0f, 1.0f,
-                       "%.2f");
 
-      uiOverlay->inputFloat("power", &opts.power, 0.01f, "%.3f");
-      uiOverlay->inputFloat("soften", &opts.soften, 0.0001f, "%.4f");
       if (ImGui::RadioButton("renderWireMesh", opts.renderWireMesh)) {
         opts.renderWireMesh = !opts.renderWireMesh;
       }
@@ -1730,13 +1792,12 @@ void VgeExample::onUpdateUIOverlay() {
       }
       uiOverlay->inputFloat("lineWidth", &opts.lineWidth, 0.1f, "%.3f");
 
+      ImGui::Spacing();
+      ImGui::Spacing();
+      uiOverlay->inputFloat("gravity", &opts.gravity, 0.001f, "%.3f");
+      ImGui::DragFloat("collisionRadius", &opts.collisionRadius, 0.01f, 0.0f,
+                       10.0f, "%.2f");
       uiOverlay->inputInt("numSubsteps", &opts.numSubsteps, 1);
-      for (auto i = 0; i < opts.enableSimulation.size(); i++) {
-        std::string caption = "simulation" + std::to_string(i + 1);
-        if (ImGui::RadioButton(caption.c_str(), opts.enableSimulation[i])) {
-          opts.enableSimulation[i] = !opts.enableSimulation[i];
-        }
-      }
 
       ImGui::TreePop();
     }
@@ -1745,14 +1806,12 @@ void VgeExample::onUpdateUIOverlay() {
         opts.cameraView = camera.getView();
         restart = true;
       }
-      ImGui::DragInt("Drag numParticles", &opts.numParticles, 16.f, 1,
-                     kMaxNumParticles);
 
       ImGui::Spacing();
 
       ImGui::Spacing();
       uiOverlay->inputInt("desiredSharedDataSize", &opts.desiredSharedDataSize,
-                          64);
+                          16);
       ImGui::TreePop();
     }
   }
@@ -1762,16 +1821,12 @@ void VgeExample::setOptions(const std::optional<Options>& opts) {
   if (opts.has_value()) {
     this->opts = opts.value();
     // overwrite cli args for restart run
-    numParticles = static_cast<uint32_t>(this->opts.numParticles);
-    integrator = static_cast<uint32_t>(this->opts.integrator);
     cameraController.moveSpeed = this->opts.moveSpeed;
     desiredSharedDataSize =
         static_cast<uint32_t>(this->opts.desiredSharedDataSize);
 
   } else {
     // save cli args for initial run
-    this->opts.numParticles = static_cast<int32_t>(numParticles);
-    this->opts.integrator = static_cast<int32_t>(integrator);
   }
 }
 
@@ -2027,7 +2082,7 @@ void Cloth::initParticlesData(const std::vector<vgeu::glTF::Vertex>& vertices,
     pos = transform * pos;
     // inv mass
     pos.w = 1.0;
-    glm::vec4 normal = normalTransform * vertices[i].normal;
+    glm::vec4 normal = glm::normalize(normalTransform * vertices[i].normal);
     glm::vec2 uv = vertices[i].uv;
     particlesRender.push_back({pos, normal, uv});
   }

@@ -53,6 +53,7 @@ layout (std140, set = 0, binding = 0) uniform ComputeUbo
 	float alpha;
 	float jacobiScale;
 	float thickness;
+	float radius;
 	float friction;
 	bool solveType;
 } computeUbo;
@@ -72,7 +73,7 @@ layout (std430, set = 3, binding = 0) readonly buffer SkinSSBO{
 	MeshMatrices meshMatrices[ ];
 };
 // animation output, used in cloth calculation
-layout (std430, set = 3, binding = 1) buffer VertexOutSSBO{
+layout (std430, set = 3, binding = 1) readonly buffer VertexOutSSBO{
 	VertexOut verticesOut[ ];
 };
 
@@ -91,31 +92,62 @@ layout (std430, set = 5, binding = 0) buffer DistConstraintSSBO{
 layout (constant_id = 0) const int SHARED_DATA_SIZE = 512;
 layout (constant_id = 1) const int COMPUTE_TYPE = 0;
 layout (local_size_x_id = 2) in;
+layout (local_size_y_id = 3) in;
+layout (local_size_z_id = 4) in;
 
+const uint kIntegrate = 0;
+const uint kSolveCollision = 1;
+const uint kSolveDistanceConstraints = 2;
+const uint kUpdateVel = 3;
+const uint kUpdateMesh = 4;
+const uint kInitialize = 5;
 
-void integrate(in uint index){
-	calculateParticles[index].vel += computeUbo.gravity * computeUbo.dt;
-	renderParticles[index].pos += calculateParticles[index].vel * computeUbo.dt;
-	if(renderParticles[index].pos.y > -computeUbo.thickness){
-		vec3 p = renderParticles[index].pos.xyz * (1.0 - computeUbo.friction) + calculateParticles[index].prevPos.xyz * computeUbo.friction;
-		renderParticles[index].pos.x = p.x;
-		renderParticles[index].pos.y = -computeUbo.thickness;
-		renderParticles[index].pos.z = p.z;
+void integrate(in uint xIdx){
+	if (xIdx >= calculateParticles.length()) {
+		return;	
+	}
+		
+	calculateParticles[xIdx].vel += computeUbo.gravity * computeUbo.dt;
+	renderParticles[xIdx].pos += calculateParticles[xIdx].vel * computeUbo.dt;
+
+	// floor collision
+	if(renderParticles[xIdx].pos.y > -computeUbo.thickness){
+		vec3 p = renderParticles[xIdx].pos.xyz * (1.0 - computeUbo.friction) + calculateParticles[xIdx].prevPos.xyz * computeUbo.friction;
+		renderParticles[xIdx].pos.xyz = vec3(p.x, -computeUbo.thickness, p.z);
 	}
 }
 
+void solveCollision(in uint xIdx, in uint yIdx){
+	if (xIdx >= calculateParticles.length()) {
+		return;	
+	}
+	if(yIdx >= verticesOut.length()){
+		return;
+	}
+
+	float d = distance(verticesOut[yIdx].pos.xyz, renderParticles[xIdx].pos.xyz);
+	renderParticles[xIdx].normal.w = d;
+	if(d < computeUbo.radius + computeUbo.thickness){
+		
+		renderParticles[xIdx].pos.y = -10.0;
+		return;
+		vec3 p = renderParticles[xIdx].pos.xyz * (1.0 - computeUbo.friction) + calculateParticles[xIdx].prevPos.xyz * computeUbo.friction;
+		vec3 r = normalize(p - verticesOut[yIdx].pos.xyz);
+		renderParticles[xIdx].pos.xyz = renderParticles[xIdx].pos.xyz + r * (computeUbo.radius + computeUbo.thickness);
+	}
+
+}
 void main() 
 {
 	// Current SSBO index
-	uint index = gl_GlobalInvocationID.x;
+	uint xIdx = gl_GlobalInvocationID.x;
+	uint yIdx = gl_GlobalInvocationID.y;
+	uint zIdx = gl_GlobalInvocationID.z;
 	// should not return early for barrier
-	if (index >= calculateParticles.length()) 
-		return;	
 
-
-	if(COMPUTE_TYPE == 0){
-		integrate(index);
-	}	
-	// calculateParticles[index].vel += computeUbo.gravity * computeUbo.dt;
-	// renderParticles[index].pos += calculateParticles[index].vel * computeUbo.dt;
+	if(COMPUTE_TYPE == kIntegrate){
+		integrate(xIdx);
+	}else if(COMPUTE_TYPE == kSolveCollision){
+		solveCollision(xIdx, yIdx);
+	}
 }
