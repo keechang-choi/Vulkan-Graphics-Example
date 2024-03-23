@@ -65,7 +65,7 @@ void main()
 
 
 	// NOTE: external animation not included, but can be used for future simulations
-	mat4 transform = mat4(1.0); //modelUbo.modelMatrix;
+	mat4 transform = modelUbo.modelMatrix;
 	if(skinIndex >= 0){
 		MeshMatrices eachSkinData = meshMatrices[skinIndex];
 		vec4 inJointWeights = vIn.weight0;

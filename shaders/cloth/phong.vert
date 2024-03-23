@@ -34,7 +34,7 @@ void main()
 	outColor.a = clamp(outColor.a, 0.0, 1.0);
 	outUV = inUV;
 	// TODO: animation pre-compute
-	mat4 worldTransform = modelUbo.modelMatrix;
+	mat4 worldTransform = mat4(1.0);// modelUbo.modelMatrix;
 	vec4 pos = worldTransform * vec4(inPos, 1.0);
 	gl_Position = globalUbo.projection * globalUbo.view * pos;
 	

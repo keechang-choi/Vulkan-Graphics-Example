@@ -126,10 +126,8 @@ void solveCollision(in uint xIdx, in uint yIdx){
 	}
 
 	float d = distance(verticesOut[yIdx].pos.xyz, renderParticles[xIdx].pos.xyz);
-	renderParticles[xIdx].normal.w = d;
 	if(d < computeUbo.radius + computeUbo.thickness){
-		
-		renderParticles[xIdx].pos.y = -10.0;
+		renderParticles[xIdx].pos.y = verticesOut[yIdx].pos.y -(computeUbo.radius + computeUbo.thickness);
 		return;
 		vec3 p = renderParticles[xIdx].pos.xyz * (1.0 - computeUbo.friction) + calculateParticles[xIdx].prevPos.xyz * computeUbo.friction;
 		vec3 r = normalize(p - verticesOut[yIdx].pos.xyz);
