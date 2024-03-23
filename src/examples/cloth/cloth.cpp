@@ -1163,6 +1163,21 @@ void VgeExample::createGraphicsPipelines() {
         vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
   }
   {
+    vertexInputSCI.setVertexBindingDescriptions(
+        graphics.clothVertexInfos.bindingDescriptions);
+    vertexInputSCI.setVertexAttributeDescriptions(
+        graphics.clothVertexInfos.attributeDescriptions);
+    vertCode = vgeu::readFile(getShadersPath() + "/cloth/wireCloth.vert.spv");
+    // NOTE: share fragment shader w/ phong shader.
+    // NOTE: after pipeline creation, shader modules can be destroyed.
+    vertShaderModule = vgeu::createShaderModule(device, vertCode);
+    shaderStageCIs[0] = vk::PipelineShaderStageCreateInfo(
+        vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eVertex,
+        *vertShaderModule, "main", nullptr);
+    graphics.pipelines.pipelineWireCloth =
+        vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
+  }
+  {
     rasterizationSCI.polygonMode = vk::PolygonMode::eFill;
     vertexInputSCI.setVertexBindingDescriptions(
         graphics.simpleVertexInfos.bindingDescriptions);
@@ -1321,7 +1336,6 @@ void VgeExample::buildCommandBuffers() {
       drawCmdBuffers[currentFrameIndex].bindPipeline(
           vk::PipelineBindPoint::eGraphics,
           *graphics.pipelines.pipelineWireMesh);
-
     } else {
       // bind pipeline
       drawCmdBuffers[currentFrameIndex].bindPipeline(
@@ -1358,8 +1372,14 @@ void VgeExample::buildCommandBuffers() {
     }
   }
   // draw cloth models
-  drawCmdBuffers[currentFrameIndex].bindPipeline(
-      vk::PipelineBindPoint::eGraphics, *graphics.pipelines.pipelineCloth);
+  if (opts.renderWireMesh) {
+    drawCmdBuffers[currentFrameIndex].bindPipeline(
+        vk::PipelineBindPoint::eGraphics,
+        *graphics.pipelines.pipelineWireCloth);
+  } else {
+    drawCmdBuffers[currentFrameIndex].bindPipeline(
+        vk::PipelineBindPoint::eGraphics, *graphics.pipelines.pipelineCloth);
+  }
   for (size_t instanceIdx = 0; instanceIdx < modelInstances.size();
        instanceIdx++) {
     const auto& modelInstance = modelInstances[instanceIdx];

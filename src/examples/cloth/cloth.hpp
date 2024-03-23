@@ -163,7 +163,7 @@ struct Options {
 
   int32_t numSubsteps = 10;
   float gravity = 10.f;
-  float collisionRadius = 0.1f;
+  float collisionRadius = 0.5f;
 };
 
 // NOTE: ssbo usage alignment
@@ -455,6 +455,7 @@ class VgeExample : public VgeBase {
       vk::raii::Pipeline pipelineWireMesh = nullptr;
       vk::raii::Pipeline pipelineSimpleLine = nullptr;
       vk::raii::Pipeline pipelineCloth = nullptr;
+      vk::raii::Pipeline pipelineWireCloth = nullptr;
     } pipelines;
 
   } graphics;
