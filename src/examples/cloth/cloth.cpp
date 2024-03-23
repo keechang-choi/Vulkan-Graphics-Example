@@ -200,11 +200,20 @@ void VgeExample::createDescriptorSetLayout() {
     // calculation particles
     layoutBindings.emplace_back(0 /*binding*/,
                                 vk::DescriptorType::eStorageBuffer, 1,
-                                vk::ShaderStageFlagBits::eAll);
+                                vk::ShaderStageFlagBits::eCompute);
     // render particles
     layoutBindings.emplace_back(1 /*binding*/,
                                 vk::DescriptorType::eStorageBuffer, 1,
                                 vk::ShaderStageFlagBits::eAll);
+    // TODO: fix descriptor pool size
+    //  calculation particles prev frame
+    layoutBindings.emplace_back(2 /*binding*/,
+                                vk::DescriptorType::eStorageBuffer, 1,
+                                vk::ShaderStageFlagBits::eCompute);
+    // render particles prev frame
+    layoutBindings.emplace_back(3 /*binding*/,
+                                vk::DescriptorType::eStorageBuffer, 1,
+                                vk::ShaderStageFlagBits::eCompute);
     vk::DescriptorSetLayoutCreateInfo layoutCI({}, layoutBindings);
     common.particleDescriptorSetLayout =
         vk::raii::DescriptorSetLayout(device, layoutCI);
@@ -2258,19 +2267,31 @@ void Cloth::createParticleDescriptorSets() {
     particleDescriptorSets.push_back(
         std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
   }
-  std::vector<vk::DescriptorBufferInfo> bufferInfos;
-  bufferInfos.reserve(particleDescriptorSets.size() * 2);
-  std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
-  writeDescriptorSets.reserve(particleDescriptorSets.size() * 2);
+  std::vector<vk::DescriptorBufferInfo> calculateBufferInfos;
+  calculateBufferInfos.reserve(particleDescriptorSets.size());
+  std::vector<vk::DescriptorBufferInfo> renderBufferInfos;
+  renderBufferInfos.reserve(particleDescriptorSets.size());
   for (int i = 0; i < particleDescriptorSets.size(); i++) {
-    bufferInfos.push_back(calculateSBs[i]->descriptorInfo());
+    calculateBufferInfos.push_back(calculateSBs[i]->descriptorInfo());
+    renderBufferInfos.push_back(renderSBs[i]->descriptorInfo());
+  }
+
+  std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
+  writeDescriptorSets.reserve(particleDescriptorSets.size() * 3);
+  for (int i = 0; i < particleDescriptorSets.size(); i++) {
+    int prevFrameIdx = (i - 1 + framesInFlight) % framesInFlight;
     writeDescriptorSets.emplace_back(*particleDescriptorSets[i], 0, 0,
                                      vk::DescriptorType::eStorageBuffer,
-                                     nullptr, bufferInfos.back());
-    bufferInfos.push_back(renderSBs[i]->descriptorInfo());
+                                     nullptr, calculateBufferInfos[i]);
     writeDescriptorSets.emplace_back(*particleDescriptorSets[i], 1, 0,
                                      vk::DescriptorType::eStorageBuffer,
-                                     nullptr, bufferInfos.back());
+                                     nullptr, renderBufferInfos[i]);
+    writeDescriptorSets.emplace_back(
+        *particleDescriptorSets[i], 2, 0, vk::DescriptorType::eStorageBuffer,
+        nullptr, calculateBufferInfos[prevFrameIdx]);
+    writeDescriptorSets.emplace_back(*particleDescriptorSets[i], 3, 0,
+                                     vk::DescriptorType::eStorageBuffer,
+                                     nullptr, renderBufferInfos[prevFrameIdx]);
   }
   device.updateDescriptorSets(writeDescriptorSets, nullptr);
 }

@@ -85,6 +85,14 @@ layout (std430, set = 4, binding = 1) buffer RenderParticleSSBO{
 	ParticleRender renderParticles[ ];
 };
 
+layout (std430, set = 4, binding = 2) readonly buffer CalculateParticleSSBOIn{
+	ParticleCalculate prevCalculateParticles[ ];
+};
+
+layout (std430, set = 4, binding = 3) readonly buffer RenderParticleSSBOIn{
+	ParticleRender prevRenderParticles[ ];
+};
+
 layout (std430, set = 5, binding = 0) buffer DistConstraintSSBO{
 	DistConstraint distConstraints[ ];
 };
@@ -107,13 +115,15 @@ void integrate(in uint xIdx){
 		return;	
 	}
 		
-	calculateParticles[xIdx].vel += computeUbo.gravity * computeUbo.dt;
-	renderParticles[xIdx].pos += calculateParticles[xIdx].vel * computeUbo.dt;
+	calculateParticles[xIdx].vel = prevCalculateParticles[xIdx].vel + computeUbo.gravity * computeUbo.dt;
+	renderParticles[xIdx].pos = prevRenderParticles[xIdx].pos + calculateParticles[xIdx].vel * computeUbo.dt;
 
 	// floor collision
 	if(renderParticles[xIdx].pos.y > -computeUbo.thickness){
 		vec3 p = renderParticles[xIdx].pos.xyz * (1.0 - computeUbo.friction) + calculateParticles[xIdx].prevPos.xyz * computeUbo.friction;
 		renderParticles[xIdx].pos.xyz = vec3(p.x, -computeUbo.thickness, p.z);
+		// TODO: temp vel update
+		calculateParticles[xIdx].vel.xyz = vec3(0.0);
 	}
 }
 
@@ -127,11 +137,11 @@ void solveCollision(in uint xIdx, in uint yIdx){
 
 	float d = distance(verticesOut[yIdx].pos.xyz, renderParticles[xIdx].pos.xyz);
 	if(d < computeUbo.radius + computeUbo.thickness){
-		renderParticles[xIdx].pos.y = verticesOut[yIdx].pos.y -(computeUbo.radius + computeUbo.thickness);
-		return;
 		vec3 p = renderParticles[xIdx].pos.xyz * (1.0 - computeUbo.friction) + calculateParticles[xIdx].prevPos.xyz * computeUbo.friction;
 		vec3 r = normalize(p - verticesOut[yIdx].pos.xyz);
-		renderParticles[xIdx].pos.xyz = renderParticles[xIdx].pos.xyz + r * (computeUbo.radius + computeUbo.thickness);
+		renderParticles[xIdx].pos.xyz = verticesOut[yIdx].pos.xyz + r * (computeUbo.radius + computeUbo.thickness);
+		// TODO: temp vel update
+		calculateParticles[xIdx].vel.xyz = vec3(0.0);
 	}
 
 }
@@ -148,4 +158,5 @@ void main()
 	}else if(COMPUTE_TYPE == kSolveCollision){
 		solveCollision(xIdx, yIdx);
 	}
+	// TODO: update mesh
 }
