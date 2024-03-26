@@ -108,6 +108,7 @@ struct DynamicUboElt {
 // cloth particle
 struct ParticleCalculate {
   alignas(16) glm::vec4 prevPos;
+  glm::vec4 pos;
   glm::vec4 vel;
   glm::vec4 corr;
 };
@@ -130,15 +131,16 @@ compute type:
 2-> solve distance constraints
 3-> update vel
 4-> update mesh
-5-> initialize? (TODO)
+5-> initialize? (TODO: optional)
 */
 enum class ComputeType {
-  kIntegrate = 0,
+  kInitializeParticles = 0,
+  kInitializeConstraint,
+  kIntegrate,
   kSolveCollision,
   kSolveDistanceConstraints,
   kUpdateVel,
-  kUpdateMesh,
-  kInitialize,
+  kUpdateMesh
 };
 
 struct SpecializationData {
@@ -229,24 +231,27 @@ class Cloth {
                   const vk::raii::CommandBuffer& cmdBuffer);
 
   void bindVertexBuffer(const vk::raii::CommandBuffer& cmdBuffer,
-                        const uint32_t currentFrameIndex) {
-    cmdBuffer.bindVertexBuffers(0, renderSBs[currentFrameIndex]->getBuffer(),
-                                {0});
+                        const uint32_t frameIndex) {
+    cmdBuffer.bindVertexBuffers(0, renderSBs[frameIndex]->getBuffer(), {0});
   }
-  const vgeu::VgeuBuffer* getRenderSBPtr(const uint32_t currentFrameIndex) {
-    return renderSBs[currentFrameIndex].get();
+  const vgeu::VgeuBuffer* getRenderSBPtr(const uint32_t frameIndex) {
+    return renderSBs[frameIndex].get();
+  }
+  const vgeu::VgeuBuffer* getCalculateSBPtr(const uint32_t frameIndex) {
+    return calculateSBs[frameIndex].get();
   }
 
-  const vk::DescriptorSet getParticleDescriptorSet(
-      const uint32_t currentFrameIndex) {
-    return *particleDescriptorSets[currentFrameIndex];
+  const vk::DescriptorSet getParticleDescriptorSet(const uint32_t frameIndex) {
+    return *particleDescriptorSets[frameIndex];
   }
 
   const uint32_t getNumParticles() { return numParticles; }
+  const uint32_t getNumTriangles() { return numTris; }
+  const glm::mat4 getInitialTransform() { return initialTransform; }
 
  private:
-  void createParticleStorageBuffers(const std::vector<ParticleRender>& vertices,
-                                    const std::vector<uint32_t>& indices);
+  void createParticleStorageBuffers(
+      const std::vector<ParticleCalculate>& particlesCalculate);
   void createParticleDescriptorSets();
 
   void createDistConstraintStorageBuffers(
@@ -267,6 +272,9 @@ class Cloth {
   uint32_t numParticles;
   uint32_t numConstraints;
   uint32_t numTris;
+
+  glm::mat4 initialTransform{1.f};
+
   // used in both of the pipelines
   std::vector<std::unique_ptr<vgeu::VgeuBuffer>> calculateSBs;
   std::vector<std::unique_ptr<vgeu::VgeuBuffer>> renderSBs;
@@ -282,9 +290,6 @@ class Cloth {
   // set 3 -> other?? cal sb, render sb
   std::vector<vk::raii::DescriptorSet> particleDescriptorSets;
   vk::raii::DescriptorSet constraintDescriptorSet = nullptr;
-
-  // TODO: need to delete in host memory
-  std::vector<ParticleRender> particlesRender;
 
   bool hasParticleBuffer{false};
   bool hasConstraintBuffer{false};
@@ -363,6 +368,7 @@ class VgeExample : public VgeBase {
   void buildComputeCommandBuffers();
 
   void setupDynamicUbo();
+  void setupClothSSBO();
   void updateGraphicsUbo();
   void updateComputeUbo();
   void updateDynamicUbo();
@@ -387,8 +393,11 @@ class VgeExample : public VgeBase {
     vk::raii::DescriptorSetLayout dynamicUboDescriptorSetLayout = nullptr;
 
     vk::raii::DescriptorSetLayout particleDescriptorSetLayout = nullptr;
-    std::vector<const vgeu::VgeuBuffer*> ownershipTransferParticleBufferPtrs;
-    std::vector<const vgeu::VgeuBuffer*> ownershipTransferBufferPtrs;
+    // concurrent frames , buffers
+    std::vector<std::vector<const vgeu::VgeuBuffer*>>
+        ownershipTransferParticleBufferPtrs;
+    std::vector<std::vector<const vgeu::VgeuBuffer*>>
+        ownershipTransferBufferPtrs;
   } common;
   struct {
     uint32_t queueFamilyIndex;

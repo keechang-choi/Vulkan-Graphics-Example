@@ -28,6 +28,7 @@ struct MeshMatrices{
 
 struct ParticleCalculate{
 	vec4 prevPos;
+	vec4 pos;
 	vec4 vel;
 	vec4 corr;	
 };
@@ -62,6 +63,10 @@ layout (std430, set = 1, binding = 0) readonly buffer VertexInSSBO{
 	VertexIn verticesIn[ ];
 };
 
+layout (std430, set = 1, binding = 1) readonly buffer IndexInSSBO{
+	uint indicesIn[ ];
+};
+
 layout (set = 2, binding = 0) uniform ModelUbo 
 {
 	mat4 modelMatrix;
@@ -85,13 +90,10 @@ layout (std430, set = 4, binding = 1) buffer RenderParticleSSBO{
 	ParticleRender renderParticles[ ];
 };
 
-layout (std430, set = 4, binding = 2) readonly buffer CalculateParticleSSBOIn{
+layout (std430, set = 4, binding = 2) readonly buffer PrevCalculateParticleSSBO{
 	ParticleCalculate prevCalculateParticles[ ];
 };
 
-layout (std430, set = 4, binding = 3) readonly buffer RenderParticleSSBOIn{
-	ParticleRender prevRenderParticles[ ];
-};
 
 layout (std430, set = 5, binding = 0) buffer DistConstraintSSBO{
 	DistConstraint distConstraints[ ];
@@ -103,12 +105,26 @@ layout (local_size_x_id = 2) in;
 layout (local_size_y_id = 3) in;
 layout (local_size_z_id = 4) in;
 
-const uint kIntegrate = 0;
-const uint kSolveCollision = 1;
-const uint kSolveDistanceConstraints = 2;
-const uint kUpdateVel = 3;
-const uint kUpdateMesh = 4;
-const uint kInitialize = 5;
+const uint kInitializeParticles = 0;
+const uint kInitializeConstraint = 1;
+const uint kIntegrate = 2;
+const uint kSolveCollision = 3;
+const uint kSolveDistanceConstraints = 4;
+const uint kUpdateVel = 5;
+const uint kUpdateMesh = 6;
+
+void initializeParticles(in uint xIdx){
+	if (xIdx >= indicesIn.length()) {
+		return;	
+	}
+	renderParticles[xIdx].uv = calculateParticles[indicesIn[xIdx]];
+	if (xIdx >= calculateParticles.length()){
+		return;
+	}
+	mat4 initialTransform = modelUbo.modelMatrix;
+	calculateParticles[xIdx].pos = initialTransform * vec4(calculateParticles[xIdx].pos);
+	calculateParticles[xIdx].vel = vec4(0.0);
+}
 
 void integrate(in uint xIdx){
 	if (xIdx >= calculateParticles.length()) {
@@ -116,12 +132,12 @@ void integrate(in uint xIdx){
 	}
 		
 	calculateParticles[xIdx].vel = prevCalculateParticles[xIdx].vel + computeUbo.gravity * computeUbo.dt;
-	renderParticles[xIdx].pos = prevRenderParticles[xIdx].pos + calculateParticles[xIdx].vel * computeUbo.dt;
+	calculateParticles[xIdx].pos = prevcalculateParticles[xIdx].pos + calculateParticles[xIdx].vel * computeUbo.dt;
 
 	// floor collision
-	if(renderParticles[xIdx].pos.y > -computeUbo.thickness){
-		vec3 p = renderParticles[xIdx].pos.xyz * (1.0 - computeUbo.friction) + calculateParticles[xIdx].prevPos.xyz * computeUbo.friction;
-		renderParticles[xIdx].pos.xyz = vec3(p.x, -computeUbo.thickness, p.z);
+	if(calculateParticles[xIdx].pos.y > -computeUbo.thickness){
+		vec3 p = calculateParticles[xIdx].pos.xyz * (1.0 - computeUbo.friction) + calculateParticles[xIdx].prevPos.xyz * computeUbo.friction;
+		calculateParticles[xIdx].pos.xyz = vec3(p.x, -computeUbo.thickness, p.z);
 		// TODO: temp vel update
 		calculateParticles[xIdx].vel.xyz = vec3(0.0);
 	}
@@ -135,11 +151,11 @@ void solveCollision(in uint xIdx, in uint yIdx){
 		return;
 	}
 
-	float d = distance(verticesOut[yIdx].pos.xyz, renderParticles[xIdx].pos.xyz);
+	float d = distance(verticesOut[yIdx].pos.xyz, calculateParticles[xIdx].pos.xyz);
 	if(d < computeUbo.radius + computeUbo.thickness){
-		vec3 p = renderParticles[xIdx].pos.xyz * (1.0 - computeUbo.friction) + calculateParticles[xIdx].prevPos.xyz * computeUbo.friction;
+		vec3 p = calculateParticles[xIdx].pos.xyz * (1.0 - computeUbo.friction) + calculateParticles[xIdx].prevPos.xyz * computeUbo.friction;
 		vec3 r = normalize(p - verticesOut[yIdx].pos.xyz);
-		renderParticles[xIdx].pos.xyz = verticesOut[yIdx].pos.xyz + r * (computeUbo.radius + computeUbo.thickness);
+		calculateParticles[xIdx].pos.xyz = verticesOut[yIdx].pos.xyz + r * (computeUbo.radius + computeUbo.thickness);
 		// TODO: temp vel update
 		calculateParticles[xIdx].vel.xyz = vec3(0.0);
 	}
@@ -151,9 +167,11 @@ void main()
 	uint xIdx = gl_GlobalInvocationID.x;
 	uint yIdx = gl_GlobalInvocationID.y;
 	uint zIdx = gl_GlobalInvocationID.z;
-	// should not return early for barrier
 
-	if(COMPUTE_TYPE == kIntegrate){
+	if(COMPUTE_TYPE == kInitializeParticles){
+		initializeParticles(xIdx);
+	}
+	else if(COMPUTE_TYPE == kIntegrate){
 		integrate(xIdx);
 	}else if(COMPUTE_TYPE == kSolveCollision){
 		solveCollision(xIdx, yIdx);

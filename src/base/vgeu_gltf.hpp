@@ -311,6 +311,15 @@ class Model {
 
   void getSkinMatrices(std::vector<MeshMatricesData>& skinMatricesData) const;
 
+  vk::DescriptorSet getMaterialDescriptor(uint32_t materialIndex = -1) {
+    if (materialIndex == -1) {
+      // empty texture material
+      return *materials.back().descriptorSet;
+    } else {
+      return *materials[materialIndex].descriptorSet;
+    }
+  }
+
   // NOTE: moved from globals to model class member.
   // TODO: all models should share those values, better to move it out of model
   vk::raii::DescriptorSetLayout descriptorSetLayoutImage = nullptr;
