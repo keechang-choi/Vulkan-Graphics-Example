@@ -250,8 +250,7 @@ class Cloth {
   const glm::mat4 getInitialTransform() { return initialTransform; }
 
  private:
-  void createParticleStorageBuffers(
-      const std::vector<ParticleCalculate>& particlesCalculate);
+  void createParticleStorageBuffers();
   void createParticleDescriptorSets();
 
   void createDistConstraintStorageBuffers(
@@ -395,10 +394,9 @@ class VgeExample : public VgeBase {
     vk::raii::DescriptorSetLayout particleDescriptorSetLayout = nullptr;
     // concurrent frames , buffers
     std::vector<std::vector<const vgeu::VgeuBuffer*>>
-        ownershipTransferParticleBufferPtrs;
-    std::vector<std::vector<const vgeu::VgeuBuffer*>>
         ownershipTransferBufferPtrs;
   } common;
+
   struct {
     uint32_t queueFamilyIndex;
 

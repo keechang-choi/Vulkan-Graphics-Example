@@ -98,7 +98,6 @@ void VgeExample::prepare() {
   prepareGraphics();
   prepareCompute();
   {
-    common.ownershipTransferParticleBufferPtrs.resize(MAX_CONCURRENT_FRAMES);
     common.ownershipTransferBufferPtrs.resize(MAX_CONCURRENT_FRAMES);
     for (auto frameIndex = 0; frameIndex < MAX_CONCURRENT_FRAMES;
          frameIndex++) {
@@ -115,8 +114,6 @@ void VgeExample::prepare() {
         }
         common.ownershipTransferBufferPtrs[frameIndex].push_back(
             modelInstance.clothModel->getRenderSBPtr(currentFrameIndex));
-        common.ownershipTransferParticleBufferPtrs[frameIndex].push_back(
-            modelInstance.clothModel->getCalculateSBPtr(currentFrameIndex));
       }
     }
   }
@@ -299,32 +296,35 @@ void VgeExample::initClothModels() {
   }
 }
 void VgeExample::setupClothSSBO() {
+  // NOTE: cloth initialize use model matrix as initial transform
+  updateDynamicUbo();
   vgeu::oneTimeSubmit(
-      device, commandPool, compute.queue,
+      device, compute.cmdPool, compute.queue,
       [&](const vk::raii::CommandBuffer& cmdBuffer) {
         for (auto frameIndex = 0; frameIndex < MAX_CONCURRENT_FRAMES;
              frameIndex++) {
-          // only particle buffer tranferred from graphics(transfer queue)
-          vgeu::addQueueFamilyOwnershipTransferBarriers(
-              graphics.queueFamilyIndex, compute.queueFamilyIndex,
-              compute.cmdBuffers[frameIndex],
-              common.ownershipTransferParticleBufferPtrs[frameIndex],
-              vk::AccessFlags{}, vk::AccessFlagBits::eShaderWrite,
-              vk::PipelineStageFlagBits::eTopOfPipe,
-              vk::PipelineStageFlagBits::eComputeShader);
           for (size_t instanceIdx = 0; instanceIdx < modelInstances.size();
                instanceIdx++) {
             const auto& modelInstance = modelInstances[instanceIdx];
             if (!modelInstance.clothModel) {
               continue;
             }
+            // NOTE: 0, 3 not using but for validation errors
+            cmdBuffer.bindDescriptorSets(
+                vk::PipelineBindPoint::eCompute, *compute.pipelineLayout,
+                0 /*set*/, *compute.descriptorSets[frameIndex], nullptr);
+            cmdBuffer.bindDescriptorSets(
+                vk::PipelineBindPoint::eCompute, *compute.pipelineLayout,
+                3 /*set*/, *compute.skinDescriptorSets[frameIndex][instanceIdx],
+                nullptr);
+
             cmdBuffer.bindPipeline(
                 vk::PipelineBindPoint::eCompute,
                 *compute.pipelines.pipelinesCloth[static_cast<uint32_t>(
                     ComputeType::kInitializeParticles)]);
             // NOTE: bind imported cloth model
-            modelInstance.model->bindSSBO(compute.cmdBuffers[currentFrameIndex],
-                                          *compute.pipelineLayout, 1 /*set*/);
+            modelInstance.model->bindSSBO(cmdBuffer, *compute.pipelineLayout,
+                                          1 /*set*/);
             cmdBuffer.bindDescriptorSets(
                 vk::PipelineBindPoint::eCompute, *compute.pipelineLayout,
                 2 /*set*/, {*common.dynamicUboDescriptorSets[frameIndex]},
@@ -341,7 +341,17 @@ void VgeExample::setupClothSSBO() {
           }
         }
       });
+  // remove initial model matrix after setup in compute shader.
+  for (size_t instanceIdx = 0; instanceIdx < modelInstances.size();
+       instanceIdx++) {
+    const auto& modelInstance = modelInstances[instanceIdx];
+    if (!modelInstance.clothModel) {
+      continue;
+    }
+    common.dynamicUbo[instanceIdx].modelMatrix = glm::mat4{1.f};
+  }
 }
+
 void VgeExample::prepareGraphics() {
   createGraphicsUniformBuffers();
   createGraphicsDescriptorSetLayout();
@@ -567,6 +577,11 @@ void VgeExample::createComputePipelines() {
         case ComputeType::kSolveCollision:
           specializationData.localSizeX = sharedDataSize;
           specializationData.localSizeY = collisionWorkGroupSize;
+          specializationData.localSizeZ = 1u;
+          break;
+        case ComputeType::kUpdateMesh:
+          specializationData.localSizeX = sharedDataSize;
+          specializationData.localSizeY = 1u;
           specializationData.localSizeZ = 1u;
           break;
         default:
@@ -1643,6 +1658,33 @@ void VgeExample::buildComputeCommandBuffers() {
           1);
     }
   }
+  // compute execution memory barrier
+  vgeu::addComputeToComputeBarriers(
+      compute.cmdBuffers[currentFrameIndex],
+      common.ownershipTransferBufferPtrs[currentFrameIndex]);
+  // update mesh
+  {
+    compute.cmdBuffers[currentFrameIndex].bindPipeline(
+        vk::PipelineBindPoint::eCompute,
+        *compute.pipelines
+             .pipelinesCloth[static_cast<uint32_t>(ComputeType::kUpdateMesh)]);
+    for (auto instanceIdx = 0; instanceIdx < modelInstances.size();
+         instanceIdx++) {
+      const auto& modelInstance = modelInstances[instanceIdx];
+      if (!modelInstance.clothModel) {
+        continue;
+      }
+      modelInstance.model->bindSSBO(compute.cmdBuffers[currentFrameIndex],
+                                    *compute.pipelineLayout, 1 /*set*/);
+      compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+          vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 4 /*set*/,
+          modelInstance.clothModel->getParticleDescriptorSet(currentFrameIndex),
+          nullptr);
+      compute.cmdBuffers[currentFrameIndex].dispatch(
+          modelInstance.clothModel->getNumTriangles() * 3 / sharedDataSize + 1,
+          1, 1);
+    }
+  }
 
   // TODO: other compute shader dispatch call
   // support [one animated model - multi clothes] interation
@@ -2163,21 +2205,8 @@ void Cloth::initParticlesData(const std::vector<vgeu::glTF::Vertex>& vertices,
   initialTransform = translate * rotate * scale;
 
   // TODO: initialize using compute shader cosidering performance.
-  std::vector<ParticleCalculate> particlesCalculate;
-  particlesCalculate.reserve(numParticles);
-  for (auto i = 0; i < numParticles; i++) {
-    // NOTE: put skin index as w
-    glm::vec4 pos = vertices[i].pos;
-    // inv mass
-    pos.w = 1.0;
-    ParticleCalculate newParticle{};
-    newParticle.pos = pos;
-    // temporary uv to be copied into render particles in initializeParticles
-    newParticle.vel = glm::vec4(vertices[i].uv, 0.f, 0.f);
-    particlesCalculate.push_back(newParticle);
-  }
 
-  createParticleStorageBuffers(particlesCalculate);
+  createParticleStorageBuffers();
   createParticleDescriptorSets();
 }
 
@@ -2281,8 +2310,7 @@ void Cloth::updateMesh(const uint32_t frameIndex,
   // TODO: not implemented yet
 }
 
-void Cloth::createParticleStorageBuffers(
-    const std::vector<ParticleCalculate>& particlesCalculate) {
+void Cloth::createParticleStorageBuffers() {
   // buffer creation
   calculateSBs.resize(framesInFlight);
   for (auto i = 0; i < calculateSBs.size(); i++) {
@@ -2301,35 +2329,6 @@ void Cloth::createParticleStorageBuffers(
             vk::BufferUsageFlagBits::eVertexBuffer |
             vk::BufferUsageFlagBits::eTransferDst,
         VMA_MEMORY_USAGE_AUTO, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
-  }
-
-  // copy particlesCalculate
-  {
-    vgeu::VgeuBuffer stagingBuffer(
-        allocator, sizeof(ParticleCalculate), numParticles,
-        vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_AUTO,
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-            VMA_ALLOCATION_CREATE_MAPPED_BIT);
-    std::memcpy(stagingBuffer.getMappedData(), particlesCalculate.data(),
-                stagingBuffer.getBufferSize());
-
-    vgeu::oneTimeSubmit(
-        device, commandPool, transferQueue,
-        [&](const vk::raii::CommandBuffer& cmdBuffer) {
-          std::vector<const vgeu::VgeuBuffer*> targetBufferPtrs;
-          for (size_t i = 0; i < calculateSBs.size(); i++) {
-            cmdBuffer.copyBuffer(
-                stagingBuffer.getBuffer(), calculateSBs[i]->getBuffer(),
-                vk::BufferCopy(0, 0, stagingBuffer.getBufferSize()));
-            targetBufferPtrs.push_back(calculateSBs[i].get());
-          }
-          // release
-          vgeu::addQueueFamilyOwnershipTransferBarriers(
-              transferQueueFamilyIndex, computeQueueFamilyIndex, cmdBuffer,
-              targetBufferPtrs, vk::AccessFlagBits::eTransferWrite,
-              vk::AccessFlags{}, vk::PipelineStageFlagBits::eTransfer,
-              vk::PipelineStageFlagBits::eBottomOfPipe);
-        });
   }
 }
 

@@ -117,12 +117,13 @@ void initializeParticles(in uint xIdx){
 	if (xIdx >= indicesIn.length()) {
 		return;	
 	}
-	renderParticles[xIdx].uv = calculateParticles[indicesIn[xIdx]];
+	renderParticles[xIdx].uv = verticesIn[indicesIn[xIdx]].uv;
+	// TODO: optimize
 	if (xIdx >= calculateParticles.length()){
 		return;
 	}
 	mat4 initialTransform = modelUbo.modelMatrix;
-	calculateParticles[xIdx].pos = initialTransform * vec4(calculateParticles[xIdx].pos);
+	calculateParticles[xIdx].pos = initialTransform * vec4(verticesIn[xIdx].pos.xyz, 1.0);
 	calculateParticles[xIdx].vel = vec4(0.0);
 }
 
@@ -132,7 +133,7 @@ void integrate(in uint xIdx){
 	}
 		
 	calculateParticles[xIdx].vel = prevCalculateParticles[xIdx].vel + computeUbo.gravity * computeUbo.dt;
-	calculateParticles[xIdx].pos = prevcalculateParticles[xIdx].pos + calculateParticles[xIdx].vel * computeUbo.dt;
+	calculateParticles[xIdx].pos = prevCalculateParticles[xIdx].pos + calculateParticles[xIdx].vel * computeUbo.dt;
 
 	// floor collision
 	if(calculateParticles[xIdx].pos.y > -computeUbo.thickness){
@@ -159,8 +160,26 @@ void solveCollision(in uint xIdx, in uint yIdx){
 		// TODO: temp vel update
 		calculateParticles[xIdx].vel.xyz = vec3(0.0);
 	}
-
 }
+
+void updateMesh(in uint xIdx){
+	if (xIdx >= indicesIn.length()) {
+		return;	
+	}
+	renderParticles[xIdx].pos = calculateParticles[indicesIn[xIdx]].pos;
+	// TODO: optimize
+	if (xIdx >= indicesIn.length()/3) {
+		return;	
+	}
+	vec3 p0 = vec3(calculateParticles[indicesIn[3*xIdx+0]].pos);
+	vec3 p1 = vec3(calculateParticles[indicesIn[3*xIdx+1]].pos);
+	vec3 p2 = vec3(calculateParticles[indicesIn[3*xIdx+2]].pos);
+	vec3 normal = normalize(cross(p1-p0, p2-p0));
+	renderParticles[3*xIdx+0].normal = vec4(normal, 0.0);
+	renderParticles[3*xIdx+1].normal = vec4(normal, 0.0);
+	renderParticles[3*xIdx+2].normal = vec4(normal, 0.0);
+}
+
 void main() 
 {
 	// Current SSBO index
@@ -170,11 +189,13 @@ void main()
 
 	if(COMPUTE_TYPE == kInitializeParticles){
 		initializeParticles(xIdx);
-	}
+	}// TODO: initialize constraints
 	else if(COMPUTE_TYPE == kIntegrate){
 		integrate(xIdx);
 	}else if(COMPUTE_TYPE == kSolveCollision){
 		solveCollision(xIdx, yIdx);
-	}
+	}else if(COMPUTE_TYPE == kUpdateMesh){
 	// TODO: update mesh
+		updateMesh(xIdx);
+	}
 }
