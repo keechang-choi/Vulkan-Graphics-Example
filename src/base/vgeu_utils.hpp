@@ -193,15 +193,14 @@ size_t padBufferSize(const vk::raii::PhysicalDevice physicalDevice,
 // mainly used for ownership release and acquire
 void addQueueFamilyOwnershipTransferBarriers(
     uint32_t srcQueueFamilyIndex, uint32_t dstQueueFamilyIndex,
-
     const vk::raii::CommandBuffer& cmdBuffer,
-    const std::vector<const vgeu::VgeuBuffer*> targetBufferPtrs,
+    const std::vector<const vgeu::VgeuBuffer*>& targetBufferPtrs,
     vk::AccessFlags srcAccessMask, vk::AccessFlags dstAccessMask,
     vk::PipelineStageFlags srcStageMask, vk::PipelineStageFlags dstStageMask);
 
 // mainly used for compute dispatch execution order
 void addComputeToComputeBarriers(
     const vk::raii::CommandBuffer& cmdBuffer,
-    const std::vector<const vgeu::VgeuBuffer*> targetBufferPtrs);
+    const std::vector<const vgeu::VgeuBuffer*>& targetBufferPtrs);
 
 }  // namespace vgeu

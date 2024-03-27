@@ -693,7 +693,7 @@ size_t padBufferSize(const vk::raii::PhysicalDevice physicalDevice,
 void addQueueFamilyOwnershipTransferBarriers(
     uint32_t srcQueueFamilyIndex, uint32_t dstQueueFamilyIndex,
     const vk::raii::CommandBuffer& cmdBuffer,
-    const std::vector<const vgeu::VgeuBuffer*> targetBufferPtrs,
+    const std::vector<const vgeu::VgeuBuffer*>& targetBufferPtrs,
     vk::AccessFlags srcAccessMask, vk::AccessFlags dstAccessMask,
     vk::PipelineStageFlags srcStageMask, vk::PipelineStageFlags dstStageMask) {
   bool dedicatedComputeQueue = (srcQueueFamilyIndex == dstQueueFamilyIndex);
@@ -714,7 +714,7 @@ void addQueueFamilyOwnershipTransferBarriers(
 
 void addComputeToComputeBarriers(
     const vk::raii::CommandBuffer& cmdBuffer,
-    const std::vector<const vgeu::VgeuBuffer*> targetBufferPtrs) {
+    const std::vector<const vgeu::VgeuBuffer*>& targetBufferPtrs) {
   std::vector<vk::BufferMemoryBarrier> bufferBarriers;
   for (const auto targetBuffer : targetBufferPtrs) {
     bufferBarriers.emplace_back(

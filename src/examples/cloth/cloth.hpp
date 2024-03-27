@@ -38,6 +38,10 @@ struct ComputeUbo {
   bool solveType;
 };
 
+struct ComputePushConstantsData {
+  glm::ivec2 constraintInfo;
+};
+
 // NOTE: simple model for circle, quad, lines
 struct SimpleModel {
   SimpleModel(const vk::raii::Device& device, VmaAllocator allocator,
@@ -138,7 +142,9 @@ enum class ComputeType {
   kInitializeConstraint,
   kIntegrate,
   kSolveCollision,
-  kSolveDistanceConstraints,
+  kSolveDistanceConstraintsGauss,
+  kSolveDistanceConstraintsJacobi,
+  kAddCorrections,
   kUpdateVel,
   kUpdateMesh
 };
@@ -245,8 +251,21 @@ class Cloth {
     return *particleDescriptorSets[frameIndex];
   }
 
+  const vk::DescriptorSet getConstraintDescriptorSet() {
+    return *constraintDescriptorSet;
+  }
+
   const uint32_t getNumParticles() { return numParticles; }
   const uint32_t getNumTriangles() { return numTris; }
+  const uint32_t getNumPasses() { return numPasses; }
+  const uint32_t getPassSize(uint32_t passIndex) {
+    assert(passIndex < numPasses);
+    return passSizes[passIndex];
+  }
+  const bool isPassIndependent(uint32_t passIndex) {
+    assert(passIndex < numPasses);
+    return passIndependent[passIndex];
+  }
   const glm::mat4 getInitialTransform() { return initialTransform; }
 
  private:
@@ -437,6 +456,10 @@ class VgeExample : public VgeBase {
 
     // cloth
     vk::raii::DescriptorSetLayout constraintDescriptorSetLayout = nullptr;
+    // frames, clothes
+    std::vector<std::vector<const vgeu::VgeuBuffer*>> calculateBufferPtrs;
+
+    ComputePushConstantsData pc;
 
   } compute;
 

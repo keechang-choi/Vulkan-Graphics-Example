@@ -99,6 +99,7 @@ void VgeExample::prepare() {
   prepareCompute();
   {
     common.ownershipTransferBufferPtrs.resize(MAX_CONCURRENT_FRAMES);
+    compute.calculateBufferPtrs.resize(MAX_CONCURRENT_FRAMES);
     for (auto frameIndex = 0; frameIndex < MAX_CONCURRENT_FRAMES;
          frameIndex++) {
       for (const auto& animatedVertexBuffer :
@@ -113,7 +114,9 @@ void VgeExample::prepare() {
           continue;
         }
         common.ownershipTransferBufferPtrs[frameIndex].push_back(
-            modelInstance.clothModel->getRenderSBPtr(currentFrameIndex));
+            modelInstance.clothModel->getRenderSBPtr(frameIndex));
+        compute.calculateBufferPtrs[frameIndex].push_back(
+            modelInstance.clothModel->getCalculateSBPtr(frameIndex));
       }
     }
   }
@@ -419,7 +422,10 @@ void VgeExample::createComputeDescriptorSetLayout() {
   // set 5 constraint ssbo
   setLayouts.push_back(*compute.constraintDescriptorSetLayout);
 
-  vk::PipelineLayoutCreateInfo pipelineLayoutCI({}, setLayouts);
+  // push constants
+  vk::PushConstantRange pcRange(vk::ShaderStageFlagBits::eCompute, 0u,
+                                sizeof(ComputePushConstantsData));
+  vk::PipelineLayoutCreateInfo pipelineLayoutCI({}, setLayouts, pcRange);
   compute.pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutCI);
 }
 
@@ -559,33 +565,13 @@ void VgeExample::createComputePipelines() {
       // compute cloth
       specializationData.computeType = i;
       switch (static_cast<ComputeType>(i)) {
-        case ComputeType::kInitializeParticles:
-          specializationData.localSizeX = sharedDataSize;
-          specializationData.localSizeY = 1u;
-          specializationData.localSizeZ = 1u;
-          break;
-        case ComputeType::kInitializeConstraint:
-          specializationData.localSizeX = sharedDataSize;
-          specializationData.localSizeY = 1u;
-          specializationData.localSizeZ = 1u;
-          break;
-        case ComputeType::kIntegrate:
-          specializationData.localSizeX = sharedDataSize;
-          specializationData.localSizeY = 1u;
-          specializationData.localSizeZ = 1u;
-          break;
         case ComputeType::kSolveCollision:
           specializationData.localSizeX = sharedDataSize;
           specializationData.localSizeY = collisionWorkGroupSize;
           specializationData.localSizeZ = 1u;
           break;
-        case ComputeType::kUpdateMesh:
-          specializationData.localSizeX = sharedDataSize;
-          specializationData.localSizeY = 1u;
-          specializationData.localSizeZ = 1u;
-          break;
         default:
-          specializationData.localSizeX = 1;
+          specializationData.localSizeX = sharedDataSize;
           specializationData.localSizeY = 1;
           specializationData.localSizeZ = 1;
       }
@@ -1587,12 +1573,14 @@ void VgeExample::buildComputeCommandBuffers() {
     }
   }
 
+  // TODO: check only animated buffer should be used
   // compute execution memory barrier
   vgeu::addComputeToComputeBarriers(
       compute.cmdBuffers[currentFrameIndex],
       common.ownershipTransferBufferPtrs[currentFrameIndex]);
 
-  // integrate
+  // TODO: substeps need  or just submit with dt/numsubsteps
+  //  integrate
   {
     // compute ubo
     compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
@@ -1620,7 +1608,7 @@ void VgeExample::buildComputeCommandBuffers() {
   // compute execution memory barrier
   vgeu::addComputeToComputeBarriers(
       compute.cmdBuffers[currentFrameIndex],
-      common.ownershipTransferBufferPtrs[currentFrameIndex]);
+      compute.calculateBufferPtrs[currentFrameIndex]);
   // solve collision
   {
     // compute ubo
@@ -1661,7 +1649,73 @@ void VgeExample::buildComputeCommandBuffers() {
   // compute execution memory barrier
   vgeu::addComputeToComputeBarriers(
       compute.cmdBuffers[currentFrameIndex],
-      common.ownershipTransferBufferPtrs[currentFrameIndex]);
+      compute.calculateBufferPtrs[currentFrameIndex]);
+
+  // solve distance constraints
+  {
+    // compute ubo
+    compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+        vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 0 /*set*/,
+        *compute.descriptorSets[currentFrameIndex], nullptr);
+    for (auto instanceIdx = 0; instanceIdx < modelInstances.size();
+         instanceIdx++) {
+      const auto& modelInstance = modelInstances[instanceIdx];
+      if (!modelInstance.clothModel) {
+        continue;
+      }
+      compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+          vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 4 /*set*/,
+          modelInstance.clothModel->getParticleDescriptorSet(currentFrameIndex),
+          nullptr);
+      compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+          vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 5 /*set*/,
+          modelInstance.clothModel->getConstraintDescriptorSet(), nullptr);
+      int firstConstraint = 0;
+      for (auto passIndex = 0;
+           passIndex < modelInstance.clothModel->getNumPasses(); passIndex++) {
+        compute.pc.constraintInfo.x = firstConstraint;
+        compute.pc.constraintInfo.y =
+            modelInstance.clothModel->getPassSize(passIndex);
+        firstConstraint += modelInstance.clothModel->getPassSize(passIndex);
+        compute.cmdBuffers[currentFrameIndex]
+            .pushConstants<ComputePushConstantsData>(
+                *compute.pipelineLayout, vk::ShaderStageFlagBits::eCompute, 0,
+                compute.pc);
+        if (modelInstance.clothModel->isPassIndependent(passIndex)) {
+          compute.cmdBuffers[currentFrameIndex].bindPipeline(
+              vk::PipelineBindPoint::eCompute,
+              *compute.pipelines.pipelinesCloth[static_cast<uint32_t>(
+                  ComputeType::kSolveDistanceConstraintsGauss)]);
+        } else {
+          compute.cmdBuffers[currentFrameIndex].bindPipeline(
+              vk::PipelineBindPoint::eCompute,
+              *compute.pipelines.pipelinesCloth[static_cast<uint32_t>(
+                  ComputeType::kSolveDistanceConstraintsJacobi)]);
+        }
+        compute.cmdBuffers[currentFrameIndex].dispatch(
+            modelInstance.clothModel->getPassSize(passIndex) / sharedDataSize +
+                1,
+            1, 1);
+        vgeu::addComputeToComputeBarriers(
+            compute.cmdBuffers[currentFrameIndex],
+            {modelInstance.clothModel->getCalculateSBPtr(currentFrameIndex)});
+        if (!modelInstance.clothModel->isPassIndependent(passIndex)) {
+          compute.cmdBuffers[currentFrameIndex].bindPipeline(
+              vk::PipelineBindPoint::eCompute,
+              *compute.pipelines.pipelinesCloth[static_cast<uint32_t>(
+                  ComputeType::kAddCorrections)]);
+          compute.cmdBuffers[currentFrameIndex].dispatch(
+              modelInstance.clothModel->getPassSize(passIndex) /
+                      sharedDataSize +
+                  1,
+              1, 1);
+          vgeu::addComputeToComputeBarriers(
+              compute.cmdBuffers[currentFrameIndex],
+              {modelInstance.clothModel->getCalculateSBPtr(currentFrameIndex)});
+        }
+      }
+    }
+  }
   // update mesh
   {
     compute.cmdBuffers[currentFrameIndex].bindPipeline(
