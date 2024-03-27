@@ -110,7 +110,7 @@ layout (local_size_y_id = 3) in;
 layout (local_size_z_id = 4) in;
 
 const uint kInitializeParticles = 0;
-const uint kInitializeConstraint = 1;
+const uint kInitializeConstraints = 1;
 const uint kIntegrate = 2;
 const uint kSolveCollision = 3;
 const uint kSolveDistanceConstraintsGauss = 4;
@@ -131,6 +131,17 @@ void initializeParticles(in uint xIdx){
 	mat4 initialTransform = modelUbo.modelMatrix;
 	calculateParticles[xIdx].pos = initialTransform * vec4(verticesIn[xIdx].pos.xyz, 1.0);
 	calculateParticles[xIdx].vel = vec4(0.0);
+}
+
+void initializeConstraints(in uint xIdx){
+	if (xIdx >= distConstraints.length()) {
+		return;	
+	}
+	int id0 = distConstraints[xIdx].constIds.x;
+	int id1 = distConstraints[xIdx].constIds.y;
+	distConstraints[xIdx].restLength = distance(
+		calculateParticles[id0].pos.xyz, 
+		calculateParticles[id1].pos.xyz);
 }
 
 void integrate(in uint xIdx){
@@ -195,8 +206,9 @@ void main()
 
 	if(COMPUTE_TYPE == kInitializeParticles){
 		initializeParticles(xIdx);
-	}// TODO: initialize constraints
-	else if(COMPUTE_TYPE == kIntegrate){
+	}else if(COMPUTE_TYPE == kInitializeConstraints){
+		initializeConstraints(xIdx);
+	}else if(COMPUTE_TYPE == kIntegrate){
 		integrate(xIdx);
 	}else if(COMPUTE_TYPE == kSolveCollision){
 		solveCollision(xIdx, yIdx);

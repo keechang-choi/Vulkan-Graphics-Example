@@ -139,7 +139,7 @@ compute type:
 */
 enum class ComputeType {
   kInitializeParticles = 0,
-  kInitializeConstraint,
+  kInitializeConstraints,
   kIntegrate,
   kSolveCollision,
   kSolveDistanceConstraintsGauss,
@@ -257,6 +257,7 @@ class Cloth {
 
   const uint32_t getNumParticles() { return numParticles; }
   const uint32_t getNumTriangles() { return numTris; }
+  const uint32_t getNumConstraints() { return numConstraints; }
   const uint32_t getNumPasses() { return numPasses; }
   const uint32_t getPassSize(uint32_t passIndex) {
     assert(passIndex < numPasses);

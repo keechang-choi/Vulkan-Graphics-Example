@@ -312,13 +312,18 @@ void VgeExample::setupClothSSBO() {
             if (!modelInstance.clothModel) {
               continue;
             }
-            // NOTE: 0, 3 not using but for validation errors
+            // NOTE: not using but for validation errors
             cmdBuffer.bindDescriptorSets(
                 vk::PipelineBindPoint::eCompute, *compute.pipelineLayout,
                 0 /*set*/, *compute.descriptorSets[frameIndex], nullptr);
             cmdBuffer.bindDescriptorSets(
                 vk::PipelineBindPoint::eCompute, *compute.pipelineLayout,
                 3 /*set*/, *compute.skinDescriptorSets[frameIndex][instanceIdx],
+                nullptr);
+            cmdBuffer.bindDescriptorSets(
+                vk::PipelineBindPoint::eCompute, *compute.pipelineLayout,
+                5 /*set*/,
+                modelInstance.clothModel->getConstraintDescriptorSet(),
                 nullptr);
 
             cmdBuffer.bindPipeline(
@@ -353,6 +358,49 @@ void VgeExample::setupClothSSBO() {
     }
     common.dynamicUbo[instanceIdx].modelMatrix = glm::mat4{1.f};
   }
+  // compute initial rest length from model
+  vgeu::oneTimeSubmit(
+      device, compute.cmdPool, compute.queue,
+      [&](const vk::raii::CommandBuffer& cmdBuffer) {
+        for (size_t instanceIdx = 0; instanceIdx < modelInstances.size();
+             instanceIdx++) {
+          const auto& modelInstance = modelInstances[instanceIdx];
+          if (!modelInstance.clothModel) {
+            continue;
+          }
+          // NOTE: not using but for validation errors
+          cmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
+                                       *compute.pipelineLayout, 0 /*set*/,
+                                       *compute.descriptorSets[0], nullptr);
+          modelInstance.model->bindSSBO(cmdBuffer, *compute.pipelineLayout,
+                                        1 /*set*/);
+          cmdBuffer.bindDescriptorSets(
+              vk::PipelineBindPoint::eCompute, *compute.pipelineLayout,
+              2 /*set*/, {*common.dynamicUboDescriptorSets[0]},
+              common.alignedSizeDynamicUboElt * instanceIdx);
+          cmdBuffer.bindDescriptorSets(
+              vk::PipelineBindPoint::eCompute, *compute.pipelineLayout,
+              3 /*set*/, *compute.skinDescriptorSets[0][instanceIdx], nullptr);
+
+          cmdBuffer.bindPipeline(
+              vk::PipelineBindPoint::eCompute,
+              *compute.pipelines.pipelinesCloth[static_cast<uint32_t>(
+                  ComputeType::kInitializeConstraints)]);
+
+          cmdBuffer.bindDescriptorSets(
+              vk::PipelineBindPoint::eCompute, *compute.pipelineLayout,
+              4 /*set*/, modelInstance.clothModel->getParticleDescriptorSet(0),
+              nullptr);
+          cmdBuffer.bindDescriptorSets(
+              vk::PipelineBindPoint::eCompute, *compute.pipelineLayout,
+              5 /*set*/, modelInstance.clothModel->getConstraintDescriptorSet(),
+              nullptr);
+          cmdBuffer.dispatch(
+              modelInstance.clothModel->getNumConstraints() / sharedDataSize +
+                  1,
+              1, 1);
+        }
+      });
 }
 
 void VgeExample::prepareGraphics() {
@@ -561,7 +609,8 @@ void VgeExample::createComputePipelines() {
     vk::raii::ShaderModule compClothShaderModule =
         vgeu::createShaderModule(device, compClothCode);
     // TODO: change specialization data for each type
-    for (auto i = 0; i < 7; i++) {
+    for (auto i = 0; i <= static_cast<uint32_t>(ComputeType::kUpdateMesh);
+         i++) {
       // compute cloth
       specializationData.computeType = i;
       switch (static_cast<ComputeType>(i)) {
@@ -1596,6 +1645,11 @@ void VgeExample::buildComputeCommandBuffers() {
       if (!modelInstance.clothModel) {
         continue;
       }
+      // NOTE: not using but for validation error.
+      compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+          vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 5 /*set*/,
+          modelInstance.clothModel->getConstraintDescriptorSet(), nullptr);
+      //
       compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
           vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 4 /*set*/,
           modelInstance.clothModel->getParticleDescriptorSet(currentFrameIndex),
@@ -1705,9 +1759,7 @@ void VgeExample::buildComputeCommandBuffers() {
               *compute.pipelines.pipelinesCloth[static_cast<uint32_t>(
                   ComputeType::kAddCorrections)]);
           compute.cmdBuffers[currentFrameIndex].dispatch(
-              modelInstance.clothModel->getPassSize(passIndex) /
-                      sharedDataSize +
-                  1,
+              modelInstance.clothModel->getNumParticles() / sharedDataSize + 1,
               1, 1);
           vgeu::addComputeToComputeBarriers(
               compute.cmdBuffers[currentFrameIndex],
@@ -2266,7 +2318,8 @@ void Cloth::initParticlesData(const std::vector<vgeu::glTF::Vertex>& vertices,
 
 void Cloth::initDistConstraintsData(const uint32_t numX, const uint32_t numY) {
   assert(numX * numY == numParticles);
-  passSizes.resize(5);
+  numPasses = 5;
+  passSizes.resize(numPasses);
   // stretch x
   passSizes[0] = ((numX + 1) / 2) * numY;
   passSizes[1] = (numX / 2) * numY;
