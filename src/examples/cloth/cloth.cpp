@@ -306,6 +306,14 @@ void VgeExample::setupClothSSBO() {
       [&](const vk::raii::CommandBuffer& cmdBuffer) {
         for (auto frameIndex = 0; frameIndex < MAX_CONCURRENT_FRAMES;
              frameIndex++) {
+          // acquire from transfer
+          vgeu::addQueueFamilyOwnershipTransferBarriers(
+              graphics.queueFamilyIndex, compute.queueFamilyIndex, cmdBuffer,
+              compute.calculateBufferPtrs[frameIndex], vk::AccessFlags{},
+              vk::AccessFlagBits::eShaderWrite,
+              vk::PipelineStageFlagBits::eTopOfPipe,
+              vk::PipelineStageFlagBits::eComputeShader);
+
           for (size_t instanceIdx = 0; instanceIdx < modelInstances.size();
                instanceIdx++) {
             const auto& modelInstance = modelInstances[instanceIdx];
@@ -313,6 +321,9 @@ void VgeExample::setupClothSSBO() {
               continue;
             }
             // NOTE: not using but for validation errors
+            cmdBuffer.pushConstants<ComputePushConstantsData>(
+                *compute.pipelineLayout, vk::ShaderStageFlagBits::eCompute, 0,
+                compute.pc);
             cmdBuffer.bindDescriptorSets(
                 vk::PipelineBindPoint::eCompute, *compute.pipelineLayout,
                 0 /*set*/, *compute.descriptorSets[frameIndex], nullptr);
@@ -369,6 +380,9 @@ void VgeExample::setupClothSSBO() {
             continue;
           }
           // NOTE: not using but for validation errors
+          cmdBuffer.pushConstants<ComputePushConstantsData>(
+              *compute.pipelineLayout, vk::ShaderStageFlagBits::eCompute, 0,
+              compute.pc);
           cmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
                                        *compute.pipelineLayout, 0 /*set*/,
                                        *compute.descriptorSets[0], nullptr);
@@ -1628,6 +1642,9 @@ void VgeExample::buildComputeCommandBuffers() {
       compute.cmdBuffers[currentFrameIndex],
       common.ownershipTransferBufferPtrs[currentFrameIndex]);
 
+  compute.cmdBuffers[currentFrameIndex].pushConstants<ComputePushConstantsData>(
+      *compute.pipelineLayout, vk::ShaderStageFlagBits::eCompute, 0,
+      compute.pc);
   // TODO: substeps need  or just submit with dt/numsubsteps
   //  integrate
   {
@@ -2319,8 +2336,20 @@ void Cloth::initParticlesData(const std::vector<vgeu::glTF::Vertex>& vertices,
   initialTransform = translate * rotate * scale;
 
   // TODO: initialize using compute shader cosidering performance.
-
-  createParticleStorageBuffers();
+  std::vector<ParticleCalculate> particlesCalculate;
+  particlesCalculate.reserve(numParticles);
+  for (auto i = 0; i < numParticles; i++) {
+    glm::vec4 pos = vertices[i].pos;
+    // NOTE: put skin index as w
+    if (pos.w == -1.f) {
+      pos.w = 1.f;
+    }
+    // else w as invMass
+    ParticleCalculate newParticle{};
+    newParticle.pos = pos;
+    particlesCalculate.push_back(newParticle);
+  }
+  createParticleStorageBuffers(particlesCalculate);
   createParticleDescriptorSets();
 }
 
@@ -2425,14 +2454,16 @@ void Cloth::updateMesh(const uint32_t frameIndex,
   // TODO: not implemented yet
 }
 
-void Cloth::createParticleStorageBuffers() {
+void Cloth::createParticleStorageBuffers(
+    const std::vector<ParticleCalculate>& particlesCalculate) {
   // buffer creation
   calculateSBs.resize(framesInFlight);
   for (auto i = 0; i < calculateSBs.size(); i++) {
     calculateSBs[i] = std::make_unique<vgeu::VgeuBuffer>(
         allocator, sizeof(ParticleCalculate), numParticles,
-        vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_AUTO,
-        VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
+        vk::BufferUsageFlagBits::eStorageBuffer |
+            vk::BufferUsageFlagBits::eTransferDst,
+        VMA_MEMORY_USAGE_AUTO, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
   }
 
   // NOTE: numbers. particles with normal
@@ -2441,9 +2472,37 @@ void Cloth::createParticleStorageBuffers() {
     renderSBs[i] = std::make_unique<vgeu::VgeuBuffer>(
         allocator, sizeof(ParticleRender), numTris * 3,
         vk::BufferUsageFlagBits::eStorageBuffer |
-            vk::BufferUsageFlagBits::eVertexBuffer |
-            vk::BufferUsageFlagBits::eTransferDst,
+            vk::BufferUsageFlagBits::eVertexBuffer,
         VMA_MEMORY_USAGE_AUTO, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
+  }
+
+  // copy particlesCalculate, only for invMass
+  {
+    vgeu::VgeuBuffer stagingBuffer(
+        allocator, sizeof(ParticleCalculate), numParticles,
+        vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT);
+    std::memcpy(stagingBuffer.getMappedData(), particlesCalculate.data(),
+                stagingBuffer.getBufferSize());
+
+    vgeu::oneTimeSubmit(
+        device, commandPool, transferQueue,
+        [&](const vk::raii::CommandBuffer& cmdBuffer) {
+          std::vector<const vgeu::VgeuBuffer*> targetBufferPtrs;
+          for (size_t i = 0; i < calculateSBs.size(); i++) {
+            cmdBuffer.copyBuffer(
+                stagingBuffer.getBuffer(), calculateSBs[i]->getBuffer(),
+                vk::BufferCopy(0, 0, stagingBuffer.getBufferSize()));
+            targetBufferPtrs.push_back(calculateSBs[i].get());
+          }
+          // release
+          vgeu::addQueueFamilyOwnershipTransferBarriers(
+              transferQueueFamilyIndex, computeQueueFamilyIndex, cmdBuffer,
+              targetBufferPtrs, vk::AccessFlagBits::eTransferWrite,
+              vk::AccessFlags{}, vk::PipelineStageFlagBits::eTransfer,
+              vk::PipelineStageFlagBits::eBottomOfPipe);
+        });
   }
 }
 

@@ -39,7 +39,7 @@ struct ComputeUbo {
 };
 
 struct ComputePushConstantsData {
-  glm::ivec2 constraintInfo;
+  glm::uvec2 constraintInfo;
 };
 
 // NOTE: simple model for circle, quad, lines
@@ -118,7 +118,7 @@ struct ParticleCalculate {
 };
 
 struct DistConstraint {
-  alignas(8) glm::ivec2 constIds;
+  alignas(8) glm::uvec2 constIds;
   float restLength;
 };
 struct ParticleRender {
@@ -275,7 +275,8 @@ class Cloth {
   const glm::mat4 getInitialTransform() { return initialTransform; }
 
  private:
-  void createParticleStorageBuffers();
+  void createParticleStorageBuffers(
+      const std::vector<ParticleCalculate>& particlesCalculate);
   void createParticleDescriptorSets();
 
   void createDistConstraintStorageBuffers(
