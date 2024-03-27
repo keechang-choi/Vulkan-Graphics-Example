@@ -1793,6 +1793,32 @@ void VgeExample::buildComputeCommandBuffers() {
         }
       }
     }
+    // update vel
+    {
+      compute.cmdBuffers[currentFrameIndex].bindPipeline(
+          vk::PipelineBindPoint::eCompute,
+          *compute.pipelines
+               .pipelinesCloth[static_cast<uint32_t>(ComputeType::kUpdateVel)]);
+      for (auto instanceIdx = 0; instanceIdx < modelInstances.size();
+           instanceIdx++) {
+        const auto& modelInstance = modelInstances[instanceIdx];
+        if (!modelInstance.clothModel) {
+          continue;
+        }
+        compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+            vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 4 /*set*/,
+            modelInstance.clothModel->getParticleDescriptorSet(
+                currentFrameIndex),
+            nullptr);
+        compute.cmdBuffers[currentFrameIndex].dispatch(
+            modelInstance.clothModel->getNumParticles() / sharedDataSize + 1, 1,
+            1);
+      }
+    }
+    // compute execution memory barrier
+    vgeu::addComputeToComputeBarriers(
+        compute.cmdBuffers[currentFrameIndex],
+        compute.calculateBufferPtrs[currentFrameIndex]);
   }
   // update mesh
   {

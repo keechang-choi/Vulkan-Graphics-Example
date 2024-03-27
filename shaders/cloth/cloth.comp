@@ -151,7 +151,7 @@ void integrate(in uint xIdx){
 		return;	
 	}
 	float sdt = computeUbo.dt / float(computeUbo.numSubsteps);
-	calculateParticles[xIdx].prevPos = calculateParticles[xIdx].pos;
+	calculateParticles[xIdx].prevPos = prevCalculateParticles[xIdx].pos;
 	calculateParticles[xIdx].vel = prevCalculateParticles[xIdx].vel + computeUbo.gravity * sdt;
 	calculateParticles[xIdx].pos = prevCalculateParticles[xIdx].pos + calculateParticles[xIdx].vel * sdt;
 	calculateParticles[xIdx].corr = vec4(0.0);
@@ -260,7 +260,20 @@ void addCorrections(in uint xIdx){
 	if(xIdx >= calculateParticles.length()){
 		return;
 	}
-	calculateParticles[xIdx].pos += calculateParticles[xIdx].corr;
+	calculateParticles[xIdx].pos += calculateParticles[xIdx].corr * computeUbo.jacobiScale;
+}
+
+void updateVel(in uint xIdx){
+	if(xIdx >= calculateParticles.length()){
+		return;
+	}
+	float sdt = computeUbo.dt / float(computeUbo.numSubsteps);
+	if(sdt == 0.0){
+		// first compute
+		calculateParticles[xIdx].vel = vec4(0.0);
+		return;
+	}
+	calculateParticles[xIdx].vel = (calculateParticles[xIdx].pos - calculateParticles[xIdx].prevPos) / sdt;
 }
 
 void updateMesh(in uint xIdx){
@@ -301,7 +314,10 @@ void main()
 	}else if(COMPUTE_TYPE == kSolveDistanceConstraintsJacobi){
 		solveDistanceConstraintsJacobi(xIdx);
 	}else if(COMPUTE_TYPE == kAddCorrections){
+		//TODO: add after checking Gauss-Seidel solver
 		// addCorrections(xIdx);
+	}else if(COMPUTE_TYPE == kUpdateVel){
+		updateVel(xIdx);
 	}else if(COMPUTE_TYPE == kUpdateMesh){
 		updateMesh(xIdx);
 	}
