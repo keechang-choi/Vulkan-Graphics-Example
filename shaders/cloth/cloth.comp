@@ -131,7 +131,7 @@ void integrate(in uint xIdx){
 	if (xIdx >= calculateParticles.length()) {
 		return;	
 	}
-		
+	calculateParticles[xIdx].prevPos = calculateParticles[xIdx].pos;
 	calculateParticles[xIdx].vel = prevCalculateParticles[xIdx].vel + computeUbo.gravity * computeUbo.dt;
 	calculateParticles[xIdx].pos = prevCalculateParticles[xIdx].pos + calculateParticles[xIdx].vel * computeUbo.dt;
 
