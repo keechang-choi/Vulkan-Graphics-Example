@@ -1876,10 +1876,12 @@ void VgeExample::updateComputeUbo() {
     compute.ubo.clickData = clickPos;
   }
 
-  // TODO: update ubo options
-  compute.ubo.thickness = 0.05f;
-  compute.ubo.friction = 0.f;
+  compute.ubo.thickness = opts.thickness;
+  compute.ubo.friction = opts.friction;
   compute.ubo.radius = opts.collisionRadius;
+  compute.ubo.stiffness = opts.stiffness;
+  compute.ubo.alpha = opts.alpha;
+  compute.ubo.jacobiScale = opts.jacobiScale;
 
   compute.ubo.gravity = glm::vec4(0.f, opts.gravity, 0.f, 0.f);
   std::memcpy(compute.uniformBuffers[currentFrameIndex]->getMappedData(),
@@ -2035,8 +2037,14 @@ void VgeExample::onUpdateUIOverlay() {
       ImGui::Spacing();
       ImGui::Spacing();
       uiOverlay->inputFloat("gravity", &opts.gravity, 0.001f, "%.3f");
-      ImGui::DragFloat("collisionRadius", &opts.collisionRadius, 0.01f, 0.0f,
-                       10.0f, "%.2f");
+      uiOverlay->inputFloat("collisionRadius", &opts.collisionRadius, 0.001f,
+                            "%.3f");
+      uiOverlay->inputFloat("stiffness", &opts.stiffness, 0.001f, "%.3f");
+      uiOverlay->inputFloat("alpha", &opts.alpha, 0.001f, "%.3f");
+      uiOverlay->inputFloat("jacobiScale", &opts.jacobiScale, 0.001f, "%.3f");
+      uiOverlay->inputFloat("thickness", &opts.thickness, 0.001f, "%.3f");
+      uiOverlay->inputFloat("friction", &opts.friction, 0.001f, "%.3f");
+
       uiOverlay->inputInt("numSubsteps", &opts.numSubsteps, 1);
 
       ImGui::TreePop();

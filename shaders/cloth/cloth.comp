@@ -212,8 +212,13 @@ void main()
 		integrate(xIdx);
 	}else if(COMPUTE_TYPE == kSolveCollision){
 		solveCollision(xIdx, yIdx);
+	}else if(COMPUTE_TYPE == kSolveDistanceConstraintsGauss){
+		//TODO
+	}else if(COMPUTE_TYPE == kSolveDistanceConstraintsJacobi){
+		//TODO
+	}else if(COMPUTE_TYPE == kAddCorrections){
+		//TODO
 	}else if(COMPUTE_TYPE == kUpdateMesh){
-	// TODO: update mesh
 		updateMesh(xIdx);
 	}
 }

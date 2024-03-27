@@ -172,6 +172,11 @@ struct Options {
   int32_t numSubsteps = 10;
   float gravity = 10.f;
   float collisionRadius = 0.5f;
+  float stiffness = 1.f;
+  float alpha = 1.f;
+  float jacobiScale = 0.2f;
+  float thickness = 0.05f;
+  float friction = 0.f;
 };
 
 // NOTE: ssbo usage alignment
