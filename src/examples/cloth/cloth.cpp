@@ -1646,141 +1646,150 @@ void VgeExample::buildComputeCommandBuffers() {
       *compute.pipelineLayout, vk::ShaderStageFlagBits::eCompute, 0,
       compute.pc);
   // TODO: substeps need  or just submit with dt/numsubsteps
-  //  integrate
-  {
-    // compute ubo
-    compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
-        vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 0 /*set*/,
-        *compute.descriptorSets[currentFrameIndex], nullptr);
-    compute.cmdBuffers[currentFrameIndex].bindPipeline(
-        vk::PipelineBindPoint::eCompute,
-        *compute.pipelines
-             .pipelinesCloth[static_cast<uint32_t>(ComputeType::kIntegrate)]);
-    for (auto instanceIdx = 0; instanceIdx < modelInstances.size();
-         instanceIdx++) {
-      const auto& modelInstance = modelInstances[instanceIdx];
-      if (!modelInstance.clothModel) {
-        continue;
-      }
-      // NOTE: not using but for validation error.
+  for (auto substep = 0; substep < opts.numSubsteps; substep++) {
+    //  integrate
+    {
+      // compute ubo
       compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
-          vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 5 /*set*/,
-          modelInstance.clothModel->getConstraintDescriptorSet(), nullptr);
-      //
-      compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
-          vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 4 /*set*/,
-          modelInstance.clothModel->getParticleDescriptorSet(currentFrameIndex),
-          nullptr);
-      compute.cmdBuffers[currentFrameIndex].dispatch(
-          modelInstance.clothModel->getNumParticles() / sharedDataSize + 1, 1,
-          1);
-    }
-  }
-  // compute execution memory barrier
-  vgeu::addComputeToComputeBarriers(
-      compute.cmdBuffers[currentFrameIndex],
-      compute.calculateBufferPtrs[currentFrameIndex]);
-  // solve collision
-  {
-    // compute ubo
-    compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
-        vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 0 /*set*/,
-        *compute.descriptorSets[currentFrameIndex], nullptr);
-
-    uint32_t collisionInstanceIdx = findInstances("fox2")[0];
-    // bind SSBO for skin matrix and animated vertices
-    compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
-        vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 3 /*set*/,
-        *compute.skinDescriptorSets[currentFrameIndex][collisionInstanceIdx],
-        nullptr);
-    const auto& collisionModelInstance = modelInstances[collisionInstanceIdx];
-
-    compute.cmdBuffers[currentFrameIndex].bindPipeline(
-        vk::PipelineBindPoint::eCompute,
-        *compute.pipelines.pipelinesCloth[static_cast<uint32_t>(
-            ComputeType::kSolveCollision)]);
-    for (auto instanceIdx = 0; instanceIdx < modelInstances.size();
-         instanceIdx++) {
-      const auto& modelInstance = modelInstances[instanceIdx];
-      if (!modelInstance.clothModel) {
-        continue;
-      }
-      compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
-          vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 4 /*set*/,
-          modelInstance.clothModel->getParticleDescriptorSet(currentFrameIndex),
-          nullptr);
-      compute.cmdBuffers[currentFrameIndex].dispatch(
-          modelInstance.clothModel->getNumParticles() / sharedDataSize + 1,
-          collisionModelInstance.model->getVertexCount() /
-                  collisionWorkGroupSize +
-              1,
-          1);
-    }
-  }
-  // compute execution memory barrier
-  vgeu::addComputeToComputeBarriers(
-      compute.cmdBuffers[currentFrameIndex],
-      compute.calculateBufferPtrs[currentFrameIndex]);
-
-  // solve distance constraints
-  {
-    // compute ubo
-    compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
-        vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 0 /*set*/,
-        *compute.descriptorSets[currentFrameIndex], nullptr);
-    for (auto instanceIdx = 0; instanceIdx < modelInstances.size();
-         instanceIdx++) {
-      const auto& modelInstance = modelInstances[instanceIdx];
-      if (!modelInstance.clothModel) {
-        continue;
-      }
-      compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
-          vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 4 /*set*/,
-          modelInstance.clothModel->getParticleDescriptorSet(currentFrameIndex),
-          nullptr);
-      compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
-          vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 5 /*set*/,
-          modelInstance.clothModel->getConstraintDescriptorSet(), nullptr);
-      int firstConstraint = 0;
-      for (auto passIndex = 0;
-           passIndex < modelInstance.clothModel->getNumPasses(); passIndex++) {
-        compute.pc.constraintInfo.x = firstConstraint;
-        compute.pc.constraintInfo.y =
-            modelInstance.clothModel->getPassSize(passIndex);
-        firstConstraint += modelInstance.clothModel->getPassSize(passIndex);
-        compute.cmdBuffers[currentFrameIndex]
-            .pushConstants<ComputePushConstantsData>(
-                *compute.pipelineLayout, vk::ShaderStageFlagBits::eCompute, 0,
-                compute.pc);
-        if (modelInstance.clothModel->isPassIndependent(passIndex)) {
-          compute.cmdBuffers[currentFrameIndex].bindPipeline(
-              vk::PipelineBindPoint::eCompute,
-              *compute.pipelines.pipelinesCloth[static_cast<uint32_t>(
-                  ComputeType::kSolveDistanceConstraintsGauss)]);
-        } else {
-          compute.cmdBuffers[currentFrameIndex].bindPipeline(
-              vk::PipelineBindPoint::eCompute,
-              *compute.pipelines.pipelinesCloth[static_cast<uint32_t>(
-                  ComputeType::kSolveDistanceConstraintsJacobi)]);
+          vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 0 /*set*/,
+          *compute.descriptorSets[currentFrameIndex], nullptr);
+      compute.cmdBuffers[currentFrameIndex].bindPipeline(
+          vk::PipelineBindPoint::eCompute,
+          *compute.pipelines
+               .pipelinesCloth[static_cast<uint32_t>(ComputeType::kIntegrate)]);
+      for (auto instanceIdx = 0; instanceIdx < modelInstances.size();
+           instanceIdx++) {
+        const auto& modelInstance = modelInstances[instanceIdx];
+        if (!modelInstance.clothModel) {
+          continue;
         }
+        // NOTE: not using but for validation error.
+        compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+            vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 5 /*set*/,
+            modelInstance.clothModel->getConstraintDescriptorSet(), nullptr);
+        //
+        compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+            vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 4 /*set*/,
+            modelInstance.clothModel->getParticleDescriptorSet(
+                currentFrameIndex),
+            nullptr);
         compute.cmdBuffers[currentFrameIndex].dispatch(
-            modelInstance.clothModel->getPassSize(passIndex) / sharedDataSize +
+            modelInstance.clothModel->getNumParticles() / sharedDataSize + 1, 1,
+            1);
+      }
+    }
+    // compute execution memory barrier
+    vgeu::addComputeToComputeBarriers(
+        compute.cmdBuffers[currentFrameIndex],
+        compute.calculateBufferPtrs[currentFrameIndex]);
+    // solve collision
+    {
+      // compute ubo
+      compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+          vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 0 /*set*/,
+          *compute.descriptorSets[currentFrameIndex], nullptr);
+
+      uint32_t collisionInstanceIdx = findInstances("fox2")[0];
+      // bind SSBO for skin matrix and animated vertices
+      compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+          vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 3 /*set*/,
+          *compute.skinDescriptorSets[currentFrameIndex][collisionInstanceIdx],
+          nullptr);
+      const auto& collisionModelInstance = modelInstances[collisionInstanceIdx];
+
+      compute.cmdBuffers[currentFrameIndex].bindPipeline(
+          vk::PipelineBindPoint::eCompute,
+          *compute.pipelines.pipelinesCloth[static_cast<uint32_t>(
+              ComputeType::kSolveCollision)]);
+      for (auto instanceIdx = 0; instanceIdx < modelInstances.size();
+           instanceIdx++) {
+        const auto& modelInstance = modelInstances[instanceIdx];
+        if (!modelInstance.clothModel) {
+          continue;
+        }
+        compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+            vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 4 /*set*/,
+            modelInstance.clothModel->getParticleDescriptorSet(
+                currentFrameIndex),
+            nullptr);
+        compute.cmdBuffers[currentFrameIndex].dispatch(
+            modelInstance.clothModel->getNumParticles() / sharedDataSize + 1,
+            collisionModelInstance.model->getVertexCount() /
+                    collisionWorkGroupSize +
                 1,
-            1, 1);
-        vgeu::addComputeToComputeBarriers(
-            compute.cmdBuffers[currentFrameIndex],
-            {modelInstance.clothModel->getCalculateSBPtr(currentFrameIndex)});
-        if (!modelInstance.clothModel->isPassIndependent(passIndex)) {
-          compute.cmdBuffers[currentFrameIndex].bindPipeline(
-              vk::PipelineBindPoint::eCompute,
-              *compute.pipelines.pipelinesCloth[static_cast<uint32_t>(
-                  ComputeType::kAddCorrections)]);
+            1);
+      }
+    }
+    // compute execution memory barrier
+    vgeu::addComputeToComputeBarriers(
+        compute.cmdBuffers[currentFrameIndex],
+        compute.calculateBufferPtrs[currentFrameIndex]);
+
+    // solve distance constraints
+    {
+      // compute ubo
+      compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+          vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 0 /*set*/,
+          *compute.descriptorSets[currentFrameIndex], nullptr);
+      for (auto instanceIdx = 0; instanceIdx < modelInstances.size();
+           instanceIdx++) {
+        const auto& modelInstance = modelInstances[instanceIdx];
+        if (!modelInstance.clothModel) {
+          continue;
+        }
+        compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+            vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 4 /*set*/,
+            modelInstance.clothModel->getParticleDescriptorSet(
+                currentFrameIndex),
+            nullptr);
+        compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+            vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 5 /*set*/,
+            modelInstance.clothModel->getConstraintDescriptorSet(), nullptr);
+        int firstConstraint = 0;
+        for (auto passIndex = 0;
+             passIndex < modelInstance.clothModel->getNumPasses();
+             passIndex++) {
+          compute.pc.constraintInfo.x = firstConstraint;
+          compute.pc.constraintInfo.y =
+              modelInstance.clothModel->getPassSize(passIndex);
+          firstConstraint += modelInstance.clothModel->getPassSize(passIndex);
+          compute.cmdBuffers[currentFrameIndex]
+              .pushConstants<ComputePushConstantsData>(
+                  *compute.pipelineLayout, vk::ShaderStageFlagBits::eCompute, 0,
+                  compute.pc);
+          if (modelInstance.clothModel->isPassIndependent(passIndex)) {
+            compute.cmdBuffers[currentFrameIndex].bindPipeline(
+                vk::PipelineBindPoint::eCompute,
+                *compute.pipelines.pipelinesCloth[static_cast<uint32_t>(
+                    ComputeType::kSolveDistanceConstraintsGauss)]);
+          } else {
+            compute.cmdBuffers[currentFrameIndex].bindPipeline(
+                vk::PipelineBindPoint::eCompute,
+                *compute.pipelines.pipelinesCloth[static_cast<uint32_t>(
+                    ComputeType::kSolveDistanceConstraintsJacobi)]);
+          }
           compute.cmdBuffers[currentFrameIndex].dispatch(
-              modelInstance.clothModel->getNumParticles() / sharedDataSize + 1,
+              modelInstance.clothModel->getPassSize(passIndex) /
+                      sharedDataSize +
+                  1,
               1, 1);
           vgeu::addComputeToComputeBarriers(
               compute.cmdBuffers[currentFrameIndex],
               {modelInstance.clothModel->getCalculateSBPtr(currentFrameIndex)});
+          if (!modelInstance.clothModel->isPassIndependent(passIndex)) {
+            compute.cmdBuffers[currentFrameIndex].bindPipeline(
+                vk::PipelineBindPoint::eCompute,
+                *compute.pipelines.pipelinesCloth[static_cast<uint32_t>(
+                    ComputeType::kAddCorrections)]);
+            compute.cmdBuffers[currentFrameIndex].dispatch(
+                modelInstance.clothModel->getNumParticles() / sharedDataSize +
+                    1,
+                1, 1);
+            vgeu::addComputeToComputeBarriers(
+                compute.cmdBuffers[currentFrameIndex],
+                {modelInstance.clothModel->getCalculateSBPtr(
+                    currentFrameIndex)});
+          }
         }
       }
     }
@@ -1899,6 +1908,7 @@ void VgeExample::updateComputeUbo() {
   compute.ubo.stiffness = opts.stiffness;
   compute.ubo.alpha = opts.alpha;
   compute.ubo.jacobiScale = opts.jacobiScale;
+  compute.ubo.numSubsteps = static_cast<uint32_t>(opts.numSubsteps);
 
   compute.ubo.gravity = glm::vec4(0.f, opts.gravity, 0.f, 0.f);
   std::memcpy(compute.uniformBuffers[currentFrameIndex]->getMappedData(),

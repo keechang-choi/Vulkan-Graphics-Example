@@ -35,7 +35,7 @@ struct ComputeUbo {
   float thickness;
   float radius;
   float friction;
-  bool solveType;
+  uint32_t numSubsteps;
 };
 
 struct ComputePushConstantsData {
@@ -169,7 +169,7 @@ struct Options {
   // save camera view. not configurable by pannel
   glm::mat4 cameraView{1.f};
 
-  int32_t numSubsteps = 10;
+  int32_t numSubsteps = 1;
   float gravity = 10.f;
   float collisionRadius = 0.5f;
   float stiffness = 1.f;
