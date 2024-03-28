@@ -176,7 +176,7 @@ struct Options {
   float alpha = 1.f;
   float jacobiScale = 0.2f;
   float thickness = 0.05f;
-  float friction = 0.f;
+  float friction = 0.01f;
 };
 
 // NOTE: ssbo usage alignment

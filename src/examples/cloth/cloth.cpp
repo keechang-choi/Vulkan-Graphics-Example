@@ -2394,11 +2394,11 @@ void Cloth::initDistConstraintsData(const uint32_t numX, const uint32_t numY) {
   numPasses = 5;
   passSizes.resize(numPasses);
   // stretch x
-  passSizes[0] = ((numX + 1) / 2) * numY;
-  passSizes[1] = (numX / 2) * numY;
+  passSizes[0] = (numX / 2) * numY;
+  passSizes[1] = ((numX - 1) / 2) * numY;
   // stretch y
-  passSizes[2] = numX * ((numY + 1) / 2);
-  passSizes[3] = numX * (numY / 2);
+  passSizes[2] = numX * (numY / 2);
+  passSizes[3] = numX * ((numY - 1) / 2);
   // shear and bending constraints
   passSizes[4] = 2 * (numX - 1) * (numY - 1);
   passSizes[4] += (numX - 2) * numY + numX * (numY - 2);
@@ -2413,7 +2413,7 @@ void Cloth::initDistConstraintsData(const uint32_t numX, const uint32_t numY) {
   distConstraints.reserve(numConstraints);
   // stretch x
   for (auto isOdd = 0; isOdd < 2; isOdd++) {
-    for (auto xi = 0; xi < (numX + 1) / 2; xi++) {
+    for (auto xi = 0; xi < (numX - isOdd) / 2; xi++) {
       for (auto yi = 0; yi < numY; yi++) {
         glm::ivec2 ids(yi * numX + xi * 2 + isOdd,
                        yi * numX + xi * 2 + isOdd + 1);
@@ -2424,7 +2424,7 @@ void Cloth::initDistConstraintsData(const uint32_t numX, const uint32_t numY) {
   // stretch y
   for (auto isOdd = 0; isOdd < 2; isOdd++) {
     for (auto xi = 0; xi < numX; xi++) {
-      for (auto yi = 0; yi < (numY + 1) / 2; yi++) {
+      for (auto yi = 0; yi < (numY - isOdd) / 2; yi++) {
         glm::ivec2 ids((2 * yi + isOdd) * numX + xi,
                        (2 * yi + isOdd + 1) * numX + xi);
         distConstraints.push_back({ids, 0.f});
