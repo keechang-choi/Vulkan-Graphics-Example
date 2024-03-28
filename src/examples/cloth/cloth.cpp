@@ -288,12 +288,12 @@ void VgeExample::initClothModels() {
     // FlipY manually
     // NOTE: not only flip Y, also need flip z to preserve orientation
     glm::mat4 scaleMat = glm::scale(
-        glm::mat4{1.f}, glm::vec3{1.5f * kFlagScale, -kFlagScale, -kFlagScale});
+        glm::mat4{1.f}, glm::vec3{kFlagScale, -kFlagScale, -kFlagScale});
 
     clothModel->initParticlesData(modelVertices, indices, translateMat,
                                   rotateMat, scaleMat);
     // model specific infos
-    clothModel->initDistConstraintsData(100, 100);
+    clothModel->initDistConstraintsData(150, 100);
 
     addModelInstance(std::move(modelInstance));
   }

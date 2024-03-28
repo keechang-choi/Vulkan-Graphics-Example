@@ -308,7 +308,7 @@ void main()
 	}else if(COMPUTE_TYPE == kIntegrate){
 		integrate(xIdx);
 	}else if(COMPUTE_TYPE == kSolveCollision){
-		solveCollision(xIdx, yIdx);
+		//solveCollision(xIdx, yIdx);
 	}else if(COMPUTE_TYPE == kSolveDistanceConstraintsGauss){
 		solveDistanceConstraintsGauss(xIdx);
 	}else if(COMPUTE_TYPE == kSolveDistanceConstraintsJacobi){
