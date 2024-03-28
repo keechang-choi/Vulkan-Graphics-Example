@@ -111,10 +111,10 @@ struct DynamicUboElt {
 // NOTE: std430 alignment
 // cloth particle
 struct ParticleCalculate {
-  alignas(16) glm::dvec4 prevPos;
-  glm::dvec4 pos;
-  glm::dvec4 vel;
-  glm::dvec4 corr;
+  alignas(16) glm::vec4 prevPos;
+  glm::vec4 pos;
+  glm::vec4 vel;
+  glm::vec4 corr;
 };
 
 struct DistConstraint {

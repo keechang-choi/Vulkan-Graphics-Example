@@ -88,7 +88,6 @@ void VgeExample::getEnabledExtensions() {
   enabledFeatures.fillModeNonSolid =
       physicalDevice.getFeatures().fillModeNonSolid;
   enabledFeatures.wideLines = physicalDevice.getFeatures().wideLines;
-  enabledFeatures.shaderFloat64 = true;
 }
 
 void VgeExample::prepare() {
@@ -2376,7 +2375,7 @@ void Cloth::initParticlesData(const std::vector<vgeu::glTF::Vertex>& vertices,
   std::vector<ParticleCalculate> particlesCalculate;
   particlesCalculate.reserve(numParticles);
   for (auto i = 0; i < numParticles; i++) {
-    glm::dvec4 pos = vertices[i].pos;
+    glm::vec4 pos = vertices[i].pos;
     // NOTE: put skin index as w
     if (pos.w == -1.f) {
       pos.w = 1.f;
