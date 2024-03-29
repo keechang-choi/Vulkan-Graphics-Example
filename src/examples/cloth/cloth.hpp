@@ -115,6 +115,7 @@ struct ParticleCalculate {
   glm::vec4 pos;
   glm::vec4 vel;
   glm::vec4 corr;
+  glm::vec4 normal;
 };
 
 struct DistConstraint {
@@ -146,7 +147,8 @@ enum class ComputeType {
   kSolveDistanceConstraintsJacobi,
   kAddCorrections,
   kUpdateVel,
-  kUpdateMesh
+  kUpdateMesh,
+  kUpdateNormals
 };
 
 struct SpecializationData {

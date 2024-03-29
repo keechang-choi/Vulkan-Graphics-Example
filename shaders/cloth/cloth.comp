@@ -1,5 +1,6 @@
 
 #version 450
+#extension GL_EXT_shader_atomic_float : enable
 
 
 struct VertexIn{
@@ -31,6 +32,7 @@ struct ParticleCalculate{
 	vec4 pos;
 	vec4 vel;
 	vec4 corr;	
+	vec4 normal;
 };
 
 struct ParticleRender{
@@ -118,6 +120,8 @@ const uint kSolveDistanceConstraintsJacobi = 5;
 const uint kAddCorrections = 6;
 const uint kUpdateVel = 7;
 const uint kUpdateMesh = 8;
+const uint kUpdateNormals = 9;
+
 
 void initializeParticles(in uint xIdx){
 	if (xIdx >= indicesIn.length()) {
@@ -133,6 +137,7 @@ void initializeParticles(in uint xIdx){
 	calculateParticles[xIdx].pos = initialTransform * vec4(verticesIn[xIdx].pos.xyz, 1.0);
 	calculateParticles[xIdx].pos.w = invMass;
 	calculateParticles[xIdx].vel = vec4(0.0);
+	calculateParticles[xIdx].normal = vec4(0.0);
 }
 
 void initializeConstraints(in uint xIdx){
@@ -288,10 +293,38 @@ void updateMesh(in uint xIdx){
 	vec3 p0 = vec3(calculateParticles[indicesIn[3*xIdx+0]].pos);
 	vec3 p1 = vec3(calculateParticles[indicesIn[3*xIdx+1]].pos);
 	vec3 p2 = vec3(calculateParticles[indicesIn[3*xIdx+2]].pos);
-	vec3 normal = normalize(cross(p1-p0, p2-p0));
-	renderParticles[3*xIdx+0].normal = vec4(normal, 0.0);
-	renderParticles[3*xIdx+1].normal = vec4(normal, 0.0);
-	renderParticles[3*xIdx+2].normal = vec4(normal, 0.0);
+	vec4 normal = vec4(cross(p1-p0, p2-p0), 0.0);
+	
+	// separate normal for same pos
+	// NOTE: will be normalized in vertex shader
+	renderParticles[3*xIdx+0].normal = normal;
+	renderParticles[3*xIdx+1].normal = normal;
+	renderParticles[3*xIdx+2].normal = normal;
+
+	atomicAdd(calculateParticles[indicesIn[3*xIdx+0]].normal.x, normal.x);
+	atomicAdd(calculateParticles[indicesIn[3*xIdx+0]].normal.y, normal.y);
+	atomicAdd(calculateParticles[indicesIn[3*xIdx+0]].normal.z, normal.z);
+
+	atomicAdd(calculateParticles[indicesIn[3*xIdx+1]].normal.x, normal.x);
+	atomicAdd(calculateParticles[indicesIn[3*xIdx+1]].normal.y, normal.y);
+	atomicAdd(calculateParticles[indicesIn[3*xIdx+1]].normal.z, normal.z);
+
+	atomicAdd(calculateParticles[indicesIn[3*xIdx+2]].normal.x, normal.x);
+	atomicAdd(calculateParticles[indicesIn[3*xIdx+2]].normal.y, normal.y);
+	atomicAdd(calculateParticles[indicesIn[3*xIdx+2]].normal.z, normal.z);
+
+	
+}
+
+void updateNormals(in uint xIdx){
+	if (xIdx >= indicesIn.length()/3) {
+		return;	
+	}
+	// NOTE: will be normalized in vertex shader
+	renderParticles[3*xIdx+0].normal = calculateParticles[indicesIn[3*xIdx+0]].normal;
+	renderParticles[3*xIdx+1].normal = calculateParticles[indicesIn[3*xIdx+1]].normal;
+	renderParticles[3*xIdx+2].normal = calculateParticles[indicesIn[3*xIdx+2]].normal;
+
 }
 
 void main() 
@@ -320,5 +353,7 @@ void main()
 		updateVel(xIdx);
 	}else if(COMPUTE_TYPE == kUpdateMesh){
 		updateMesh(xIdx);
+	}else if(COMPUTE_TYPE == kUpdateNormals){
+		updateNormals(xIdx);
 	}
 }

@@ -79,6 +79,11 @@ void VgeExample::initVulkan() {
       glm::radians(60.f),
       static_cast<float>(width) / (static_cast<float>(height)), 0.1f, 256.f);
   // NOTE: coordinate space in world
+  // TODO: enableExtensions
+  enabledDeviceExtensions.push_back(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
+  vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT floatFeatures;
+  floatFeatures.shaderBufferFloat32AtomicAdd = true;
+  deviceCreatepNextChain = &floatFeatures;
   VgeBase::initVulkan();
 }
 
@@ -623,7 +628,7 @@ void VgeExample::createComputePipelines() {
     vk::raii::ShaderModule compClothShaderModule =
         vgeu::createShaderModule(device, compClothCode);
     // TODO: change specialization data for each type
-    for (auto i = 0; i <= static_cast<uint32_t>(ComputeType::kUpdateMesh);
+    for (auto i = 0; i <= static_cast<uint32_t>(ComputeType::kUpdateNormals);
          i++) {
       // compute cloth
       specializationData.computeType = i;
@@ -1841,6 +1846,34 @@ void VgeExample::buildComputeCommandBuffers() {
       compute.cmdBuffers[currentFrameIndex].dispatch(
           modelInstance.clothModel->getNumTriangles() * 3 / sharedDataSize + 1,
           1, 1);
+    }
+  }
+
+  // compute execution memory barrier
+  vgeu::addComputeToComputeBarriers(
+      compute.cmdBuffers[currentFrameIndex],
+      compute.calculateBufferPtrs[currentFrameIndex]);
+  // normalize normals
+  {
+    compute.cmdBuffers[currentFrameIndex].bindPipeline(
+        vk::PipelineBindPoint::eCompute,
+        *compute.pipelines.pipelinesCloth[static_cast<uint32_t>(
+            ComputeType::kUpdateNormals)]);
+    for (auto instanceIdx = 0; instanceIdx < modelInstances.size();
+         instanceIdx++) {
+      const auto& modelInstance = modelInstances[instanceIdx];
+      if (!modelInstance.clothModel) {
+        continue;
+      }
+      modelInstance.model->bindSSBO(compute.cmdBuffers[currentFrameIndex],
+                                    *compute.pipelineLayout, 1 /*set*/);
+      compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+          vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 4 /*set*/,
+          modelInstance.clothModel->getParticleDescriptorSet(currentFrameIndex),
+          nullptr);
+      compute.cmdBuffers[currentFrameIndex].dispatch(
+          modelInstance.clothModel->getNumTriangles() / sharedDataSize + 1, 1,
+          1);
     }
   }
 
