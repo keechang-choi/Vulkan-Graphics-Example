@@ -43,7 +43,15 @@ void VgeBase::initVulkan() {
 
   // select gpu
   physicalDevice = vk::raii::PhysicalDevices(instance).front();
+  {
+    std::vector<vk::ExtensionProperties> extensions(
+        physicalDevice.enumerateDeviceExtensionProperties(nullptr));
+    for (auto ext : extensions) {
+      supportedDeviceExtensions.push_back(ext.extensionName);
+    }
+  }
   getEnabledExtensions();
+  getEnabledFeatures();
   std::vector<vk::QueueFamilyProperties> queueFamilyProperties =
       physicalDevice.getQueueFamilyProperties();
 
@@ -52,8 +60,8 @@ void VgeBase::initVulkan() {
       vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute);
 
   device = vgeu::createLogicalDevice(
-      physicalDevice, queueFamilyIndices, enabledDeviceExtensions,
-      &enabledFeatures, deviceCreatepNextChain, true,
+      physicalDevice, queueFamilyIndices, supportedDeviceExtensions,
+      enabledDeviceExtensions, &enabledFeatures, deviceCreatepNextChain, true,
       vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute);
 
   queue = vk::raii::Queue(device, queueFamilyIndices.graphics, 0);
@@ -77,6 +85,8 @@ void VgeBase::initVulkan() {
 }
 
 void VgeBase::getEnabledExtensions(){};
+void VgeBase::getEnabledFeatures(){};
+
 void VgeBase::prepare() {
   std::cout << "Call: prepare" << std::endl;
   // NOTE: first graphicsQueue supports present?

@@ -79,15 +79,33 @@ void VgeExample::initVulkan() {
       glm::radians(60.f),
       static_cast<float>(width) / (static_cast<float>(height)), 0.1f, 256.f);
   // NOTE: coordinate space in world
-  // TODO: enableExtensions
-  enabledDeviceExtensions.push_back(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
-  vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT floatFeatures;
-  floatFeatures.shaderBufferFloat32AtomicAdd = true;
-  deviceCreatepNextChain = &floatFeatures;
+
   VgeBase::initVulkan();
 }
 
 void VgeExample::getEnabledExtensions() {
+  enabledDeviceExtensions.push_back(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
+
+  {
+    auto features2 =
+        physicalDevice
+            .getFeatures2<vk::PhysicalDeviceFeatures2,
+                          vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT>();
+    vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT supportedFeatures =
+        features2.get<vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT>();
+    if (supportedFeatures.shaderBufferFloat32AtomicAdd) {
+      atomicFloatFeatures.shaderBufferFloat32AtomicAdd = true;
+    } else if (supportedFeatures.shaderBufferFloat32Atomics) {
+      atomicFloatFeatures.shaderBufferFloat32Atomics = true;
+    } else {
+      std::cerr << "both shaderBufferFloat32AtomicAdd and "
+                   "shaderBufferFloat32Atomics not supported.";
+    }
+  }
+  deviceCreatepNextChain = &atomicFloatFeatures;
+}
+
+void VgeExample::getEnabledFeatures() {
   enabledFeatures.samplerAnisotropy =
       physicalDevice.getFeatures().samplerAnisotropy;
   enabledFeatures.fillModeNonSolid =

@@ -77,7 +77,7 @@ void VgeExample::initVulkan() {
   VgeBase::initVulkan();
 }
 
-void VgeExample::getEnabledExtensions() {
+void VgeExample::getEnabledFeatures() {
   enabledFeatures.samplerAnisotropy =
       physicalDevice.getFeatures().samplerAnisotropy;
   enabledFeatures.fillModeNonSolid =

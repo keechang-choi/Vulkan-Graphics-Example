@@ -352,6 +352,7 @@ class VgeExample : public VgeBase {
   ~VgeExample();
   virtual void initVulkan();
   virtual void getEnabledExtensions();
+  virtual void getEnabledFeatures();
   virtual void render();
   virtual void prepare();
   virtual void viewChanged();
@@ -515,5 +516,7 @@ class VgeExample : public VgeBase {
   uint32_t sharedDataSize;
   uint32_t desiredCollisionWorkGroupSize = 16u;
   uint32_t collisionWorkGroupSize;
+
+  vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT atomicFloatFeatures;
 };
 }  // namespace vge

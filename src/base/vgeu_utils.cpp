@@ -4,6 +4,7 @@
 #include <GLFW/glfw3.h>
 
 // std
+#include <algorithm>
 #include <iostream>
 #include <limits>
 
@@ -107,9 +108,18 @@ vk::raii::DebugUtilsMessengerEXT setupDebugMessenger(
   return vk::raii::DebugUtilsMessengerEXT(instance, createDebugCreateInfo());
 }
 
+bool isDeviceExtensionSupported(
+    const std::vector<std::string>& supportedDeviceExtensions,
+    const std::string& extension) {
+  return (std::find(supportedDeviceExtensions.begin(),
+                    supportedDeviceExtensions.end(),
+                    extension) != supportedDeviceExtensions.end());
+}
+
 vk::raii::Device createLogicalDevice(
     const vk::raii::PhysicalDevice& physicalDevice,
     const QueueFamilyIndices& queueFamilyIndices,
+    const std::vector<std::string>& supportedDeviceExtensions,
     const std::vector<const char*>& extensions,
     const vk::PhysicalDeviceFeatures* physicalDeviceFeatures, const void* pNext,
     bool useSwapChain, vk::QueueFlags requestedQueueTypes) {
@@ -148,6 +158,13 @@ vk::raii::Device createLogicalDevice(
     deviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
   }
 
+  for (const char* enabledExtension : deviceExtensions) {
+    if (!vgeu::isDeviceExtensionSupported(supportedDeviceExtensions,
+                                          enabledExtension)) {
+      std::cerr << "Enabled device extension \"" << enabledExtension
+                << "\" is not present at device level\n";
+    }
+  }
   vk::DeviceCreateInfo deviceCreateInfo(vk::DeviceCreateFlags(),
                                         queueCreateInfos, {}, deviceExtensions,
                                         physicalDeviceFeatures, pNext);

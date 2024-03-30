@@ -56,12 +56,16 @@ vk::raii::Instance createInstance(const vk::raii::Context& context,
 vk::DebugUtilsMessengerCreateInfoEXT createDebugCreateInfo();
 bool checkValidationLayerSupport(const vk::raii::Context& context);
 std::vector<const char*> getRequiredExtensions(bool enableValidationLayers);
+bool isDeviceExtensionSupported(
+    const std::vector<std::string>& supportedDeviceExtensions,
+    const std::string& extension);
 vk::raii::DebugUtilsMessengerEXT setupDebugMessenger(
     vk::raii::Instance& instance);
 
 vk::raii::Device createLogicalDevice(
     const vk::raii::PhysicalDevice& physicalDevice,
     const QueueFamilyIndices& queueFamilyIndices,
+    const std::vector<std::string>& supportedDeviceExtensions,
     const std::vector<const char*>& extensions = {},
     const vk::PhysicalDeviceFeatures* physicalDeviceFeatures = nullptr,
     const void* pNext = nullptr, bool useSwapChain = true,
