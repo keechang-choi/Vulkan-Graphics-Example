@@ -36,6 +36,7 @@ struct ComputeUbo {
   float radius;
   float friction;
   uint32_t numSubsteps;
+  uint32_t atomicAdd;
 };
 
 struct ComputePushConstantsData {
@@ -179,6 +180,7 @@ struct Options {
   float jacobiScale = 0.2f;
   float thickness = 0.05f;
   float friction = 0.01f;
+  bool useSeparateNormal = true;
 };
 
 // NOTE: ssbo usage alignment

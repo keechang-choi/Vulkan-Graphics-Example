@@ -63,6 +63,7 @@ layout (std140, set = 0, binding = 0) uniform ComputeUbo
 	float radius;
 	float friction;
 	uint numSubsteps;
+	uint atomicAdd;
 } computeUbo;
 
 layout (std430, set = 1, binding = 0) readonly buffer VertexInSSBO{
@@ -300,19 +301,28 @@ void updateMesh(in uint xIdx){
 	renderParticles[3*xIdx+0].normal = normal;
 	renderParticles[3*xIdx+1].normal = normal;
 	renderParticles[3*xIdx+2].normal = normal;
+	if(computeUbo.atomicAdd == 1){
+		for(uint i=0;i<3;i++){
+			atomicAdd(calculateParticles[indicesIn[3*xIdx+i]].normal.x, normal.x);
+			atomicAdd(calculateParticles[indicesIn[3*xIdx+i]].normal.y, normal.y);
+			atomicAdd(calculateParticles[indicesIn[3*xIdx+i]].normal.z, normal.z);
+		}
+	}else if(computeUbo.atomicAdd == 2){
+		for(uint i=0;i<3;i++){
+			float data = 0.0;
+			atomicExchange(calculateParticles[indicesIn[3*xIdx+i]].normal.x, data);
+			data += normal.x;
+			atomicExchange(calculateParticles[indicesIn[3*xIdx+i]].normal.x, data);
 
-	atomicAdd(calculateParticles[indicesIn[3*xIdx+0]].normal.x, normal.x);
-	atomicAdd(calculateParticles[indicesIn[3*xIdx+0]].normal.y, normal.y);
-	atomicAdd(calculateParticles[indicesIn[3*xIdx+0]].normal.z, normal.z);
+			atomicExchange(calculateParticles[indicesIn[3*xIdx+i]].normal.y, data);
+			data += normal.y;
+			atomicExchange(calculateParticles[indicesIn[3*xIdx+i]].normal.y, data);
 
-	atomicAdd(calculateParticles[indicesIn[3*xIdx+1]].normal.x, normal.x);
-	atomicAdd(calculateParticles[indicesIn[3*xIdx+1]].normal.y, normal.y);
-	atomicAdd(calculateParticles[indicesIn[3*xIdx+1]].normal.z, normal.z);
-
-	atomicAdd(calculateParticles[indicesIn[3*xIdx+2]].normal.x, normal.x);
-	atomicAdd(calculateParticles[indicesIn[3*xIdx+2]].normal.y, normal.y);
-	atomicAdd(calculateParticles[indicesIn[3*xIdx+2]].normal.z, normal.z);
-
+			atomicExchange(calculateParticles[indicesIn[3*xIdx+i]].normal.z, data);
+			data += normal.z;
+			atomicExchange(calculateParticles[indicesIn[3*xIdx+i]].normal.z, data);
+		}
+	}
 	
 }
 
@@ -321,10 +331,11 @@ void updateNormals(in uint xIdx){
 		return;	
 	}
 	// NOTE: will be normalized in vertex shader
-	renderParticles[3*xIdx+0].normal = calculateParticles[indicesIn[3*xIdx+0]].normal;
-	renderParticles[3*xIdx+1].normal = calculateParticles[indicesIn[3*xIdx+1]].normal;
-	renderParticles[3*xIdx+2].normal = calculateParticles[indicesIn[3*xIdx+2]].normal;
-
+	if(computeUbo.atomicAdd != 0){
+		renderParticles[3*xIdx+0].normal = calculateParticles[indicesIn[3*xIdx+0]].normal;
+		renderParticles[3*xIdx+1].normal = calculateParticles[indicesIn[3*xIdx+1]].normal;
+		renderParticles[3*xIdx+2].normal = calculateParticles[indicesIn[3*xIdx+2]].normal;
+	}
 }
 
 void main() 

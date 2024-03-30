@@ -1986,8 +1986,18 @@ void VgeExample::updateComputeUbo() {
   compute.ubo.alpha = opts.alpha;
   compute.ubo.jacobiScale = opts.jacobiScale;
   compute.ubo.numSubsteps = static_cast<uint32_t>(opts.numSubsteps);
-
   compute.ubo.gravity = glm::vec4(0.f, opts.gravity, 0.f, 0.f);
+  if (atomicFloatFeatures.shaderBufferFloat32AtomicAdd) {
+    compute.ubo.atomicAdd = 1u;
+  } else if (atomicFloatFeatures.shaderBufferFloat32Atomics) {
+    compute.ubo.atomicAdd = 2u;
+  } else {
+    compute.ubo.atomicAdd = 0u;
+  }
+  if (!opts.useSeparateNormal) {
+    compute.ubo.atomicAdd = 0u;
+  }
+
   std::memcpy(compute.uniformBuffers[currentFrameIndex]->getMappedData(),
               &compute.ubo, sizeof(compute.ubo));
 }
@@ -2148,6 +2158,9 @@ void VgeExample::onUpdateUIOverlay() {
       uiOverlay->inputFloat("jacobiScale", &opts.jacobiScale, 0.001f, "%.3f");
       uiOverlay->inputFloat("thickness", &opts.thickness, 0.001f, "%.3f");
       uiOverlay->inputFloat("friction", &opts.friction, 0.001f, "%.3f");
+      if (ImGui::RadioButton("useSeparateNormal", opts.useSeparateNormal)) {
+        opts.useSeparateNormal = !opts.useSeparateNormal;
+      }
 
       uiOverlay->inputInt("numSubsteps", &opts.numSubsteps, 1);
 
