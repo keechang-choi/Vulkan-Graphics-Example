@@ -2,8 +2,6 @@
 #version 450
 #extension GL_EXT_shader_atomic_float : enable
 
-#define COMPILE_ATOMIC_ADD
-
 struct VertexIn{
 	vec4 pos; // w as skinIndex
 	vec4 normal; // w not used

@@ -623,10 +623,10 @@ void VgeExample::createComputePipelines() {
 
   {
     // compute animation
-    auto compIntegrateCode =
+    auto compCode =
         vgeu::readFile(getShadersPath() + "/cloth/model_animate.comp.spv");
     vk::raii::ShaderModule compIntegrateShaderModule =
-        vgeu::createShaderModule(device, compIntegrateCode);
+        vgeu::createShaderModule(device, compCode);
     vk::SpecializationInfo specializationInfo(
         specializationMapEntries,
         vk::ArrayProxyNoTemporaries<const SpecializationData>(
@@ -641,10 +641,18 @@ void VgeExample::createComputePipelines() {
         vk::raii::Pipeline(device, pipelineCache, computePipelineCI);
   }
   {
-    auto compClothCode =
-        vgeu::readFile(getShadersPath() + "/cloth/cloth.comp.spv");
-    vk::raii::ShaderModule compClothShaderModule =
-        vgeu::createShaderModule(device, compClothCode);
+    vk::raii::ShaderModule compClothShaderModule = nullptr;
+    if (atomicFloatFeatures.shaderBufferFloat32AtomicAdd) {
+      auto compClothCode =
+          vgeu::readFile(getShadersPath() + "/cloth/cloth.comp.spv");
+      compClothShaderModule = vgeu::createShaderModule(device, compClothCode);
+    } else {
+      // TODO: resolve duplicated codes
+      auto compClothCode = vgeu::readFile(
+          getShadersPath() + "/cloth/cloth_no_atomic_add.comp.spv");
+      compClothShaderModule = vgeu::createShaderModule(device, compClothCode);
+    }
+
     // TODO: change specialization data for each type
     for (auto i = 0; i <= static_cast<uint32_t>(ComputeType::kUpdateNormals);
          i++) {
