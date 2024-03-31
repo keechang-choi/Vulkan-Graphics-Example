@@ -101,6 +101,7 @@ layout (std430, set = 4, binding = 2) readonly buffer PrevCalculateParticleSSBO{
 	ParticleCalculate prevCalculateParticles[ ];
 };
 
+shared uint spinlock;
 
 layout (std430, set = 5, binding = 0) buffer DistConstraintSSBO{
 	DistConstraint distConstraints[ ];
@@ -283,6 +284,11 @@ void updateVel(in uint xIdx){
 }
 
 void updateMesh(in uint xIdx){
+	// spinlock init
+	spinlock = 0;
+	memoryBarrierShared();
+	barrier();
+
 	if (xIdx >= indicesIn.length()) {
 		return;	
 	}
@@ -295,32 +301,29 @@ void updateMesh(in uint xIdx){
 	vec3 p1 = vec3(calculateParticles[indicesIn[3*xIdx+1]].pos);
 	vec3 p2 = vec3(calculateParticles[indicesIn[3*xIdx+2]].pos);
 	vec4 normal = vec4(cross(p1-p0, p2-p0), 0.0);
-	
 	// separate normal for same pos
 	// NOTE: will be normalized in vertex shader
 	renderParticles[3*xIdx+0].normal = normal;
 	renderParticles[3*xIdx+1].normal = normal;
 	renderParticles[3*xIdx+2].normal = normal;
-	if(computeUbo.atomicAdd == 1){
+	if(computeUbo.atomicAdd == 2){
 		for(uint i=0;i<3;i++){
 			atomicAdd(calculateParticles[indicesIn[3*xIdx+i]].normal.x, normal.x);
 			atomicAdd(calculateParticles[indicesIn[3*xIdx+i]].normal.y, normal.y);
 			atomicAdd(calculateParticles[indicesIn[3*xIdx+i]].normal.z, normal.z);
 		}
-	}else if(computeUbo.atomicAdd == 2){
+	}else if(computeUbo.atomicAdd == 1){
 		for(uint i=0;i<3;i++){
-			float data = 0.0;
-			atomicExchange(calculateParticles[indicesIn[3*xIdx+i]].normal.x, data);
-			data += normal.x;
-			atomicExchange(calculateParticles[indicesIn[3*xIdx+i]].normal.x, data);
+			//acquire
+			while(atomicCompSwap(spinlock, 0, 1) != 0);
 
-			atomicExchange(calculateParticles[indicesIn[3*xIdx+i]].normal.y, data);
-			data += normal.y;
-			atomicExchange(calculateParticles[indicesIn[3*xIdx+i]].normal.y, data);
+			calculateParticles[indicesIn[3*xIdx+i]].normal.x += normal.x;
+			calculateParticles[indicesIn[3*xIdx+i]].normal.y += normal.y;
+			calculateParticles[indicesIn[3*xIdx+i]].normal.z += normal.z;
 
-			atomicExchange(calculateParticles[indicesIn[3*xIdx+i]].normal.z, data);
-			data += normal.z;
-			atomicExchange(calculateParticles[indicesIn[3*xIdx+i]].normal.z, data);
+			memoryBarrier();
+			//release
+			atomicExchange(spinlock, 0);
 		}
 	}
 	

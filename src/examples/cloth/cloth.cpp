@@ -1130,7 +1130,7 @@ void VgeExample::createDescriptorPool() {
                          MAX_CONCURRENT_FRAMES);
   poolSizes.emplace_back(vk::DescriptorType::eStorageBuffer,
                          MAX_CONCURRENT_FRAMES * modelInstances.size() * 2 +
-                             MAX_CONCURRENT_FRAMES * kMaxNumClothModels * 3);
+                             (MAX_CONCURRENT_FRAMES + 1) * kMaxNumClothModels);
   // NOTE: need to check flag
   vk::DescriptorPoolCreateInfo descriptorPoolCI(
       vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
@@ -1139,7 +1139,9 @@ void VgeExample::createDescriptorPool() {
           /*skin & animated vertex ssbo*/
           MAX_CONCURRENT_FRAMES * modelInstances.size() +
           /* calSB, renSB would be in a same set*/
-          MAX_CONCURRENT_FRAMES * kMaxNumClothModels * 2,
+          MAX_CONCURRENT_FRAMES * kMaxNumClothModels +
+          /* constraint descriptor set*/
+          kMaxNumClothModels,
       poolSizes);
   descriptorPool = vk::raii::DescriptorPool(device, descriptorPoolCI);
 }
