@@ -315,16 +315,21 @@ void updateMesh(in uint xIdx){
 #endif
 	}else if(computeUbo.atomicAdd == 2){
 		for(uint i=0;i<3;i++){
-			//acquire
-			while(atomicCompSwap(spinlock, 0, 1) != 0);
+			bool keepWaiting = true;
+			while(keepWaiting){
+				//acquire
+				uint originalValue = atomicCompSwap(spinlock, 0, 1);
+				if(originalValue == 0){
+					calculateParticles[indicesIn[3*xIdx+i]].normal.x += normal.x;
+					calculateParticles[indicesIn[3*xIdx+i]].normal.y += normal.y;
+					calculateParticles[indicesIn[3*xIdx+i]].normal.z += normal.z;
 
-			calculateParticles[indicesIn[3*xIdx+i]].normal.x += normal.x;
-			calculateParticles[indicesIn[3*xIdx+i]].normal.y += normal.y;
-			calculateParticles[indicesIn[3*xIdx+i]].normal.z += normal.z;
-
-			memoryBarrier();
-			//release
-			atomicExchange(spinlock, 0);
+					memoryBarrierBuffer();
+					keepWaiting = false;
+					//release
+					atomicExchange(spinlock, 0);
+				}
+			}
 		}
 	}
 	
