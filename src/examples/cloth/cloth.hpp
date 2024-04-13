@@ -174,12 +174,12 @@ struct Options {
 
   int32_t numSubsteps = 1;
   float gravity = 10.f;
-  float collisionRadius = 0.1f;
+  float collisionRadius = 0.2f;
   float stiffness = 1.f;
   float alpha = 1.f;
   float jacobiScale = 0.2f;
   float thickness = 0.01f;
-  float friction = 0.01f;
+  float friction = 0.10f;
   bool useSeparateNormal = true;
 };
 

@@ -171,6 +171,21 @@ void integrate(in uint xIdx){
 	}
 }
 
+void regulateBarycentric(in vec3 p, in vec3 p0, in vec3 p1, in vec3 p2, out float lambda0, out float lambda1, out float lambda2){
+	vec3 d = p0 - p2;
+	float dsq = dot(d, d);
+	float t = (dsq == 0.0) ? 0.5 : dot(d, (p-p1)) / dsq;
+	if(t < 0.0){
+		t = 0.0;
+	}
+	if(t > 1.0){
+		t = 1.0;
+	}
+	lambda0 = 0.0;
+	lambda1 = 1.0 - t;
+	lambda2 = t;
+}
+
 void solveCollision(in uint xIdx, in uint yIdx){
 	if (xIdx >= calculateParticles.length()) {
 		return;	
@@ -191,16 +206,18 @@ void solveCollision(in uint xIdx, in uint yIdx){
 			// calculateParticles[xIdx].vel.xyz = vec3(0.0);
 		}
 	}else{
+		// TODO: check tetrahedron particle constraint
 		uint triIdx = yIdx - verticesOut.length();
 		vec3 p0 = verticesOut[indicesIn[triIdx*3+0]].pos.xyz;
 		vec3 p1 = verticesOut[indicesIn[triIdx*3+2]].pos.xyz;
 		vec3 p2 = verticesOut[indicesIn[triIdx*3+2]].pos.xyz;
+		vec3 p = calculateParticles[xIdx].pos.xyz;
 		// TODO: triangle point distance constraint 
-		vec3 lambda = vec3(1.0/3.0, 1.0/3.0, 1.0/3);
+		vec3 lambda = vec3(1.0/3.0);
 		vec3 v0 = (p1 - p0);
 		vec3 v1 = (p2 - p0);
 		// NOTE: pp0 dot v0 equals (p'-p0) dot v0
-		vec3 pp0 = (p - pp);
+		vec3 pp0 = (p - p0);
 		// 2 column 3 row
 		mat3x2 projMat = transpose(mat2x3(v0, v1));
 		mat2 barycentricMat = projMat * mat2x3(v0, v1);
@@ -214,18 +231,47 @@ void solveCollision(in uint xIdx, in uint yIdx){
 			// edge ratio would be 0 or 1 for overlapping region
 			// lambdas are related to opposite edge area 
 			if(lambda.x < 0.0){
-				
+				regulateBarycentric(p, p0, p1, p2, lambda.x, lambda.y, lambda.z);
 			}else if(lambda.y < 0.0){
-
+				regulateBarycentric(p, p1, p2, p0, lambda.y, lambda.z,  lambda.x);
 			}else if(lambda.z < 0.0){
-
+				regulateBarycentric(p, p2, p0, p1, lambda.z, lambda.x,  lambda.y);
 			}
 		}
 		// projected on traingle plane
 		vec3 q = mat3(p0, p1, p2) * lambda;
 		vec3 n = p - q;
 		//TODO: negative distance 
-		
+		float dist = length(n);
+		if(dist == 0){
+			// triangle normal
+			n = verticesOut[indicesIn[triIdx*3+0]].normal.xyz;
+		}else{
+			n = normalize(n);
+		}
+		float C = dist - (computeUbo.radius + computeUbo.thickness);
+		vec3 grad = n;
+		vec3 grad0 = -n * lambda.x;
+		vec3 grad1 = -n * lambda.y;
+		vec3 grad2 = -n * lambda.z;
+
+		// inv mass
+		float invMass = calculateParticles[xIdx].pos.w;
+		vec3 invMassTri = vec3(0.0);
+
+		float s = invMass + 
+			dot(invMassTri, lambda * lambda);
+		if(s == 0.0){
+			return;
+		}
+		s = C / s;
+		s  *= computeUbo.stiffness;
+
+		vec3 corr = -s * invMass * grad;
+  		vec3 corr0 = -s * invMassTri.x * grad0;
+  		vec3 corr1 = -s * invMassTri.y * grad1;
+  		vec3 corr2 = -s * invMassTri.z * grad2;
+		calculateParticles[xIdx].pos.xyz += corr;
 	}
 }
 

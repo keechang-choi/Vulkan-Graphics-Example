@@ -304,9 +304,9 @@ void VgeExample::initClothModels() {
         descriptorPool, common.particleDescriptorSetLayout,
         compute.constraintDescriptorSetLayout, MAX_CONCURRENT_FRAMES);
 
-    float kFlagScale = 10.f;
+    float kFlagScale = 5.f;
     glm::mat4 translateMat =
-        glm::translate(glm::mat4{1.f}, glm::vec3{0.f, -10.f, 0.f});
+        glm::translate(glm::mat4{1.f}, glm::vec3{3.f, -10.f, 0.f});
     glm::mat4 rotateMat{1.f};
     // FlipY manually
     // NOTE: not only flip Y, also need flip z to preserve orientation

@@ -173,21 +173,111 @@ void integrate(in uint xIdx){
 	}
 }
 
+void regulateBarycentric(in vec3 p, in vec3 p0, in vec3 p1, in vec3 p2, out float lambda0, out float lambda1, out float lambda2){
+	vec3 d = p0 - p2;
+	float dsq = dot(d, d);
+	float t = (dsq == 0.0) ? 0.5 : dot(d, (p-p1)) / dsq;
+	if(t < 0.0){
+		t = 0.0;
+	}
+	if(t > 1.0){
+		t = 1.0;
+	}
+	lambda0 = 0.0;
+	lambda1 = 1.0 - t;
+	lambda2 = t;
+}
+
 void solveCollision(in uint xIdx, in uint yIdx){
 	if (xIdx >= calculateParticles.length()) {
 		return;	
 	}
-	if(yIdx >= verticesOut.length()){
+	if(yIdx >= verticesOut.length() + indicesIn.length()/3){
 		return;
 	}
 
-	float d = distance(verticesOut[yIdx].pos.xyz, calculateParticles[xIdx].pos.xyz);
-	if(d < computeUbo.radius + computeUbo.thickness){
-		vec3 p = calculateParticles[xIdx].pos.xyz * (1.0 - computeUbo.friction) + calculateParticles[xIdx].prevPos.xyz * computeUbo.friction;
-		vec3 r = normalize(p - verticesOut[yIdx].pos.xyz);
-		calculateParticles[xIdx].pos.xyz = verticesOut[yIdx].pos.xyz + r * (computeUbo.radius + computeUbo.thickness);
-		// TODO: temp vel update
-		calculateParticles[xIdx].vel.xyz = vec3(0.0);
+	if(yIdx < verticesOut.length()){
+		vec3 collisionPoint;
+		collisionPoint = verticesOut[yIdx].pos.xyz;
+		float d = distance(collisionPoint, calculateParticles[xIdx].pos.xyz);
+		if(d < computeUbo.radius + computeUbo.thickness){
+			vec3 p = calculateParticles[xIdx].pos.xyz * (1.0 - computeUbo.friction) + calculateParticles[xIdx].prevPos.xyz * computeUbo.friction;
+			vec3 r = normalize(p - collisionPoint);
+			calculateParticles[xIdx].pos.xyz = collisionPoint + r * (computeUbo.radius + computeUbo.thickness);
+			// TODO: temp vel update
+			// calculateParticles[xIdx].vel.xyz = vec3(0.0);
+		}
+	}else{
+		// TODO: check tetrahedron particle constraint
+		uint triIdx = yIdx - verticesOut.length();
+		vec3 p0 = verticesOut[indicesIn[triIdx*3+0]].pos.xyz;
+		vec3 p1 = verticesOut[indicesIn[triIdx*3+2]].pos.xyz;
+		vec3 p2 = verticesOut[indicesIn[triIdx*3+2]].pos.xyz;
+		vec3 p = calculateParticles[xIdx].pos.xyz;
+		// TODO: triangle point distance constraint 
+		vec3 lambda = vec3(1.0/3.0);
+		vec3 v0 = (p1 - p0);
+		vec3 v1 = (p2 - p0);
+		// NOTE: pp0 dot v0 equals (p'-p0) dot v0
+		vec3 pp0 = (p - p0);
+		// 2 column 3 row
+		mat3x2 projMat = transpose(mat2x3(v0, v1));
+		mat2 barycentricMat = projMat * mat2x3(v0, v1);
+		float det = determinant(barycentricMat);
+		// collapsed triangle, use uniform weight
+		if(det != 0.0){
+			vec2 lambda12 = inverse(barycentricMat) * projMat * pp0;
+			lambda.yz = lambda12;
+			lambda.x = 1.0 - lambda.y - lambda.z;
+			// NOTE: only one case enough, since
+			// edge ratio would be 0 or 1 for overlapping region
+			// lambdas are related to opposite edge area 
+			if(lambda.x < 0.0){
+				regulateBarycentric(p, p0, p1, p2, lambda.x, lambda.y, lambda.z);
+			}else if(lambda.y < 0.0){
+				regulateBarycentric(p, p1, p2, p0, lambda.y, lambda.z,  lambda.x);
+			}else if(lambda.z < 0.0){
+				regulateBarycentric(p, p2, p0, p1, lambda.z, lambda.x,  lambda.y);
+			}
+		}
+		// projected on traingle plane
+		vec3 q = mat3(p0, p1, p2) * lambda;
+		vec3 n = p - q;
+		//TODO: negative distance 
+		float dist = length(n);
+		if(dist == 0){
+			// triangle normal
+			n = verticesOut[indicesIn[triIdx*3+0]].normal.xyz;
+		}else{
+			n = normalize(n);
+		}
+		float C = dist - (computeUbo.radius + computeUbo.thickness);
+		vec3 grad = n;
+		vec3 grad0 = -n * lambda.x;
+		vec3 grad1 = -n * lambda.y;
+		vec3 grad2 = -n * lambda.z;
+
+		// inv mass
+		float invMass = calculateParticles[xIdx].pos.w;
+		vec3 invMassTri = vec3(0.0);
+
+		float s = invMass + 
+			dot(invMassTri, lambda * lambda);
+		if(s == 0.0){
+			return;
+		}
+		s = C / s;
+		if(C < 0.0){
+			s  *= 0.000;
+		}else{
+			s = 0.0;
+		}
+
+		vec3 corr = -s * invMass * grad;
+  		vec3 corr0 = -s * invMassTri.x * grad0;
+  		vec3 corr1 = -s * invMassTri.y * grad1;
+  		vec3 corr2 = -s * invMassTri.z * grad2;
+		calculateParticles[xIdx].pos.xyz += corr;
 	}
 }
 
@@ -304,7 +394,7 @@ void updateMesh(in uint xIdx){
 	vec4 normal = vec4(cross(p1-p0, p2-p0), 0.0);
 	// separate normal for same pos in case of atomic 0
 	// NOTE: will be normalized in vertex shader
-	if(computeUbo.atomicAdd == 0){
+	 if(computeUbo.atomicAdd == 0){
 		renderParticles[3*xIdx+0].normal = normal;
 		renderParticles[3*xIdx+1].normal = normal;
 		renderParticles[3*xIdx+2].normal = normal;
