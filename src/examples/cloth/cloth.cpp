@@ -1745,9 +1745,11 @@ void VgeExample::buildComputeCommandBuffers() {
             modelInstance.clothModel->getParticleDescriptorSet(
                 currentFrameIndex),
             nullptr);
+        // NOTE: add model face center as collision point
         compute.cmdBuffers[currentFrameIndex].dispatch(
             modelInstance.clothModel->getNumParticles() / sharedDataSize + 1,
-            collisionModelInstance.model->getVertexCount() /
+            (collisionModelInstance.model->getVertexCount() +
+             collisionModelInstance.model->getIndexCount() / 3) /
                     collisionWorkGroupSize +
                 1,
             1);
@@ -1896,7 +1898,9 @@ void VgeExample::buildComputeCommandBuffers() {
       modelInstance.model->bindSSBO(compute.cmdBuffers[currentFrameIndex],
                                     *compute.pipelineLayout, 1 /*set*/);
       compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
-          vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 4 /*set*/,
+          vk::PipelineBindPoint::eCompute, *compute.pipelineLayout,
+          4
+          /*set*/,
           modelInstance.clothModel->getParticleDescriptorSet(currentFrameIndex),
           nullptr);
       compute.cmdBuffers[currentFrameIndex].dispatch(
@@ -2004,7 +2008,7 @@ void VgeExample::updateComputeUbo() {
   } else {
     compute.ubo.atomicAdd = 0u;
   }
-  if (!opts.useSeparateNormal) {
+  if (opts.useSeparateNormal) {
     compute.ubo.atomicAdd = 0u;
   }
 

@@ -302,12 +302,13 @@ void updateMesh(in uint xIdx){
 	vec3 p1 = vec3(calculateParticles[indicesIn[3*xIdx+1]].pos);
 	vec3 p2 = vec3(calculateParticles[indicesIn[3*xIdx+2]].pos);
 	vec4 normal = vec4(cross(p1-p0, p2-p0), 0.0);
-	// separate normal for same pos
+	// separate normal for same pos in case of atomic 0
 	// NOTE: will be normalized in vertex shader
-	renderParticles[3*xIdx+0].normal = normal;
-	renderParticles[3*xIdx+1].normal = normal;
-	renderParticles[3*xIdx+2].normal = normal;
-	if(computeUbo.atomicAdd == 1){
+	if(computeUbo.atomicAdd == 0){
+		renderParticles[3*xIdx+0].normal = normal;
+		renderParticles[3*xIdx+1].normal = normal;
+		renderParticles[3*xIdx+2].normal = normal;
+	} else if(computeUbo.atomicAdd == 1){
 #ifdef COMPILE_ATOMIC_ADD
 		for(uint i=0;i<3;i++){
 			atomicAdd(calculateParticles[indicesIn[3*xIdx+i]].normal.x, normal.x);
