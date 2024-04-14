@@ -2485,19 +2485,21 @@ void Cloth::initParticlesData(const std::vector<vgeu::glTF::Vertex>& vertices,
 
 void Cloth::initDistConstraintsData(const uint32_t numX, const uint32_t numY) {
   assert(numX * numY == numParticles);
-  numPasses = 5;
-  passSizes.resize(numPasses);
   // stretch x
-  passSizes[0] = (numX / 2) * numY;
-  passSizes[1] = ((numX - 1) / 2) * numY;
+  passSizes.push_back((numX / 2) * numY);
+  passIndependent.push_back(true);
+  passSizes.push_back(((numX - 1) / 2) * numY);
+  passIndependent.push_back(true);
   // stretch y
-  passSizes[2] = numX * (numY / 2);
-  passSizes[3] = numX * ((numY - 1) / 2);
+  passSizes.push_back(numX * (numY / 2));
+  passIndependent.push_back(true);
+  passSizes.push_back(numX * ((numY - 1) / 2));
+  passIndependent.push_back(true);
   // shear and bending constraints
-  passSizes[4] = 2 * (numX - 1) * (numY - 1);
-  passSizes[4] += (numX - 2) * numY + numX * (numY - 2);
-  passIndependent.assign(5, true);
-  passIndependent[4] = false;
+  passSizes.push_back((2 * (numX - 1) * (numY - 1)) /*shear*/ +
+                      ((numX - 2) * numY + numX * (numY - 2)) /*bending*/);
+  passIndependent.push_back(false);
+  numPasses = passSizes.size();
 
   numConstraints = 0;
   for (auto n : passSizes) {
@@ -2509,7 +2511,7 @@ void Cloth::initDistConstraintsData(const uint32_t numX, const uint32_t numY) {
   for (auto isOdd = 0; isOdd < 2; isOdd++) {
     for (auto xi = 0; xi < (numX - isOdd) / 2; xi++) {
       for (auto yi = 0; yi < numY; yi++) {
-        glm::ivec2 ids(yi * numX + xi * 2 + isOdd,
+        glm::uvec2 ids(yi * numX + xi * 2 + isOdd,
                        yi * numX + xi * 2 + isOdd + 1);
         distConstraints.push_back({ids, 0.f});
       }
@@ -2519,7 +2521,7 @@ void Cloth::initDistConstraintsData(const uint32_t numX, const uint32_t numY) {
   for (auto isOdd = 0; isOdd < 2; isOdd++) {
     for (auto xi = 0; xi < numX; xi++) {
       for (auto yi = 0; yi < (numY - isOdd) / 2; yi++) {
-        glm::ivec2 ids((2 * yi + isOdd) * numX + xi,
+        glm::uvec2 ids((2 * yi + isOdd) * numX + xi,
                        (2 * yi + isOdd + 1) * numX + xi);
         distConstraints.push_back({ids, 0.f});
       }
@@ -2529,11 +2531,11 @@ void Cloth::initDistConstraintsData(const uint32_t numX, const uint32_t numY) {
   for (auto xi = 0; xi < numX - 1; xi++) {
     for (auto yi = 0; yi < numY - 1; yi++) {
       {
-        glm::ivec2 ids(yi * numX + xi, (yi + 1) * numX + (xi + 1));
+        glm::uvec2 ids(yi * numX + xi, (yi + 1) * numX + (xi + 1));
         distConstraints.push_back({ids, 0.f});
       }
       {
-        glm::ivec2 ids(yi * numX + (xi + 1), (yi + 1) * numX + xi);
+        glm::uvec2 ids(yi * numX + (xi + 1), (yi + 1) * numX + xi);
         distConstraints.push_back({ids, 0.f});
       }
     }
@@ -2541,20 +2543,19 @@ void Cloth::initDistConstraintsData(const uint32_t numX, const uint32_t numY) {
   // bending x
   for (auto xi = 0; xi < numX - 2; xi++) {
     for (auto yi = 0; yi < numY; yi++) {
-      glm::ivec2 ids(yi * numX + xi, yi * numX + (xi + 2));
+      glm::uvec2 ids(yi * numX + xi, yi * numX + (xi + 2));
       distConstraints.push_back({ids, 0.f});
     }
   }
   // bending y
   for (auto xi = 0; xi < numX; xi++) {
     for (auto yi = 0; yi < numY - 2; yi++) {
-      glm::ivec2 ids(yi * numX + xi, (yi + 2) * numX + xi);
+      glm::uvec2 ids(yi * numX + xi, (yi + 2) * numX + xi);
       distConstraints.push_back({ids, 0.f});
     }
   }
 
   // TODO: pre compute rest length in compute shader
-
   createDistConstraintStorageBuffers(distConstraints);
   createDistConstraintDescriptorSets();
 }

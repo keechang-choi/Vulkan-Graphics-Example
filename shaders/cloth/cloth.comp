@@ -254,12 +254,56 @@ void solveDistanceConstraintsGauss(in uint xIdx){
 		l0,
 		corr0,
 		corr1);
-	
+	// NOTE: do not need to be atomic
 	calculateParticles[id0].pos += vec4(corr0, 0.0);
 	calculateParticles[id1].pos += vec4(corr1, 0.0);
 }
 
+// need spinlock shared variable when atomicAdd not supported
+// type : 0 -> normal,  1 -> corr
+void atomicAddVec3(in bool atomicAddSupported, in uint idx, in vec3 add, in uint type){
+	if(atomicAddSupported){
+#ifdef COMPILE_ATOMIC_ADD
+		if(type == 0){
+			atomicAdd(calculateParticles[idx].normal.x, add.x);
+			atomicAdd(calculateParticles[idx].normal.y, add.y);
+			atomicAdd(calculateParticles[idx].normal.z, add.z);
+		}else if(type == 1){
+			atomicAdd(calculateParticles[idx].corr.x, add.x);
+			atomicAdd(calculateParticles[idx].corr.y, add.y);
+			atomicAdd(calculateParticles[idx].corr.z, add.z);
+		}
+#endif
+	}else{
+		bool keepWaiting = true;
+		while(keepWaiting){
+			//acquire
+			uint originalValue = atomicCompSwap(spinlock, 0, 1);
+			if(originalValue == 0){
+				if(type == 0){
+					calculateParticles[idx].normal.x += add.x;
+					calculateParticles[idx].normal.y += add.y;
+					calculateParticles[idx].normal.z += add.z;
+				}else if(type == 1){
+					calculateParticles[idx].corr.x += add.x;
+					calculateParticles[idx].corr.y += add.y;
+					calculateParticles[idx].corr.z += add.z;
+				}
+				memoryBarrierBuffer();
+				keepWaiting = false;
+				//release
+				atomicExchange(spinlock, 0);
+			}
+		}	
+	}
+}
+
 void solveDistanceConstraintsJacobi(in uint xIdx){
+	// spinlock init
+	spinlock = 0;
+	memoryBarrierShared();
+	barrier();	
+
 	uint firstConstraintIdx = pushConstants.constraintInfo.x;
 	uint constraintSize = pushConstants.constraintInfo.y;
 	if(xIdx >= constraintSize){
@@ -279,9 +323,9 @@ void solveDistanceConstraintsJacobi(in uint xIdx){
 		l0,
 		corr0,
 		corr1);
-	
-	calculateParticles[id0].corr = vec4(corr0, 0.0);
-	calculateParticles[id1].corr = vec4(corr1, 0.0);
+	// NOTE: atomic add
+	atomicAddVec3(computeUbo.atomicAdd == 1, id0, corr0, 1);
+	atomicAddVec3(computeUbo.atomicAdd == 1, id1, corr1, 1);
 }
 
 void addCorrections(in uint xIdx){
@@ -328,34 +372,11 @@ void updateMesh(in uint xIdx){
 		renderParticles[3*xIdx+0].normal = normal;
 		renderParticles[3*xIdx+1].normal = normal;
 		renderParticles[3*xIdx+2].normal = normal;
-	} else if(computeUbo.atomicAdd == 1){
-#ifdef COMPILE_ATOMIC_ADD
+	} else{
 		for(uint i=0;i<3;i++){
-			atomicAdd(calculateParticles[indicesIn[3*xIdx+i]].normal.x, normal.x);
-			atomicAdd(calculateParticles[indicesIn[3*xIdx+i]].normal.y, normal.y);
-			atomicAdd(calculateParticles[indicesIn[3*xIdx+i]].normal.z, normal.z);
-		}
-#endif
-	}else if(computeUbo.atomicAdd == 2){
-		for(uint i=0;i<3;i++){
-			bool keepWaiting = true;
-			while(keepWaiting){
-				//acquire
-				uint originalValue = atomicCompSwap(spinlock, 0, 1);
-				if(originalValue == 0){
-					calculateParticles[indicesIn[3*xIdx+i]].normal.x += normal.x;
-					calculateParticles[indicesIn[3*xIdx+i]].normal.y += normal.y;
-					calculateParticles[indicesIn[3*xIdx+i]].normal.z += normal.z;
-
-					memoryBarrierBuffer();
-					keepWaiting = false;
-					//release
-					atomicExchange(spinlock, 0);
-				}
-			}
+			atomicAddVec3(computeUbo.atomicAdd == 1, indicesIn[3*xIdx+i], normal.xyz, 0);
 		}
 	}
-	
 }
 
 void updateNormals(in uint xIdx){
@@ -391,7 +412,7 @@ void main()
 		solveDistanceConstraintsJacobi(xIdx);
 	}else if(COMPUTE_TYPE == kAddCorrections){
 		//TODO: add after checking Gauss-Seidel solver
-		// addCorrections(xIdx);
+		addCorrections(xIdx);
 	}else if(COMPUTE_TYPE == kUpdateVel){
 		updateVel(xIdx);
 	}else if(COMPUTE_TYPE == kUpdateMesh){
