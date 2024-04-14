@@ -1952,7 +1952,13 @@ void VgeExample::updateGraphicsUbo() {
 }
 
 void VgeExample::updateComputeUbo() {
-  compute.ubo.dt = paused ? 0.0f : frameTimer * opts.coefficientDeltaTime;
+  float timeStep;
+  if (opts.useFixedTimeStep) {
+    timeStep = 1.0 / opts.fixedTimeStepReciprocal;
+  } else {
+    timeStep = frameTimer * opts.coefficientDeltaTime;
+  }
+  compute.ubo.dt = paused ? 0.0f : timeStep;
 
   {
     glm::vec2 normalizedMousePos{
@@ -2175,6 +2181,12 @@ void VgeExample::onUpdateUIOverlay() {
       if (ImGui::RadioButton("useSeparateNormal", opts.useSeparateNormal)) {
         opts.useSeparateNormal = !opts.useSeparateNormal;
       }
+
+      if (ImGui::RadioButton("useFixedTimeStep", opts.useFixedTimeStep)) {
+        opts.useFixedTimeStep = !opts.useFixedTimeStep;
+      }
+      uiOverlay->inputFloat("fixedTimeStepReciprocal",
+                            &opts.fixedTimeStepReciprocal, 1.0f, "%4.1f");
 
       uiOverlay->inputInt("numSubsteps", &opts.numSubsteps, 1);
 

@@ -172,7 +172,7 @@ struct Options {
   // save camera view. not configurable by pannel
   glm::mat4 cameraView{1.f};
 
-  int32_t numSubsteps = 1;
+  int32_t numSubsteps = 10;
   float gravity = 10.f;
   float collisionRadius = 0.2f;
   float stiffness = 1.f;
@@ -181,6 +181,8 @@ struct Options {
   float thickness = 0.01f;
   float friction = 0.10f;
   bool useSeparateNormal = true;
+  bool useFixedTimeStep = true;
+  float fixedTimeStepReciprocal = 60.f;
 };
 
 // NOTE: ssbo usage alignment

@@ -189,15 +189,14 @@ void VgeBase::renderLoop() {
     }
     paused = vgeuWindow->isPaused();
 
-    if (!paused) {
-      // camera update
-      if (cameraController.moveInPlaneXZ(vgeuWindow->getGLFWwindow(),
-                                         frameTimer, viewerTransform)) {
-        viewUpdated = true;
-      }
-
-      camera.setViewYXZ(viewerTransform.translation, viewerTransform.rotation);
+    // camera update
+    if (cameraController.moveInPlaneXZ(vgeuWindow->getGLFWwindow(), frameTimer,
+                                       viewerTransform)) {
+      viewUpdated = true;
     }
+
+    camera.setViewYXZ(viewerTransform.translation, viewerTransform.rotation);
+
     // Convert to clamped timer value
     if (!paused) {
       timer += timerSpeed * frameTimer;
