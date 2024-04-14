@@ -2137,6 +2137,10 @@ void VgeExample::setupCommandLineParser(CLI::App& app) {
 }
 
 void VgeExample::onUpdateUIOverlay() {
+  ImGuiIO& io = ImGui::GetIO();
+  ImGui::DragFloat("global scale", &io.FontGlobalScale, 0.005f, 0.3, 3.0,
+                   "%.2f", ImGuiSliderFlags_AlwaysClamp);
+
   if (uiOverlay->header("Inputs")) {
     ImGui::Text("Mouse Left: %s", mouseData.left ? "true" : "false");
     ImGui::Text("Mouse Middle: %s", mouseData.middle ? "true" : "false");

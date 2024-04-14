@@ -174,7 +174,7 @@ struct Options {
 
   int32_t numSubsteps = 10;
   float gravity = 10.f;
-  float collisionRadius = 0.2f;
+  float collisionRadius = 0.3f;
   float stiffness = 1.f;
   float alpha = 1.f;
   float jacobiScale = 0.2f;
