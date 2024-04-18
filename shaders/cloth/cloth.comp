@@ -54,6 +54,8 @@ layout ( push_constant ) uniform PushConstants{
 layout (std140, set = 0, binding = 0) uniform ComputeUbo
 {
 	vec4 clickData;
+	vec4 rayStart;
+	vec4 rayDir;
 	vec4 gravity;
 	ivec2 particleCount;
 	float dt;
@@ -323,6 +325,7 @@ void solveDistanceConstraintsJacobi(in uint xIdx){
 		l0,
 		corr0,
 		corr1);
+	// TODO: spin lock for each subgroup id
 	// NOTE: atomic add
 	atomicAddVec3(computeUbo.atomicAdd == 1, id0, corr0, 1);
 	atomicAddVec3(computeUbo.atomicAdd == 1, id1, corr1, 1);

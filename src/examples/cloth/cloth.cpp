@@ -1908,6 +1908,8 @@ void VgeExample::buildComputeCommandBuffers() {
           1);
     }
   }
+  // TODO: triangle distance from ray start
+  // check ray intersection using barycentric coords in compute shader
 
   // TODO: other compute shader dispatch call
   // support [one animated model - multi clothes] interation
@@ -1976,15 +1978,10 @@ void VgeExample::updateComputeUbo() {
 
     glm::vec3 rayDir(glm::normalize(rayEnd - rayStart));
 
-    glm::vec3 planeNormal{camera.getView()[0][2], camera.getView()[1][2],
-                          camera.getView()[2][2]};
-    std::optional<glm::vec3> intersectionPt =
-        ::rayPlaneIntersection(rayStart, rayDir, planeNormal, glm::vec3{0.f});
-
     glm::vec4 clickPos{0.f};
-    if (intersectionPt.has_value()) {
-      clickPos = glm::vec4(intersectionPt.value(), 0.f);
-    }
+    // TODO: calculate click pos from triangle distance
+    // TODO: transfer  or use coherent triangle distance buffer
+    //
 
     if (mouseData.left) {
       clickPos.w = 1.f;
@@ -2527,6 +2524,7 @@ void Cloth::initDistConstraintsData(const uint32_t numX, const uint32_t numY) {
       }
     }
   }
+  // TODO: make it independent for performance
   // shearing
   for (auto xi = 0; xi < numX - 1; xi++) {
     for (auto yi = 0; yi < numY - 1; yi++) {

@@ -26,6 +26,8 @@ struct GlobalUbo {
 // NOTE: std140 alignment
 struct ComputeUbo {
   glm::vec4 clickData;
+  glm::vec4 rayStart;
+  glm::vec4 rayDir;
   glm::vec4 gravity;
   glm::ivec2 particleCount;
   float dt;
