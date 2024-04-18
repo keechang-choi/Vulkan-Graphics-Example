@@ -15,6 +15,9 @@ void main()
 	// Desaturate color
     // vec3 color = vec3(mix(inColor, vec3(dot(vec3(0.2126,0.7152,0.0722), inColor)), 0.65));	
 	vec3 color = mix(vec3(texture(samplerColorMap, inUV)), inColor.rgb, inColor.a);
+	if(!gl_FrontFacing){
+		color = vec3(0.0, 1.0, 0.0);
+	}
 
 	vec3 ambient = color * vec3(0.1);
 	vec3 N = normalize(inNormal);

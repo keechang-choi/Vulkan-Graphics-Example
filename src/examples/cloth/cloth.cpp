@@ -1002,11 +1002,11 @@ void VgeExample::setupDynamicUbo() {
     common.dynamicUbo[instanceIndex].modelMatrix = glm::translate(
         glm::mat4{1.f}, glm::vec3{quadScale * 1.5f - 6.f, 0.f, 0.f});
     common.dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
-        common.dynamicUbo[instanceIndex].modelMatrix, glm::radians(180.f), up);
+        common.dynamicUbo[instanceIndex].modelMatrix, glm::radians(0.f), up);
     // FlipY manually
     common.dynamicUbo[instanceIndex].modelMatrix =
         glm::scale(common.dynamicUbo[instanceIndex].modelMatrix,
-                   glm::vec3{foxScale, -foxScale, foxScale});
+                   glm::vec3{foxScale, -foxScale, -foxScale});
     common.dynamicUbo[instanceIndex].modelColor =
         glm::vec4{1.0f, 0.f, 0.f, 0.3f};
   }
@@ -1015,11 +1015,11 @@ void VgeExample::setupDynamicUbo() {
     common.dynamicUbo[instanceIndex].modelMatrix = glm::translate(
         glm::mat4{1.f}, glm::vec3{quadScale * 1.5f + 6.f, 0.f, 0.f});
     common.dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
-        common.dynamicUbo[instanceIndex].modelMatrix, glm::radians(0.f), up);
+        common.dynamicUbo[instanceIndex].modelMatrix, glm::radians(180.f), up);
     // FlipY manually
     common.dynamicUbo[instanceIndex].modelMatrix =
         glm::scale(common.dynamicUbo[instanceIndex].modelMatrix,
-                   glm::vec3{foxScale, -foxScale, foxScale});
+                   glm::vec3{foxScale, -foxScale, -foxScale});
     common.dynamicUbo[instanceIndex].modelColor =
         glm::vec4{0.0f, 0.f, 1.f, 0.3f};
   }
@@ -1029,11 +1029,11 @@ void VgeExample::setupDynamicUbo() {
     common.dynamicUbo[instanceIndex].modelMatrix =
         glm::translate(glm::mat4{1.f}, glm::vec3{3.f, 0.f, 0.f});
     common.dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
-        common.dynamicUbo[instanceIndex].modelMatrix, glm::radians(180.f), up);
+        common.dynamicUbo[instanceIndex].modelMatrix, glm::radians(0.f), up);
     // FlipY manually
     common.dynamicUbo[instanceIndex].modelMatrix =
         glm::scale(common.dynamicUbo[instanceIndex].modelMatrix,
-                   glm::vec3{foxScale, -foxScale, foxScale});
+                   glm::vec3{foxScale, -foxScale, -foxScale});
     common.dynamicUbo[instanceIndex].modelColor =
         glm::vec4{0.f, 1.f, 1.f, 0.3f};
   }
@@ -1045,7 +1045,7 @@ void VgeExample::setupDynamicUbo() {
     // FlipY manually
     common.dynamicUbo[instanceIndex].modelMatrix =
         glm::scale(common.dynamicUbo[instanceIndex].modelMatrix,
-                   glm::vec3{appleScale, -appleScale, appleScale});
+                   glm::vec3{appleScale, -appleScale, -appleScale});
   }
   {
     size_t instanceIndex = findInstances("koreanFlag1")[0];
