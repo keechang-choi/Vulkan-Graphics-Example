@@ -39,6 +39,8 @@ struct ComputeUbo {
   float friction;
   uint32_t numSubsteps;
   uint32_t atomicAdd;
+  uint32_t dragParticleIdx;
+  float dragDepth;
 };
 
 struct ComputePushConstantsData {
@@ -475,8 +477,17 @@ class VgeExample : public VgeBase {
     // frames, clothes
     std::vector<std::vector<const vgeu::VgeuBuffer*>> calculateBufferPtrs;
 
-    ComputePushConstantsData pc;
+    // ray cast triangle distance
+    vk::raii::DescriptorSetLayout raycastingTriangleDescriptorSetLayout =
+        nullptr;
+    // each frame, each model
+    std::vector<std::vector<vk::raii::DescriptorSet>>
+        raycastingTriangleDescriptorSets;
+    std::vector<std::vector<std::unique_ptr<vgeu::VgeuBuffer>>>
+        raycastingTriangleBuffers;
 
+    ComputePushConstantsData pc;
+    bool computeRayDistance = true;
   } compute;
 
   struct {

@@ -507,6 +507,18 @@ void VgeExample::createComputeDescriptorSetLayout() {
   // set 5 constraint ssbo
   setLayouts.push_back(*compute.constraintDescriptorSetLayout);
 
+  // set 6 raycasting tri ssbo
+  {
+    std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
+    layoutBindings.emplace_back(0 /*binding*/,
+                                vk::DescriptorType::eStorageBuffer, 1,
+                                vk::ShaderStageFlagBits::eCompute);
+    vk::DescriptorSetLayoutCreateInfo layoutCI({}, layoutBindings);
+    compute.raycastingTriangleDescriptorSetLayout =
+        vk::raii::DescriptorSetLayout(device, layoutCI);
+    setLayouts.push_back(*compute.raycastingTriangleDescriptorSetLayout);
+  }
+
   // push constants
   vk::PushConstantRange pcRange(vk::ShaderStageFlagBits::eCompute, 0u,
                                 sizeof(ComputePushConstantsData));
@@ -585,6 +597,8 @@ void VgeExample::createComputeDescriptorSets() {
     }
     device.updateDescriptorSets(writeDescriptorSets, nullptr);
   }
+
+  // TODO: raycastingTriangleDescriptorSets
 }
 
 void VgeExample::createComputePipelines() {
@@ -914,6 +928,32 @@ void VgeExample::createComputeStorageBuffers() {
               vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_AUTO,
               VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
                   VMA_ALLOCATION_CREATE_MAPPED_BIT)));
+    }
+  }
+  // raycasting triangle distance buffer
+  std::vector<uint32_t> clothModelsNumTris;
+  for (size_t instanceIdx = 0; instanceIdx < modelInstances.size();
+       instanceIdx++) {
+    const auto& modelInstance = modelInstances[instanceIdx];
+    if (!modelInstance.clothModel) {
+      continue;
+    }
+    const auto& clothModel = modelInstance.clothModel;
+    clothModelsNumTris.push_back(clothModel->getNumTriangles());
+  }
+
+  compute.raycastingTriangleBuffers.resize(MAX_CONCURRENT_FRAMES);
+
+  for (auto i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    compute.raycastingTriangleBuffers[i].reserve(clothModelsNumTris.size());
+    for (size_t j = 0; j < clothModelsNumTris.size(); j++) {
+      compute.raycastingTriangleBuffers[i].push_back(
+          std::move(std::make_unique<vgeu::VgeuBuffer>(
+              globalAllocator->getAllocator(), sizeof(float),
+              clothModelsNumTris[j], vk::BufferUsageFlagBits::eStorageBuffer,
+              VMA_MEMORY_USAGE_AUTO,
+              VMA_ALLOCATION_CREATE_MAPPED_BIT |
+                  VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT)));
     }
   }
 }
@@ -1976,12 +2016,13 @@ void VgeExample::updateComputeUbo() {
                        glm::vec4(normalizedMousePos, 0.1f, 1.f);
     rayEnd /= rayEnd.w;
 
-    glm::vec3 rayDir(glm::normalize(rayEnd - rayStart));
+    glm::vec4 rayDir(glm::normalize(rayEnd - rayStart));
 
     glm::vec4 clickPos{0.f};
     // TODO: calculate click pos from triangle distance
     // TODO: transfer  or use coherent triangle distance buffer
-    //
+    compute.ubo.rayStart = rayStart;
+    compute.ubo.rayDir = rayDir;
 
     if (mouseData.left) {
       clickPos.w = 1.f;
@@ -1991,6 +2032,8 @@ void VgeExample::updateComputeUbo() {
       clickPos.w = 3.f;
     } else {
       clickPos.w = 0.f;
+      // mouse button released
+      compute.computeRayDistance = true;
     }
 
     compute.ubo.clickData = clickPos;
