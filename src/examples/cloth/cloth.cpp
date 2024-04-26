@@ -599,6 +599,49 @@ void VgeExample::createComputeDescriptorSets() {
   }
 
   // TODO: raycastingTriangleDescriptorSets
+  {
+    vk::DescriptorSetAllocateInfo allocInfo(
+        *descriptorPool, *compute.raycastingTriangleDescriptorSetLayout);
+    compute.raycastingTriangleDescriptorSets.resize(MAX_CONCURRENT_FRAMES);
+    for (size_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      compute.raycastingTriangleDescriptorSets[i].reserve(
+          compute.raycastingTriangleBuffers[i].size());
+      for (size_t j = 0; j < compute.raycastingTriangleBuffers[i].size(); j++) {
+        compute.raycastingTriangleDescriptorSets[i].push_back(
+            std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
+      }
+    }
+
+    std::vector<std::vector<vk::DescriptorBufferInfo>>
+        raycastingTriangleBufferInfos;
+    raycastingTriangleBufferInfos.resize(
+        compute.raycastingTriangleDescriptorSets.size());
+    for (size_t i = 0; i < compute.raycastingTriangleDescriptorSets.size();
+         i++) {
+      raycastingTriangleBufferInfos.reserve(
+          compute.raycastingTriangleDescriptorSets[i].size());
+      for (size_t j = 0; j < compute.raycastingTriangleDescriptorSets[i].size();
+           j++) {
+        raycastingTriangleBufferInfos[i].push_back(
+            compute.raycastingTriangleBuffers[i][j]->descriptorInfo());
+      }
+    }
+    std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
+    writeDescriptorSets.reserve(
+        compute.raycastingTriangleDescriptorSets.size() *
+        compute.raycastingTriangleDescriptorSets[0].size());
+    for (size_t i = 0; i < compute.raycastingTriangleDescriptorSets.size();
+         i++) {
+      for (size_t j = 0; j < compute.raycastingTriangleDescriptorSets[i].size();
+           j++) {
+        writeDescriptorSets.emplace_back(
+            *compute.raycastingTriangleDescriptorSets[i][j], 0 /*binding*/, 0,
+            vk::DescriptorType::eStorageBuffer, nullptr,
+            compute.raycastingTriangleBuffers[i][j]);
+      }
+    }
+    device.updateDescriptorSets(writeDescriptorSets, nullptr);
+  }
 }
 
 void VgeExample::createComputePipelines() {
@@ -668,7 +711,8 @@ void VgeExample::createComputePipelines() {
     }
 
     // TODO: change specialization data for each type
-    for (auto i = 0; i <= static_cast<uint32_t>(ComputeType::kUpdateNormals);
+    for (auto i = 0;
+         i <= static_cast<uint32_t>(ComputeType::kRaycastingTriangleDistance);
          i++) {
       // compute cloth
       specializationData.computeType = i;
@@ -1176,9 +1220,11 @@ void VgeExample::createDescriptorPool() {
                          MAX_CONCURRENT_FRAMES * 2);
   poolSizes.emplace_back(vk::DescriptorType::eUniformBufferDynamic,
                          MAX_CONCURRENT_FRAMES);
-  poolSizes.emplace_back(vk::DescriptorType::eStorageBuffer,
-                         MAX_CONCURRENT_FRAMES * modelInstances.size() * 2 +
-                             (MAX_CONCURRENT_FRAMES + 1) * kMaxNumClothModels);
+  poolSizes.emplace_back(
+      vk::DescriptorType::eStorageBuffer,
+      MAX_CONCURRENT_FRAMES * modelInstances.size() * 2 +
+          (MAX_CONCURRENT_FRAMES + 1) * kMaxNumClothModels +
+          MAX_CONCURRENT_FRAMES * kMaxNumClothModels /*raycasting triangle*/);
   // NOTE: need to check flag
   vk::DescriptorPoolCreateInfo descriptorPoolCI(
       vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
@@ -1187,6 +1233,8 @@ void VgeExample::createDescriptorPool() {
           /*skin & animated vertex ssbo*/
           MAX_CONCURRENT_FRAMES * modelInstances.size() +
           /* calSB, renSB would be in a same set*/
+          MAX_CONCURRENT_FRAMES * kMaxNumClothModels +
+          /* raycasting triangle distance*/
           MAX_CONCURRENT_FRAMES * kMaxNumClothModels +
           /* constraint descriptor set*/
           kMaxNumClothModels,

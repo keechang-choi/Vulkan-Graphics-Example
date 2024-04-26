@@ -153,7 +153,9 @@ enum class ComputeType {
   kAddCorrections,
   kUpdateVel,
   kUpdateMesh,
-  kUpdateNormals
+  kUpdateNormals,
+  /*last*/
+  kRaycastingTriangleDistance
 };
 
 struct SpecializationData {
@@ -176,7 +178,7 @@ struct Options {
   // save camera view. not configurable by pannel
   glm::mat4 cameraView{1.f};
 
-  int32_t numSubsteps = 10;
+  int32_t numSubsteps = 1;
   float gravity = 10.f;
   float collisionRadius = 0.3f;
   float stiffness = 1.f;
@@ -185,7 +187,7 @@ struct Options {
   float thickness = 0.01f;
   float friction = 0.10f;
   bool useSeparateNormal = true;
-  bool useFixedTimeStep = true;
+  bool useFixedTimeStep = false;
   float fixedTimeStepReciprocal = 60.f;
 };
 
