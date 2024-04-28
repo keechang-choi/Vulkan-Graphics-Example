@@ -166,6 +166,10 @@ void integrate(in uint xIdx){
 	if (xIdx >= calculateParticles.length()) {
 		return;	
 	}
+	if (xIdx == 0 || xIdx == 150 * 99){
+		return;
+	}
+
 	float sdt = computeUbo.dt / float(computeUbo.numSubsteps);
 	calculateParticles[xIdx].prevPos = prevCalculateParticles[xIdx].pos;
 	calculateParticles[xIdx].vel = prevCalculateParticles[xIdx].vel + computeUbo.gravity * sdt;
@@ -186,7 +190,11 @@ void integrate(in uint xIdx){
 		}
 	}else{
 		// TODO: optimize
-		calculateParticles[xIdx].pos.w = 1.0;
+		if(computeUbo.dragParticleIdx.x == pushConstants.clothModelIdx){
+			if(xIdx == indicesIn[computeUbo.dragParticleIdx.y]){
+				calculateParticles[xIdx].pos.w = 1.0;
+			}
+		}
 	}
 
 	// floor collision

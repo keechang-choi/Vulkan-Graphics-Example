@@ -2691,6 +2691,10 @@ void Cloth::initParticlesData(const std::vector<vgeu::glTF::Vertex>& vertices,
     if (pos.w == -1.f) {
       pos.w = 1.f;
     }
+    // hardcoded fix position
+    if (i == 0 || i == 150 * 99) {
+      pos.w = 0.f;
+    }
     // else w as invMass
     ParticleCalculate newParticle{};
     newParticle.pos = pos;

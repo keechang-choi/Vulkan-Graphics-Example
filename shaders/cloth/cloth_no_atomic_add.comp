@@ -49,6 +49,7 @@ struct DistConstraint{
 
 layout ( push_constant ) uniform PushConstants{
 	uvec2 constraintInfo;
+	int clothModelIdx;
 } pushConstants;
 
 layout (std140, set = 0, binding = 0) uniform ComputeUbo
@@ -165,11 +166,36 @@ void integrate(in uint xIdx){
 	if (xIdx >= calculateParticles.length()) {
 		return;	
 	}
+	if (xIdx == 0 || xIdx == 150 * 99){
+		return;
+	}
+
 	float sdt = computeUbo.dt / float(computeUbo.numSubsteps);
 	calculateParticles[xIdx].prevPos = prevCalculateParticles[xIdx].pos;
 	calculateParticles[xIdx].vel = prevCalculateParticles[xIdx].vel + computeUbo.gravity * sdt;
 	calculateParticles[xIdx].pos = prevCalculateParticles[xIdx].pos + calculateParticles[xIdx].vel * sdt;
 	calculateParticles[xIdx].corr = vec4(0.0);
+	// zero normal before add
+	calculateParticles[xIdx].normal = vec4(0.0);
+	
+	if(computeUbo.clickData.w == 1.0){
+		if(computeUbo.dragParticleIdx.x != -1){
+			if(computeUbo.dragParticleIdx.x == pushConstants.clothModelIdx){
+				if(xIdx == indicesIn[computeUbo.dragParticleIdx.y]){
+					calculateParticles[xIdx].pos.xyz = computeUbo.rayStart.xyz + 
+						computeUbo.dragDepth * computeUbo.rayDir.xyz;
+					calculateParticles[xIdx].pos.w = 0.0;
+				}
+			}
+		}
+	}else{
+		// TODO: optimize
+		if(computeUbo.dragParticleIdx.x == pushConstants.clothModelIdx){
+			if(xIdx == indicesIn[computeUbo.dragParticleIdx.y]){
+				calculateParticles[xIdx].pos.w = 1.0;
+			}
+		}
+	}
 
 	// floor collision
 	if(calculateParticles[xIdx].pos.y > -computeUbo.thickness){
@@ -370,6 +396,8 @@ void updateMesh(in uint xIdx){
 	if (xIdx >= indicesIn.length()/3) {
 		return;	
 	}
+	
+
 	vec3 p0 = vec3(calculateParticles[indicesIn[3*xIdx+0]].pos);
 	vec3 p1 = vec3(calculateParticles[indicesIn[3*xIdx+1]].pos);
 	vec3 p2 = vec3(calculateParticles[indicesIn[3*xIdx+2]].pos);
@@ -393,9 +421,9 @@ void updateNormals(in uint xIdx){
 	}
 	// NOTE: will be normalized in vertex shader
 	if(computeUbo.atomicAdd != 0){
-		renderParticles[3*xIdx+0].normal = calculateParticles[indicesIn[3*xIdx+0]].normal;
-		renderParticles[3*xIdx+1].normal = calculateParticles[indicesIn[3*xIdx+1]].normal;
-		renderParticles[3*xIdx+2].normal = calculateParticles[indicesIn[3*xIdx+2]].normal;
+		for(uint i=0;i<3;i++){
+			renderParticles[3*xIdx+i].normal = calculateParticles[indicesIn[3*xIdx+i]].normal;
+		}
 	}
 }
 
