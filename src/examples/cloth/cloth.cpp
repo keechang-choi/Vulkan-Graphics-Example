@@ -336,7 +336,7 @@ void VgeExample::setupClothSSBO() {
               vk::AccessFlagBits::eShaderWrite,
               vk::PipelineStageFlagBits::eTopOfPipe,
               vk::PipelineStageFlagBits::eComputeShader);
-
+          uint32_t clothModelIdx = 0;
           for (size_t instanceIdx = 0; instanceIdx < modelInstances.size();
                instanceIdx++) {
             const auto& modelInstance = modelInstances[instanceIdx];
@@ -358,6 +358,12 @@ void VgeExample::setupClothSSBO() {
                 vk::PipelineBindPoint::eCompute, *compute.pipelineLayout,
                 5 /*set*/,
                 modelInstance.clothModel->getConstraintDescriptorSet(),
+                nullptr);
+            cmdBuffer.bindDescriptorSets(
+                vk::PipelineBindPoint::eCompute, *compute.pipelineLayout,
+                6 /*set*/,
+                *compute.raycastingTriangleDescriptorSets[frameIndex]
+                                                         [clothModelIdx++],
                 nullptr);
 
             cmdBuffer.bindPipeline(
@@ -396,6 +402,7 @@ void VgeExample::setupClothSSBO() {
   vgeu::oneTimeSubmit(
       device, compute.cmdPool, compute.queue,
       [&](const vk::raii::CommandBuffer& cmdBuffer) {
+        uint32_t clothModelIdx = 0;
         for (size_t instanceIdx = 0; instanceIdx < modelInstances.size();
              instanceIdx++) {
           const auto& modelInstance = modelInstances[instanceIdx];
@@ -418,6 +425,11 @@ void VgeExample::setupClothSSBO() {
           cmdBuffer.bindDescriptorSets(
               vk::PipelineBindPoint::eCompute, *compute.pipelineLayout,
               3 /*set*/, *compute.skinDescriptorSets[0][instanceIdx], nullptr);
+          cmdBuffer.bindDescriptorSets(
+              vk::PipelineBindPoint::eCompute, *compute.pipelineLayout,
+              6 /*set*/,
+              *compute.raycastingTriangleDescriptorSets[0][clothModelIdx++],
+              nullptr);
 
           cmdBuffer.bindPipeline(
               vk::PipelineBindPoint::eCompute,
@@ -637,7 +649,7 @@ void VgeExample::createComputeDescriptorSets() {
         writeDescriptorSets.emplace_back(
             *compute.raycastingTriangleDescriptorSets[i][j], 0 /*binding*/, 0,
             vk::DescriptorType::eStorageBuffer, nullptr,
-            compute.raycastingTriangleBuffers[i][j]);
+            raycastingTriangleBufferInfos[i][j]);
       }
     }
     device.updateDescriptorSets(writeDescriptorSets, nullptr);
@@ -975,7 +987,6 @@ void VgeExample::createComputeStorageBuffers() {
     }
   }
   // raycasting triangle distance buffer
-  std::vector<uint32_t> clothModelsNumTris;
   for (size_t instanceIdx = 0; instanceIdx < modelInstances.size();
        instanceIdx++) {
     const auto& modelInstance = modelInstances[instanceIdx];
@@ -983,19 +994,20 @@ void VgeExample::createComputeStorageBuffers() {
       continue;
     }
     const auto& clothModel = modelInstance.clothModel;
-    clothModelsNumTris.push_back(clothModel->getNumTriangles());
+    compute.clothModelsNumTris.push_back(clothModel->getNumTriangles());
   }
 
   compute.raycastingTriangleBuffers.resize(MAX_CONCURRENT_FRAMES);
 
   for (auto i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
-    compute.raycastingTriangleBuffers[i].reserve(clothModelsNumTris.size());
-    for (size_t j = 0; j < clothModelsNumTris.size(); j++) {
+    compute.raycastingTriangleBuffers[i].reserve(
+        compute.clothModelsNumTris.size());
+    for (size_t j = 0; j < compute.clothModelsNumTris.size(); j++) {
       compute.raycastingTriangleBuffers[i].push_back(
           std::move(std::make_unique<vgeu::VgeuBuffer>(
               globalAllocator->getAllocator(), sizeof(float),
-              clothModelsNumTris[j], vk::BufferUsageFlagBits::eStorageBuffer,
-              VMA_MEMORY_USAGE_AUTO,
+              compute.clothModelsNumTris[j],
+              vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_AUTO,
               VMA_ALLOCATION_CREATE_MAPPED_BIT |
                   VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT)));
     }
@@ -1756,6 +1768,50 @@ void VgeExample::buildComputeCommandBuffers() {
           1, 1);
     }
   }
+  // raycasting triangle distance
+  if (compute.ubo.clickData.w == 1.0f) {
+    if (compute.computeRayDistance) {
+      compute.computeRayDistance = false;
+
+      compute.cmdBuffers[currentFrameIndex].bindPipeline(
+          vk::PipelineBindPoint::eCompute,
+          *compute.pipelines.pipelinesCloth[static_cast<uint32_t>(
+              ComputeType::kRaycastingTriangleDistance)]);
+      // compute ubo
+      compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+          vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 0 /*set*/,
+          *compute.descriptorSets[currentFrameIndex], nullptr);
+      uint32_t clothModelIdx = 0;
+      for (auto instanceIdx = 0; instanceIdx < modelInstances.size();
+           instanceIdx++) {
+        const auto& modelInstance = modelInstances[instanceIdx];
+        if (!modelInstance.clothModel) {
+          continue;
+        }
+        // NOTE: not using but for validation error.
+        compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+            vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 5 /*set*/,
+            modelInstance.clothModel->getConstraintDescriptorSet(), nullptr);
+        //
+        compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+            vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 4 /*set*/,
+            modelInstance.clothModel->getParticleDescriptorSet(
+                currentFrameIndex),
+            nullptr);
+        compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+            vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 6 /*set*/,
+            *compute.raycastingTriangleDescriptorSets[currentFrameIndex]
+                                                     [clothModelIdx++],
+            nullptr);
+        compute.cmdBuffers[currentFrameIndex].dispatch(
+            modelInstance.clothModel->getNumTriangles() / sharedDataSize + 1, 1,
+            1);
+      }
+      vgeu::addComputeToComputeBarriers(
+          compute.cmdBuffers[currentFrameIndex],
+          common.ownershipTransferBufferPtrs[currentFrameIndex]);
+    }
+  }
 
   // TODO: check only animated buffer should be used
   // compute execution memory barrier
@@ -1778,6 +1834,7 @@ void VgeExample::buildComputeCommandBuffers() {
           vk::PipelineBindPoint::eCompute,
           *compute.pipelines
                .pipelinesCloth[static_cast<uint32_t>(ComputeType::kIntegrate)]);
+      uint32_t clothModelIdx = 0;
       for (auto instanceIdx = 0; instanceIdx < modelInstances.size();
            instanceIdx++) {
         const auto& modelInstance = modelInstances[instanceIdx];
@@ -1788,6 +1845,11 @@ void VgeExample::buildComputeCommandBuffers() {
         compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
             vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 5 /*set*/,
             modelInstance.clothModel->getConstraintDescriptorSet(), nullptr);
+        compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+            vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 6 /*set*/,
+            *compute.raycastingTriangleDescriptorSets[currentFrameIndex]
+                                                     [clothModelIdx++],
+            nullptr);
         //
         compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
             vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 4 /*set*/,
@@ -2083,7 +2145,6 @@ void VgeExample::updateComputeUbo() {
       // mouse button released
       compute.computeRayDistance = true;
     }
-
     compute.ubo.clickData = clickPos;
   }
 
@@ -2104,6 +2165,39 @@ void VgeExample::updateComputeUbo() {
   }
   if (opts.useSeparateNormal) {
     compute.ubo.atomicAdd = 0u;
+  }
+
+  // raycasting triangle distance
+  {
+    std::vector<std::vector<float>> clothModelsTriangleDistance;
+    clothModelsTriangleDistance.resize(compute.clothModelsNumTris.size());
+    uint32_t minClothIdx;
+    uint32_t minTriangleIdx;
+    float minDepth = std::numeric_limits<float>::max();
+
+    for (uint32_t i = 0; i < compute.clothModelsNumTris.size(); i++) {
+      clothModelsTriangleDistance[i].resize(compute.clothModelsNumTris[i]);
+      // TODO: use one staging mapped buffer and transfer after the calculation
+      std::memcpy(clothModelsTriangleDistance[i].data(),
+                  compute.raycastingTriangleBuffers[currentFrameIndex][i]
+                      ->getMappedData(),
+                  compute.raycastingTriangleBuffers[currentFrameIndex][i]
+                      ->getBufferSize());
+      for (uint32_t j = 0; j < clothModelsTriangleDistance[i].size(); j++) {
+        // noHit
+        if (clothModelsTriangleDistance[i][j] == -1) {
+          continue;
+        }
+        if (minDepth > clothModelsTriangleDistance[i][j]) {
+          minDepth = clothModelsTriangleDistance[i][j];
+          minClothIdx = i;
+          minTriangleIdx = j;
+        }
+      }
+    }
+    compute.ubo.dragParticleIdx.x = minClothIdx;
+    compute.ubo.dragParticleIdx.y = minTriangleIdx * 3;
+    compute.ubo.dragDepth = minDepth;
   }
 
   std::memcpy(compute.uniformBuffers[currentFrameIndex]->getMappedData(),
@@ -2238,6 +2332,9 @@ void VgeExample::onUpdateUIOverlay() {
     ImGui::Text("Compute Click Data: (%f, %f, %f, %f)", compute.ubo.clickData.x,
                 compute.ubo.clickData.y, compute.ubo.clickData.z,
                 compute.ubo.clickData.w);
+    ImGui::Text("raycasting triangle: (%d, %d, %f)",
+                compute.ubo.dragParticleIdx.x, compute.ubo.dragParticleIdx.y,
+                compute.ubo.dragDepth);
   }
 
   if (uiOverlay->header("Settings")) {

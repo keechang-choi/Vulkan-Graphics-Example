@@ -29,7 +29,7 @@ struct ComputeUbo {
   glm::vec4 rayStart;
   glm::vec4 rayDir;
   glm::vec4 gravity;
-  glm::ivec2 particleCount;
+  glm::uvec2 dragParticleIdx;
   float dt;
   float stiffness;
   float alpha;
@@ -39,7 +39,6 @@ struct ComputeUbo {
   float friction;
   uint32_t numSubsteps;
   uint32_t atomicAdd;
-  uint32_t dragParticleIdx;
   float dragDepth;
 };
 
@@ -490,6 +489,8 @@ class VgeExample : public VgeBase {
 
     ComputePushConstantsData pc;
     bool computeRayDistance = true;
+    std::vector<uint32_t> clothModelsNumTris;
+
   } compute;
 
   struct {
