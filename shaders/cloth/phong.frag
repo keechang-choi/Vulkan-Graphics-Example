@@ -19,7 +19,7 @@ void main()
 		color = vec3(0.0, 1.0, 0.0);
 	}
 
-	vec3 ambient = color * vec3(0.2);
+	vec3 ambient = color * vec3(0.15);
 	vec3 N = normalize(inNormal);
 	vec3 L = normalize(inLightVec);
 	vec3 V = normalize(inViewVec);

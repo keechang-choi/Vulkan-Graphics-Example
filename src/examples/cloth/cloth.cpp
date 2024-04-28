@@ -306,7 +306,7 @@ void VgeExample::initClothModels() {
 
     float kFlagScale = 5.f;
     glm::mat4 translateMat =
-        glm::translate(glm::mat4{1.f}, glm::vec3{3.f, -10.f, 0.f});
+        glm::translate(glm::mat4{1.f}, glm::vec3{3.f, -8.f, 0.f});
     glm::mat4 rotateMat{1.f};
     // FlipY manually
     // NOTE: not only flip Y, also need flip z to preserve orientation
@@ -2409,7 +2409,8 @@ void VgeExample::onUpdateUIOverlay() {
       uiOverlay->inputFloat("fixedTimeStepReciprocal",
                             &opts.fixedTimeStepReciprocal, 1.0f, "%4.1f");
 
-      ImGui::DragInt("numSubsteps", &opts.numSubsteps, 1.f, 1, 30, "%d");
+      uiOverlay->inputInt("numSubsteps", &opts.numSubsteps, 1);
+      opts.numSubsteps = std::max(opts.numSubsteps, 1);
 
       ImGui::TreePop();
     }
