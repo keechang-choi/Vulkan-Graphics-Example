@@ -1768,50 +1768,6 @@ void VgeExample::buildComputeCommandBuffers() {
           1, 1);
     }
   }
-  // raycasting triangle distance
-  if (compute.ubo.clickData.w == 1.0f) {
-    if (compute.computeRayDistance) {
-      compute.computeRayDistance = false;
-
-      compute.cmdBuffers[currentFrameIndex].bindPipeline(
-          vk::PipelineBindPoint::eCompute,
-          *compute.pipelines.pipelinesCloth[static_cast<uint32_t>(
-              ComputeType::kRaycastingTriangleDistance)]);
-      // compute ubo
-      compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
-          vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 0 /*set*/,
-          *compute.descriptorSets[currentFrameIndex], nullptr);
-      uint32_t clothModelIdx = 0;
-      for (auto instanceIdx = 0; instanceIdx < modelInstances.size();
-           instanceIdx++) {
-        const auto& modelInstance = modelInstances[instanceIdx];
-        if (!modelInstance.clothModel) {
-          continue;
-        }
-        // NOTE: not using but for validation error.
-        compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
-            vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 5 /*set*/,
-            modelInstance.clothModel->getConstraintDescriptorSet(), nullptr);
-        //
-        compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
-            vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 4 /*set*/,
-            modelInstance.clothModel->getParticleDescriptorSet(
-                currentFrameIndex),
-            nullptr);
-        compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
-            vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 6 /*set*/,
-            *compute.raycastingTriangleDescriptorSets[currentFrameIndex]
-                                                     [clothModelIdx++],
-            nullptr);
-        compute.cmdBuffers[currentFrameIndex].dispatch(
-            modelInstance.clothModel->getNumTriangles() / sharedDataSize + 1, 1,
-            1);
-      }
-      vgeu::addComputeToComputeBarriers(
-          compute.cmdBuffers[currentFrameIndex],
-          common.ownershipTransferBufferPtrs[currentFrameIndex]);
-    }
-  }
 
   // TODO: check only animated buffer should be used
   // compute execution memory barrier
@@ -1819,9 +1775,6 @@ void VgeExample::buildComputeCommandBuffers() {
       compute.cmdBuffers[currentFrameIndex],
       common.ownershipTransferBufferPtrs[currentFrameIndex]);
 
-  compute.cmdBuffers[currentFrameIndex].pushConstants<ComputePushConstantsData>(
-      *compute.pipelineLayout, vk::ShaderStageFlagBits::eCompute, 0,
-      compute.pc);
   // TODO: substeps need  or just submit with dt/numsubsteps
   for (auto substep = 0; substep < opts.numSubsteps; substep++) {
     //  integrate
@@ -1841,6 +1794,7 @@ void VgeExample::buildComputeCommandBuffers() {
         if (!modelInstance.clothModel) {
           continue;
         }
+
         // NOTE: not using but for validation error.
         compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
             vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 5 /*set*/,
@@ -1848,9 +1802,16 @@ void VgeExample::buildComputeCommandBuffers() {
         compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
             vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 6 /*set*/,
             *compute.raycastingTriangleDescriptorSets[currentFrameIndex]
-                                                     [clothModelIdx++],
+                                                     [clothModelIdx],
             nullptr);
         //
+        compute.pc.clothModelIdx = clothModelIdx++;
+        compute.cmdBuffers[currentFrameIndex]
+            .pushConstants<ComputePushConstantsData>(
+                *compute.pipelineLayout, vk::ShaderStageFlagBits::eCompute, 0,
+                compute.pc);
+        modelInstance.model->bindSSBO(compute.cmdBuffers[currentFrameIndex],
+                                      *compute.pipelineLayout, 1 /*set*/);
         compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
             vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 4 /*set*/,
             modelInstance.clothModel->getParticleDescriptorSet(
@@ -2169,35 +2130,106 @@ void VgeExample::updateComputeUbo() {
 
   // raycasting triangle distance
   {
-    std::vector<std::vector<float>> clothModelsTriangleDistance;
-    clothModelsTriangleDistance.resize(compute.clothModelsNumTris.size());
-    uint32_t minClothIdx;
-    uint32_t minTriangleIdx;
-    float minDepth = std::numeric_limits<float>::max();
+    // raycasting triangle distance
+    if (compute.ubo.clickData.w == 1.0f) {
+      if (compute.computeRayDistance) {
+        compute.computeRayDistance = false;
 
-    for (uint32_t i = 0; i < compute.clothModelsNumTris.size(); i++) {
-      clothModelsTriangleDistance[i].resize(compute.clothModelsNumTris[i]);
-      // TODO: use one staging mapped buffer and transfer after the calculation
-      std::memcpy(clothModelsTriangleDistance[i].data(),
-                  compute.raycastingTriangleBuffers[currentFrameIndex][i]
-                      ->getMappedData(),
-                  compute.raycastingTriangleBuffers[currentFrameIndex][i]
-                      ->getBufferSize());
-      for (uint32_t j = 0; j < clothModelsTriangleDistance[i].size(); j++) {
-        // noHit
-        if (clothModelsTriangleDistance[i][j] == -1) {
-          continue;
+        std::memcpy(compute.uniformBuffers[currentFrameIndex]->getMappedData(),
+                    &compute.ubo, sizeof(compute.ubo));
+
+        vgeu::oneTimeSubmit(
+            device, compute.cmdPool, compute.queue,
+            [&](const vk::raii::CommandBuffer& cmdBuffer) {
+              cmdBuffer.bindPipeline(
+                  vk::PipelineBindPoint::eCompute,
+                  *compute.pipelines.pipelinesCloth[static_cast<uint32_t>(
+                      ComputeType::kRaycastingTriangleDistance)]);
+              // compute ubo
+              cmdBuffer.bindDescriptorSets(
+                  vk::PipelineBindPoint::eCompute, *compute.pipelineLayout,
+                  0 /*set*/, *compute.descriptorSets[currentFrameIndex],
+                  nullptr);
+
+              cmdBuffer.pushConstants<ComputePushConstantsData>(
+                  *compute.pipelineLayout, vk::ShaderStageFlagBits::eCompute, 0,
+                  compute.pc);
+
+              uint32_t clothModelIdx = 0;
+              for (auto instanceIdx = 0; instanceIdx < modelInstances.size();
+                   instanceIdx++) {
+                const auto& modelInstance = modelInstances[instanceIdx];
+                if (!modelInstance.clothModel) {
+                  continue;
+                }
+                // NOTE: not using but for validation error.
+                modelInstance.model->bindSSBO(
+                    cmdBuffer, *compute.pipelineLayout, 1 /*set*/);
+                cmdBuffer.bindDescriptorSets(
+                    vk::PipelineBindPoint::eCompute, *compute.pipelineLayout,
+                    2 /*set*/, {*common.dynamicUboDescriptorSets[0]},
+                    common.alignedSizeDynamicUboElt * instanceIdx);
+                cmdBuffer.bindDescriptorSets(
+                    vk::PipelineBindPoint::eCompute, *compute.pipelineLayout,
+                    3 /*set*/, *compute.skinDescriptorSets[0][instanceIdx],
+                    nullptr);
+                cmdBuffer.bindDescriptorSets(
+                    vk::PipelineBindPoint::eCompute, *compute.pipelineLayout,
+                    5 /*set*/,
+                    modelInstance.clothModel->getConstraintDescriptorSet(),
+                    nullptr);
+                //
+                cmdBuffer.bindDescriptorSets(
+                    vk::PipelineBindPoint::eCompute, *compute.pipelineLayout,
+                    4 /*set*/,
+                    modelInstance.clothModel->getParticleDescriptorSet(
+                        currentFrameIndex),
+                    nullptr);
+                cmdBuffer.bindDescriptorSets(
+                    vk::PipelineBindPoint::eCompute, *compute.pipelineLayout,
+                    6 /*set*/,
+                    *compute.raycastingTriangleDescriptorSets[currentFrameIndex]
+                                                             [clothModelIdx++],
+                    nullptr);
+                cmdBuffer.dispatch(modelInstance.clothModel->getNumTriangles() /
+                                           sharedDataSize +
+                                       1,
+                                   1, 1);
+              }
+            });
+
+        std::vector<std::vector<float>> clothModelsTriangleDistance;
+        clothModelsTriangleDistance.resize(compute.clothModelsNumTris.size());
+        int32_t minClothIdx = -1;
+        int32_t minTriangleIdx = -1;
+        float minDepth = std::numeric_limits<float>::max();
+
+        for (uint32_t i = 0; i < compute.clothModelsNumTris.size(); i++) {
+          clothModelsTriangleDistance[i].resize(compute.clothModelsNumTris[i]);
+          // TODO: use one staging mapped buffer and transfer after the
+          // calculation
+          std::memcpy(clothModelsTriangleDistance[i].data(),
+                      compute.raycastingTriangleBuffers[currentFrameIndex][i]
+                          ->getMappedData(),
+                      compute.raycastingTriangleBuffers[currentFrameIndex][i]
+                          ->getBufferSize());
+          for (uint32_t j = 0; j < clothModelsTriangleDistance[i].size(); j++) {
+            // noHit
+            if (clothModelsTriangleDistance[i][j] == -1) {
+              continue;
+            }
+            if (minDepth > clothModelsTriangleDistance[i][j]) {
+              minDepth = clothModelsTriangleDistance[i][j];
+              minClothIdx = i;
+              minTriangleIdx = j;
+            }
+          }
         }
-        if (minDepth > clothModelsTriangleDistance[i][j]) {
-          minDepth = clothModelsTriangleDistance[i][j];
-          minClothIdx = i;
-          minTriangleIdx = j;
-        }
+        compute.ubo.dragParticleIdx.x = minClothIdx;
+        compute.ubo.dragParticleIdx.y = minTriangleIdx * 3;
+        compute.ubo.dragDepth = minDepth;
       }
     }
-    compute.ubo.dragParticleIdx.x = minClothIdx;
-    compute.ubo.dragParticleIdx.y = minTriangleIdx * 3;
-    compute.ubo.dragDepth = minDepth;
   }
 
   std::memcpy(compute.uniformBuffers[currentFrameIndex]->getMappedData(),

@@ -29,7 +29,7 @@ struct ComputeUbo {
   glm::vec4 rayStart;
   glm::vec4 rayDir;
   glm::vec4 gravity;
-  glm::uvec2 dragParticleIdx;
+  glm::ivec2 dragParticleIdx;
   float dt;
   float stiffness;
   float alpha;
@@ -44,6 +44,7 @@ struct ComputeUbo {
 
 struct ComputePushConstantsData {
   glm::uvec2 constraintInfo;
+  int32_t clothModelIdx{-1};
 };
 
 // NOTE: simple model for circle, quad, lines

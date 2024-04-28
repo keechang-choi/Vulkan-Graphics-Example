@@ -49,6 +49,7 @@ struct DistConstraint{
 
 layout ( push_constant ) uniform PushConstants{
 	uvec2 constraintInfo;
+	int clothModelIdx;
 } pushConstants;
 
 layout (std140, set = 0, binding = 0) uniform ComputeUbo
@@ -57,7 +58,7 @@ layout (std140, set = 0, binding = 0) uniform ComputeUbo
 	vec4 rayStart;
 	vec4 rayDir;
 	vec4 gravity;
-	uvec2 dragParticleIdx;
+	ivec2 dragParticleIdx;
 	float dt;
 	float stiffness;
 	float alpha;
@@ -170,6 +171,21 @@ void integrate(in uint xIdx){
 	calculateParticles[xIdx].vel = prevCalculateParticles[xIdx].vel + computeUbo.gravity * sdt;
 	calculateParticles[xIdx].pos = prevCalculateParticles[xIdx].pos + calculateParticles[xIdx].vel * sdt;
 	calculateParticles[xIdx].corr = vec4(0.0);
+
+	if(computeUbo.clickData.w == 1.0){
+		if(computeUbo.dragParticleIdx.x != -1){
+			if(computeUbo.dragParticleIdx.x == pushConstants.clothModelIdx){
+				if(xIdx == indicesIn[computeUbo.dragParticleIdx.y]){
+					calculateParticles[xIdx].pos.xyz = computeUbo.rayStart.xyz + 
+						computeUbo.dragDepth * computeUbo.rayDir.xyz;
+					calculateParticles[xIdx].pos.w = 0.0;
+				}
+			}
+		}
+	}else{
+		// TODO: optimize
+		calculateParticles[xIdx].pos.w = 1.0;
+	}
 
 	// floor collision
 	if(calculateParticles[xIdx].pos.y > -computeUbo.thickness){

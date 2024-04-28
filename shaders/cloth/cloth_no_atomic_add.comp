@@ -57,7 +57,7 @@ layout (std140, set = 0, binding = 0) uniform ComputeUbo
 	vec4 rayStart;
 	vec4 rayDir;
 	vec4 gravity;
-	uvec2 dragParticleIdx;
+	ivec2 dragParticleIdx;
 	float dt;
 	float stiffness;
 	float alpha;
