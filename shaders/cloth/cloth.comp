@@ -386,6 +386,11 @@ void updateMesh(in uint xIdx){
 	if (xIdx >= indicesIn.length()/3) {
 		return;	
 	}
+	// zero normal before add
+	for(uint i=0;i<3;i++){
+		calculateParticles[indicesIn[3*xIdx+i]].normal = vec4(0.0);
+	}
+
 	vec3 p0 = vec3(calculateParticles[indicesIn[3*xIdx+0]].pos);
 	vec3 p1 = vec3(calculateParticles[indicesIn[3*xIdx+1]].pos);
 	vec3 p2 = vec3(calculateParticles[indicesIn[3*xIdx+2]].pos);
@@ -409,9 +414,9 @@ void updateNormals(in uint xIdx){
 	}
 	// NOTE: will be normalized in vertex shader
 	if(computeUbo.atomicAdd != 0){
-		renderParticles[3*xIdx+0].normal = calculateParticles[indicesIn[3*xIdx+0]].normal;
-		renderParticles[3*xIdx+1].normal = calculateParticles[indicesIn[3*xIdx+1]].normal;
-		renderParticles[3*xIdx+2].normal = calculateParticles[indicesIn[3*xIdx+2]].normal;
+		for(uint i=0;i<3;i++){
+			renderParticles[3*xIdx+i].normal = calculateParticles[indicesIn[3*xIdx+i]].normal;
+		}
 	}
 }
 
