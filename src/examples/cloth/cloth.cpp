@@ -2409,7 +2409,7 @@ void VgeExample::onUpdateUIOverlay() {
       uiOverlay->inputFloat("fixedTimeStepReciprocal",
                             &opts.fixedTimeStepReciprocal, 1.0f, "%4.1f");
 
-      uiOverlay->inputInt("numSubsteps", &opts.numSubsteps, 1);
+      ImGui::DragInt("numSubsteps", &opts.numSubsteps, 1.f, 1, 30, "%d");
 
       ImGui::TreePop();
     }
