@@ -189,6 +189,7 @@ struct Options {
   bool useSeparateNormal = true;
   bool useFixedTimeStep = false;
   float fixedTimeStepReciprocal = 60.f;
+  bool showNormals = false;
 };
 
 // NOTE: ssbo usage alignment
@@ -517,6 +518,7 @@ class VgeExample : public VgeBase {
       vk::raii::Pipeline pipelineSimpleLine = nullptr;
       vk::raii::Pipeline pipelineCloth = nullptr;
       vk::raii::Pipeline pipelineWireCloth = nullptr;
+      vk::raii::Pipeline pipelineClothNormal = nullptr;
     } pipelines;
 
   } graphics;

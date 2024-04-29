@@ -111,6 +111,7 @@ void VgeExample::getEnabledFeatures() {
   enabledFeatures.fillModeNonSolid =
       physicalDevice.getFeatures().fillModeNonSolid;
   enabledFeatures.wideLines = physicalDevice.getFeatures().wideLines;
+  enabledFeatures.geometryShader = physicalDevice.getFeatures().geometryShader;
 }
 
 void VgeExample::prepare() {
@@ -210,9 +211,10 @@ void VgeExample::createUniformBuffers() {
 void VgeExample::createDescriptorSetLayout() {
   {
     std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
-    layoutBindings.emplace_back(0 /*binding*/,
-                                vk::DescriptorType::eUniformBufferDynamic, 1,
-                                vk::ShaderStageFlagBits::eAll);
+    layoutBindings.emplace_back(
+        0 /*binding*/, vk::DescriptorType::eUniformBufferDynamic, 1,
+        vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment |
+            vk::ShaderStageFlagBits::eCompute);
     vk::DescriptorSetLayoutCreateInfo layoutCI({}, layoutBindings);
     common.dynamicUboDescriptorSetLayout =
         vk::raii::DescriptorSetLayout(device, layoutCI);
@@ -1261,7 +1263,7 @@ void VgeExample::createGraphicsDescriptorSetLayout() {
   {
     vk::DescriptorSetLayoutBinding layoutBinding(
         0, vk::DescriptorType::eUniformBuffer, 1,
-        vk::ShaderStageFlagBits::eVertex);
+        vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eGeometry);
     vk::DescriptorSetLayoutCreateInfo layoutCI({}, 1, &layoutBinding);
     graphics.globalUboDescriptorSetLayout =
         vk::raii::DescriptorSetLayout(device, layoutCI);
@@ -1270,17 +1272,8 @@ void VgeExample::createGraphicsDescriptorSetLayout() {
 
   // NOTE: used for external animation in compute and
   // used for lighting in graphics.
-  // currently only for graphics
   // set 1
-  {
-    vk::DescriptorSetLayoutBinding layoutBinding(
-        0, vk::DescriptorType::eUniformBufferDynamic, 1,
-        vk::ShaderStageFlagBits::eAll);
-    vk::DescriptorSetLayoutCreateInfo layoutCI({}, 1, &layoutBinding);
-    common.dynamicUboDescriptorSetLayout =
-        vk::raii::DescriptorSetLayout(device, layoutCI);
-    setLayouts.push_back(*common.dynamicUboDescriptorSetLayout);
-  }
+  setLayouts.push_back(*common.dynamicUboDescriptorSetLayout);
 
   // set 2
   // TODO: need to improve structure. descriptorSetLayout per model
@@ -1389,6 +1382,7 @@ void VgeExample::createGraphicsPipelines() {
 
   graphics.pipelines.pipelinePhong =
       vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
+  // cloth mesh
   {
     vertexInputSCI.setVertexBindingDescriptions(
         graphics.clothVertexInfos.bindingDescriptions);
@@ -1404,6 +1398,38 @@ void VgeExample::createGraphicsPipelines() {
     graphics.pipelines.pipelineCloth =
         vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
   }
+  // cloth normal
+  {
+    auto vertCode =
+        vgeu::readFile(getShadersPath() + "/cloth/cloth_normal.vert.spv");
+    vk::raii::ShaderModule vertShaderModule =
+        vgeu::createShaderModule(device, vertCode);
+    auto fragCode =
+        vgeu::readFile(getShadersPath() + "/cloth/cloth_normal.frag.spv");
+    vk::raii::ShaderModule fragShaderModule =
+        vgeu::createShaderModule(device, fragCode);
+    auto geomCode =
+        vgeu::readFile(getShadersPath() + "/cloth/cloth_normal.geom.spv");
+    vk::raii::ShaderModule geomShaderModule =
+        vgeu::createShaderModule(device, geomCode);
+
+    std::array<vk::PipelineShaderStageCreateInfo, 3> shaderStageCIs{
+        vk::PipelineShaderStageCreateInfo(vk::PipelineShaderStageCreateFlags(),
+                                          vk::ShaderStageFlagBits::eVertex,
+                                          *vertShaderModule, "main", nullptr),
+        vk::PipelineShaderStageCreateInfo(vk::PipelineShaderStageCreateFlags(),
+                                          vk::ShaderStageFlagBits::eFragment,
+                                          *fragShaderModule, "main", nullptr),
+        vk::PipelineShaderStageCreateInfo(vk::PipelineShaderStageCreateFlags(),
+                                          vk::ShaderStageFlagBits::eGeometry,
+                                          *geomShaderModule, "main", nullptr),
+    };
+    graphicsPipelineCI.setStages(shaderStageCIs);
+    graphics.pipelines.pipelineClothNormal =
+        vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
+  }
+  // reset back shaderStageCIs
+  graphicsPipelineCI.setStages(shaderStageCIs);
   {
     vertexInputSCI.setVertexBindingDescriptions(
         graphics.animatedVertexInfos.bindingDescriptions);
@@ -1664,6 +1690,35 @@ void VgeExample::buildCommandBuffers() {
     // draw w/o indexed
     drawCmdBuffers[currentFrameIndex].draw(
         modelInstance.clothModel->getNumTriangles() * 3, 1, 0, 0);
+  }
+  if (opts.showNormals) {
+    drawCmdBuffers[currentFrameIndex].bindPipeline(
+        vk::PipelineBindPoint::eGraphics,
+        *graphics.pipelines.pipelineClothNormal);
+    drawCmdBuffers[currentFrameIndex].setLineWidth(opts.lineWidth);
+    for (size_t instanceIdx = 0; instanceIdx < modelInstances.size();
+         instanceIdx++) {
+      const auto& modelInstance = modelInstances[instanceIdx];
+      if (!modelInstance.clothModel) {
+        continue;
+      }
+      // bind dynamic
+      drawCmdBuffers[currentFrameIndex].bindDescriptorSets(
+          vk::PipelineBindPoint::eGraphics, *graphics.pipelineLayout,
+          1 /*set 1*/, {*common.dynamicUboDescriptorSets[currentFrameIndex]},
+          common.alignedSizeDynamicUboElt * instanceIdx);
+      // bind vertex buffer
+      modelInstance.clothModel->bindVertexBuffer(
+          drawCmdBuffers[currentFrameIndex], currentFrameIndex);
+      // bind first loaded material textures
+      drawCmdBuffers[currentFrameIndex].bindDescriptorSets(
+          vk::PipelineBindPoint::eGraphics, *graphics.pipelineLayout,
+          2 /*set 1*/, {modelInstance.model->getMaterialDescriptor(0)},
+          nullptr);
+      // draw w/o indexed
+      drawCmdBuffers[currentFrameIndex].draw(
+          modelInstance.clothModel->getNumTriangles() * 3, 1, 0, 0);
+    }
   }
 
   // draw simple models
@@ -2412,6 +2467,9 @@ void VgeExample::onUpdateUIOverlay() {
       uiOverlay->inputInt("numSubsteps", &opts.numSubsteps, 1);
       opts.numSubsteps = std::max(opts.numSubsteps, 1);
 
+      if (ImGui::RadioButton("showNormals", opts.showNormals)) {
+        opts.showNormals = !opts.showNormals;
+      }
       ImGui::TreePop();
     }
     if (ImGui::TreeNodeEx("Initializers", ImGuiTreeNodeFlags_DefaultOpen)) {

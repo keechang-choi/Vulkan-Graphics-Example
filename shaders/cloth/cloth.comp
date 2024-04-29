@@ -422,7 +422,7 @@ void updateNormals(in uint xIdx){
 	// NOTE: will be normalized in vertex shader
 	if(computeUbo.atomicAdd != 0){
 		for(uint i=0;i<3;i++){
-			renderParticles[3*xIdx+i].normal = calculateParticles[indicesIn[3*xIdx+i]].normal;
+			renderParticles[3*xIdx+i].normal = normalize(calculateParticles[indicesIn[3*xIdx+i]].normal);
 		}
 	}
 }
