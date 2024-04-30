@@ -21,7 +21,7 @@ layout (location = 0) out vec3 outColor;
 
 void main() 
 {
-	float normalLength = 0.02;
+	float normalLength = 0.1;
 	for(int i=0; i<gl_in.length(); i++)
 	{
 		vec3 pos = gl_in[i].gl_Position.xyz;
@@ -33,7 +33,7 @@ void main()
 		EmitVertex();
 
 		gl_Position = transform * vec4(pos + normal * normalLength, 1.0);
-		outColor = vec3(0.0, 0.0, 1.0);
+		outColor = vec3(1.0, 1.0, 0.0);
 		EmitVertex();
 
 		EndPrimitive();
