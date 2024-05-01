@@ -2775,10 +2775,21 @@ void Cloth::initDistConstraintsData(const uint32_t numX, const uint32_t numY) {
   passIndependent.push_back(true);
   passSizes.push_back(numX * ((numY - 1) / 2));
   passIndependent.push_back(true);
-  // shear and bending constraints
-  passSizes.push_back((2 * (numX - 1) * (numY - 1)) /*shear*/ +
-                      ((numX - 2) * numY + numX * (numY - 2)) /*bending*/);
+
+  // shear
+  passSizes.push_back((numX / 2) * (numY - 1));
+  passIndependent.push_back(true);
+  passSizes.push_back(((numX - 1) / 2) * (numY - 1));
+  passIndependent.push_back(true);
+  passSizes.push_back((numX / 2) * (numY - 1));
+  passIndependent.push_back(true);
+  passSizes.push_back(((numX - 1) / 2) * (numY - 1));
+  passIndependent.push_back(true);
+
+  // bending constraints
+  passSizes.push_back(((numX - 2) * numY + numX * (numY - 2)) /*bending*/);
   passIndependent.push_back(false);
+
   numPasses = passSizes.size();
 
   numConstraints = 0;
@@ -2808,15 +2819,23 @@ void Cloth::initDistConstraintsData(const uint32_t numX, const uint32_t numY) {
     }
   }
   // TODO: make it independent for performance
-  // shearing
-  for (auto xi = 0; xi < numX - 1; xi++) {
-    for (auto yi = 0; yi < numY - 1; yi++) {
-      {
-        glm::uvec2 ids(yi * numX + xi, (yi + 1) * numX + (xi + 1));
+  // shearing down right
+  for (auto isOdd = 0; isOdd < 2; isOdd++) {
+    for (auto xi = 0; xi < (numX - isOdd) / 2; xi++) {
+      for (auto yi = 0; yi < numY - 1; yi++) {
+        glm::uvec2 ids(yi * numX + xi * 2 + isOdd,
+                       (yi + 1) * numX + xi * 2 + isOdd + 1);
         distConstraints.push_back({ids, 0.f});
       }
-      {
-        glm::uvec2 ids(yi * numX + (xi + 1), (yi + 1) * numX + xi);
+    }
+  }
+
+  // shearing up right
+  for (auto isOdd = 0; isOdd < 2; isOdd++) {
+    for (auto xi = 0; xi < (numX - isOdd) / 2; xi++) {
+      for (auto yi = 0; yi < numY - 1; yi++) {
+        glm::uvec2 ids((yi + 1) * numX + xi * 2 + isOdd,
+                       yi * numX + xi * 2 + isOdd + 1);
         distConstraints.push_back({ids, 0.f});
       }
     }
