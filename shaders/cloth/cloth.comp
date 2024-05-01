@@ -165,6 +165,7 @@ void integrate(in uint xIdx){
 	if (xIdx >= calculateParticles.length()) {
 		return;	
 	}
+	// hard-coded fixed point
 	if (xIdx == 0 || xIdx == 150 * 99){
 		return;
 	}
