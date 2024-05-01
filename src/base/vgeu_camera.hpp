@@ -36,9 +36,10 @@ class VgeuCamera {
   // Y: yaw, X: pitch, Z: roll
   const glm::vec3 getRotationYXZ() const {
     return glm::vec3{
-        glm::asin(-inverseViewMatrix[2][1]),                           // X
-        glm::atan(inverseViewMatrix[2][0] / inverseViewMatrix[2][2]),  // Y
-        glm::atan(inverseViewMatrix[0][1] / inverseViewMatrix[1][1]),  // Z
+        glm::asin(-inverseViewMatrix[2][1]),  // X
+        // NOTE: glm::atan use y,x(=>y/x) to determine the quadrant
+        glm::atan(inverseViewMatrix[2][0], inverseViewMatrix[2][2]),  // Y
+        glm::atan(inverseViewMatrix[0][1], inverseViewMatrix[1][1]),  // Z
     };
   }
 

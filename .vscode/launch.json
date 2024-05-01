@@ -39,6 +39,7 @@
             "description": "Select program to debug",
             "type": "pickString",
             "options": [
+                "cloth",
                 "pbd",
                 "particle",
                 "animation",

@@ -61,7 +61,7 @@ git submodule update
 
 
 ## [PBD](src/examples/pbd)
-- Position Based Dynamics
+- Position Based Dynamics on CPU
 - 2d simulation examples from [The Ten Minute Physics](https://matthias-research.github.io/pages/tenMinutePhysics/index.html)
 
 
@@ -72,8 +72,18 @@ git submodule update
 
 
 
+## [cloth](src/examples/cloth)
+- PBD cloth simulation on GPU (vulkan compute shader)
+- geometry shader for debugging normals
+- references:
+  - [Vulkan/examples/computecloth/computecloth.cpp at master · SaschaWillems/Vulkan (github.com)](https://github.com/SaschaWillems/Vulkan/blob/master/examples/computecloth/computecloth.cpp)
+  - [Vulkan/shaders/glsl/computecloth/cloth.comp at master · SaschaWillems/Vulkan (github.com)](https://github.com/SaschaWillems/Vulkan/blob/master/shaders/glsl/computecloth/cloth.comp)
+  - lecture 14, 15, 16 from  [The Ten Minute Physics](https://matthias-research.github.io/pages/tenMinutePhysics/index.html)
+  - [python with warp code in lec 16](https://github.com/matthias-research/pages/blob/master/tenMinutePhysics/16-GPUCloth.py)
 
 
-
-
+|     |     |
+| --- | --- |
+| ![Untitled (25)](https://github.com/keechang-choi/Vulkan-Graphics-Example/assets/49244613/eb9abc95-140c-485a-b48b-b1f2095b1065) | ![Untitled (14)](https://github.com/keechang-choi/Vulkan-Graphics-Example/assets/49244613/4906d557-bef7-4fd1-9f68-a61591ef3672) |
+| ![Untitled (21)](https://github.com/keechang-choi/Vulkan-Graphics-Example/assets/49244613/33c337d0-80e4-4f45-8aaa-09e2116b97bb) | ![Untitled (26)](https://github.com/keechang-choi/Vulkan-Graphics-Example/assets/49244613/428520ff-5fd9-4595-b88a-63adac9340a4) |
 

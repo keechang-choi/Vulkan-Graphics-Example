@@ -32,6 +32,7 @@ class VgeBase {
   // device, queue, sema
   virtual void initVulkan();
   virtual void getEnabledExtensions();
+  virtual void getEnabledFeatures();
 
   // virtual prepare vk resources
   // swapchain, commandPool, commandBuffers, Synch Primitives
@@ -89,6 +90,7 @@ class VgeBase {
   vk::raii::PhysicalDevice physicalDevice = nullptr;
   vk::PhysicalDeviceFeatures enabledFeatures{};
   std::vector<const char*> enabledDeviceExtensions;
+  std::vector<std::string> supportedDeviceExtensions;
   vk::raii::Device device = nullptr;
   // NOTE: not sure, but vma alloctor should be destructed before the device's.
   std::unique_ptr<vgeu::VgeuAllocator> globalAllocator;

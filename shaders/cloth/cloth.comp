@@ -1,0 +1,489 @@
+
+#version 450
+#extension GL_EXT_shader_atomic_float : enable
+
+#define COMPILE_ATOMIC_ADD
+
+struct VertexIn{
+	vec4 pos; // w as skinIndex
+	vec4 normal; // w not used
+	vec4 color;  
+	vec4 joint0;
+	vec4 weight0;
+	vec4 tangent;
+	vec2 uv;
+};
+
+struct VertexOut{
+	vec4 pos; // w as skinIndex
+	vec4 normal; // w not used
+	vec4 color;
+	vec4 tangent;
+	vec2 uv;
+};
+
+struct MeshMatrices{
+	mat4 nodeMatrix;
+	mat4 jointMatrices[64];
+	vec4 jointCount;
+};
+
+struct ParticleCalculate{
+	vec4 prevPos;
+	vec4 pos;
+	vec4 vel;
+	vec4 corr;	
+	vec4 normal;
+};
+
+struct ParticleRender{
+	vec4 pos;
+	vec4 normal;
+	vec2 uv;
+};
+
+struct DistConstraint{
+	uvec2 constIds;
+	float restLength;
+};
+
+layout ( push_constant ) uniform PushConstants{
+	uvec2 constraintInfo;
+	int clothModelIdx;
+} pushConstants;
+
+layout (std140, set = 0, binding = 0) uniform ComputeUbo
+{
+	vec4 clickData;
+	vec4 rayStart;
+	vec4 rayDir;
+	vec4 gravity;
+	ivec2 dragParticleIdx;
+	float dt;
+	float stiffness;
+	float alpha;
+	float jacobiScale;
+	float thickness;
+	float radius;
+	float friction;
+	uint numSubsteps;
+	uint atomicAdd;
+	float dragDepth;
+} computeUbo;
+
+layout (std430, set = 1, binding = 0) readonly buffer VertexInSSBO{
+	VertexIn verticesIn[ ];
+};
+
+layout (std430, set = 1, binding = 1) readonly buffer IndexInSSBO{
+	uint indicesIn[ ];
+};
+
+layout (set = 2, binding = 0) uniform ModelUbo 
+{
+	mat4 modelMatrix;
+	vec4 modelColor;
+} modelUbo;
+
+
+layout (std430, set = 3, binding = 0) readonly buffer SkinSSBO{
+	MeshMatrices meshMatrices[ ];
+};
+// animation output, used in cloth calculation
+layout (std430, set = 3, binding = 1) readonly buffer VertexOutSSBO{
+	VertexOut verticesOut[ ];
+};
+
+layout (std430, set = 4, binding = 0) buffer CalculateParticleSSBO{
+	ParticleCalculate calculateParticles[ ];
+};
+
+layout (std430, set = 4, binding = 1) buffer RenderParticleSSBO{
+	ParticleRender renderParticles[ ];
+};
+
+layout (std430, set = 4, binding = 2) readonly buffer PrevCalculateParticleSSBO{
+	ParticleCalculate prevCalculateParticles[ ];
+};
+
+shared uint spinlock;
+
+layout (std430, set = 5, binding = 0) buffer DistConstraintSSBO{
+	DistConstraint distConstraints[ ];
+};
+
+layout (std430, set = 6, binding = 0) buffer RaycastingTriangleDistanceSSBO{
+	float raycastingTriangleDistances[];
+};
+
+layout (constant_id = 0) const int SHARED_DATA_SIZE = 512;
+layout (constant_id = 1) const int COMPUTE_TYPE = 0;
+layout (local_size_x_id = 2) in;
+layout (local_size_y_id = 3) in;
+layout (local_size_z_id = 4) in;
+
+const uint kInitializeParticles = 0;
+const uint kInitializeConstraints = 1;
+const uint kIntegrate = 2;
+const uint kSolveCollision = 3;
+const uint kSolveDistanceConstraintsGauss = 4;
+const uint kSolveDistanceConstraintsJacobi = 5;
+const uint kAddCorrections = 6;
+const uint kUpdateVel = 7;
+const uint kUpdateMesh = 8;
+const uint kUpdateNormals = 9;
+const uint kRaycastingTriangleDistance = 10;
+
+void initializeParticles(in uint xIdx){
+	if (xIdx >= indicesIn.length()) {
+		return;	
+	}
+	renderParticles[xIdx].uv = verticesIn[indicesIn[xIdx]].uv;
+	if (xIdx >= calculateParticles.length()){
+		return;
+	}
+	mat4 initialTransform = modelUbo.modelMatrix;
+	float invMass = calculateParticles[xIdx].pos.w;
+	calculateParticles[xIdx].pos = initialTransform * vec4(verticesIn[xIdx].pos.xyz, 1.0);
+	calculateParticles[xIdx].pos.w = invMass;
+	calculateParticles[xIdx].vel = vec4(0.0);
+	calculateParticles[xIdx].normal = vec4(0.0);
+}
+
+void initializeConstraints(in uint xIdx){
+	if (xIdx >= distConstraints.length()) {
+		return;	
+	}
+	uint id0 = distConstraints[xIdx].constIds.x;
+	uint id1 = distConstraints[xIdx].constIds.y;
+	distConstraints[xIdx].restLength = distance(
+		calculateParticles[id0].pos.xyz, 
+		calculateParticles[id1].pos.xyz);
+}
+
+void integrate(in uint xIdx){
+	if (xIdx >= calculateParticles.length()) {
+		return;	
+	}
+	// hard-coded fixed point
+	if (xIdx == 0 || xIdx == 150 * 99){
+		return;
+	}
+
+	float sdt = computeUbo.dt / float(computeUbo.numSubsteps);
+	calculateParticles[xIdx].prevPos = prevCalculateParticles[xIdx].pos;
+	calculateParticles[xIdx].vel = prevCalculateParticles[xIdx].vel + computeUbo.gravity * sdt;
+	calculateParticles[xIdx].pos = prevCalculateParticles[xIdx].pos + calculateParticles[xIdx].vel * sdt;
+	calculateParticles[xIdx].corr = vec4(0.0);
+	// zero normal before add
+	calculateParticles[xIdx].normal = vec4(0.0);
+	
+	if(computeUbo.clickData.w == 1.0){
+		if(computeUbo.dragParticleIdx.x != -1){
+			if(computeUbo.dragParticleIdx.x == pushConstants.clothModelIdx){
+				if(xIdx == indicesIn[computeUbo.dragParticleIdx.y]){
+					calculateParticles[xIdx].pos.xyz = computeUbo.rayStart.xyz + 
+						computeUbo.dragDepth * computeUbo.rayDir.xyz;
+					calculateParticles[xIdx].pos.w = 0.0;
+				}
+			}
+		}
+	}else{
+		// NOTE: 1.0 replaced to the original inv mass. but it needs additional buffer.
+		if(computeUbo.dragParticleIdx.x == pushConstants.clothModelIdx){
+			if(xIdx == indicesIn[computeUbo.dragParticleIdx.y]){
+				calculateParticles[xIdx].pos.w = 1.0;
+			}
+		}
+	}
+
+	// floor collision
+	if(calculateParticles[xIdx].pos.y > -computeUbo.thickness){
+		vec3 p = calculateParticles[xIdx].pos.xyz * (1.0 - computeUbo.friction) + calculateParticles[xIdx].prevPos.xyz * computeUbo.friction;
+		calculateParticles[xIdx].pos.xyz = vec3(p.x, -computeUbo.thickness, p.z);
+	}
+}
+
+void solveCollision(in uint xIdx, in uint yIdx){
+	if (xIdx >= calculateParticles.length()) {
+		return;	
+	}
+	// NOTE: for model face center
+	//  + indicesIn.length()/3
+	if(yIdx >= verticesOut.length()){
+		return;
+	}
+
+	if(yIdx < verticesOut.length()){
+		vec3 collisionPoint;
+		collisionPoint = verticesOut[yIdx].pos.xyz;
+		float d = distance(collisionPoint, calculateParticles[xIdx].pos.xyz);
+		if(d < computeUbo.radius + computeUbo.thickness){
+			vec3 p = calculateParticles[xIdx].pos.xyz * (1.0 - computeUbo.friction) + calculateParticles[xIdx].prevPos.xyz * computeUbo.friction;
+			vec3 r = normalize(p - collisionPoint);
+			calculateParticles[xIdx].pos.xyz = collisionPoint + r * (computeUbo.radius + computeUbo.thickness);
+		}
+	}
+	// TODO: implement model collision 
+}
+
+void calculateDistanceCorrection(in vec4 pos0, in vec4 pos1, in float l0, out vec3 corr0, out vec3 corr1){
+	// w as invMass
+	corr0 = vec3(0.0);
+	corr1 = vec3(0.0);
+	float w0 = pos0.w;
+	float w1 = pos1.w;
+	float w = w0 + w1;
+	if(w == 0.0){
+		return;
+	}
+	vec3 p0 = pos0.xyz;
+	vec3 p1 = pos1.xyz;
+	vec3 d = p1 - p0;
+	float l = length(d);
+	if(l == 0.0){
+		return;
+	}
+	vec3 n = normalize(d);
+	vec3 dP = n * (l - l0) / w;
+	corr0 = computeUbo.stiffness * w0 * dP;
+	corr1 = computeUbo.stiffness * -w1 * dP;
+}
+
+void solveDistanceConstraintsGauss(in uint xIdx){
+	uint firstConstraintIdx = pushConstants.constraintInfo.x;
+	uint constraintSize = pushConstants.constraintInfo.y;
+	if(xIdx >= constraintSize){
+		return;
+	}
+	uint constraintIdx = firstConstraintIdx + xIdx;
+	
+	uint id0 = distConstraints[constraintIdx].constIds.x;
+	uint id1 = distConstraints[constraintIdx].constIds.y;
+	float l0 = distConstraints[constraintIdx].restLength;
+	// TODO: implement different cloth constraints
+	vec3 corr0;
+	vec3 corr1;
+	calculateDistanceCorrection(
+		calculateParticles[id0].pos, 
+		calculateParticles[id1].pos, 
+		l0,
+		corr0,
+		corr1);
+	// NOTE: do not need to be atomic
+	calculateParticles[id0].pos += vec4(corr0, 0.0);
+	calculateParticles[id1].pos += vec4(corr1, 0.0);
+}
+
+// need spinlock shared variable when atomicAdd not supported
+// type : 0 -> normal,  1 -> corr
+void atomicAddVec3(in bool atomicAddSupported, in uint idx, in vec3 add, in uint type){
+	if(atomicAddSupported){
+#ifdef COMPILE_ATOMIC_ADD
+		if(type == 0){
+			atomicAdd(calculateParticles[idx].normal.x, add.x);
+			atomicAdd(calculateParticles[idx].normal.y, add.y);
+			atomicAdd(calculateParticles[idx].normal.z, add.z);
+		}else if(type == 1){
+			atomicAdd(calculateParticles[idx].corr.x, add.x);
+			atomicAdd(calculateParticles[idx].corr.y, add.y);
+			atomicAdd(calculateParticles[idx].corr.z, add.z);
+		}
+#endif
+	}else{
+		bool keepWaiting = true;
+		while(keepWaiting){
+			//acquire
+			uint originalValue = atomicCompSwap(spinlock, 0, 1);
+			if(originalValue == 0){
+				if(type == 0){
+					calculateParticles[idx].normal.x += add.x;
+					calculateParticles[idx].normal.y += add.y;
+					calculateParticles[idx].normal.z += add.z;
+				}else if(type == 1){
+					calculateParticles[idx].corr.x += add.x;
+					calculateParticles[idx].corr.y += add.y;
+					calculateParticles[idx].corr.z += add.z;
+				}
+				memoryBarrierBuffer();
+				keepWaiting = false;
+				//release
+				atomicExchange(spinlock, 0);
+			}
+		}	
+	}
+}
+
+void solveDistanceConstraintsJacobi(in uint xIdx){
+	// spinlock init
+	spinlock = 0;
+	memoryBarrierShared();
+	barrier();	
+
+	uint firstConstraintIdx = pushConstants.constraintInfo.x;
+	uint constraintSize = pushConstants.constraintInfo.y;
+	if(xIdx >= constraintSize){
+		return;
+	}
+	uint constraintIdx = firstConstraintIdx + xIdx;
+	
+	uint id0 = distConstraints[constraintIdx].constIds.x;
+	uint id1 = distConstraints[constraintIdx].constIds.y;
+	float l0 = distConstraints[constraintIdx].restLength;
+	// TODO: implement different cloth constraints
+	vec3 corr0;
+	vec3 corr1;
+	calculateDistanceCorrection(
+		calculateParticles[id0].pos, 
+		calculateParticles[id1].pos, 
+		l0,
+		corr0,
+		corr1);
+	// TODO: spin lock for each subgroup id
+	// NOTE: atomic add
+	atomicAddVec3(computeUbo.atomicAdd == 1, id0, corr0, 1);
+	atomicAddVec3(computeUbo.atomicAdd == 1, id1, corr1, 1);
+}
+
+void addCorrections(in uint xIdx){
+	if(xIdx >= calculateParticles.length()){
+		return;
+	}
+	calculateParticles[xIdx].pos += calculateParticles[xIdx].corr * computeUbo.jacobiScale;
+}
+
+void updateVel(in uint xIdx){
+	if(xIdx >= calculateParticles.length()){
+		return;
+	}
+	float sdt = computeUbo.dt / float(computeUbo.numSubsteps);
+	if(sdt == 0.0){
+		// first compute
+		calculateParticles[xIdx].vel = vec4(0.0);
+		return;
+	}
+	calculateParticles[xIdx].vel = (calculateParticles[xIdx].pos - calculateParticles[xIdx].prevPos) / sdt;
+}
+
+void updateMesh(in uint xIdx){
+	// spinlock init
+	spinlock = 0;
+	memoryBarrierShared();
+	barrier();
+
+	if (xIdx >= indicesIn.length()) {
+		return;	
+	}
+	renderParticles[xIdx].pos = calculateParticles[indicesIn[xIdx]].pos;
+
+	if (xIdx >= indicesIn.length()/3) {
+		return;	
+	}
+	
+
+	vec3 p0 = vec3(calculateParticles[indicesIn[3*xIdx+0]].pos);
+	vec3 p1 = vec3(calculateParticles[indicesIn[3*xIdx+1]].pos);
+	vec3 p2 = vec3(calculateParticles[indicesIn[3*xIdx+2]].pos);
+	vec4 normal = normalize(vec4(cross(p1-p0, p2-p0), 0.0));
+	// separate normal for same pos in case of atomic 0
+	// NOTE: will be normalized in vertex shader
+	 if(computeUbo.atomicAdd == 0){
+		renderParticles[3*xIdx+0].normal = normal;
+		renderParticles[3*xIdx+1].normal = normal;
+		renderParticles[3*xIdx+2].normal = normal;
+	} else{
+		for(uint i=0;i<3;i++){
+			atomicAddVec3(computeUbo.atomicAdd == 1, indicesIn[3*xIdx+i], normal.xyz, 0);
+		}
+	}
+}
+
+void updateNormals(in uint xIdx){
+	if (xIdx >= indicesIn.length()/3) {
+		return;	
+	}
+	// NOTE: will be normalized in vertex shader
+	if(computeUbo.atomicAdd != 0){
+		for(uint i=0;i<3;i++){
+			renderParticles[3*xIdx+i].normal = normalize(calculateParticles[indicesIn[3*xIdx+i]].normal);
+		}
+	}
+}
+
+void raycastingTriangleDistance(in uint xIdx){
+	if (xIdx >= indicesIn.length()/3) {
+		return;	
+	}
+	float noHit = -1.0;
+	raycastingTriangleDistances[xIdx] = noHit;
+
+	vec3 p = computeUbo.rayStart.xyz;
+	vec3 p0 = renderParticles[3*xIdx+0].pos.xyz;
+	vec3 p1 = renderParticles[3*xIdx+1].pos.xyz;
+	vec3 p2 = renderParticles[3*xIdx+2].pos.xyz;
+	vec3 lambda = vec3(1.0/3.0);
+	vec3 v0 = (p1 - p0);
+	vec3 v1 = (p2 - p0);
+	// NOTE: pp0 dot v0 equals (p'-p0) dot v0
+	vec3 pp0 = (p - p0);
+	// 2 column 3 row
+	vec3 dir = computeUbo.rayDir.xyz;
+	vec3 pvec = cross(dir,v1);
+	mat3x2 projMat = transpose(mat2x3(pvec, cross(v0, dir)));
+	// mat2 barycentricMat = projMat * mat2x3(v0, v1);
+	// float det = determinant(barycentricMat);
+	// det(mat3(v0, dir, v1))
+	float sqrtDet = dot(v0, pvec);
+	// mat2 barycentricMax == sqrtDet * mat2(1.0)
+	// collapsed triangle, use uniform weight
+	if(sqrtDet == 0.0){
+		return;
+	}
+
+	float invSqrtDet = 1.0 / sqrtDet;
+	vec2 lambda12 = invSqrtDet * projMat * pp0;
+	lambda.yz = lambda12;
+	lambda.x = 1.0 - lambda.y - lambda.z;
+
+	if(lambda.x < 0.0 || 
+		lambda.y < 0.0 ||
+		lambda.z < 0.0
+	){
+		return;
+	}
+
+	vec3 pProj = mat3(p0, p1, p2) * lambda;
+	raycastingTriangleDistances[xIdx] = dot(dir, pProj - p);
+}
+
+void main() 
+{
+	// Current SSBO index
+	uint xIdx = gl_GlobalInvocationID.x;
+	uint yIdx = gl_GlobalInvocationID.y;
+	uint zIdx = gl_GlobalInvocationID.z;
+
+	if(COMPUTE_TYPE == kInitializeParticles){
+		initializeParticles(xIdx);
+	}else if(COMPUTE_TYPE == kInitializeConstraints){
+		initializeConstraints(xIdx);
+	}else if(COMPUTE_TYPE == kIntegrate){
+		integrate(xIdx);
+	}else if(COMPUTE_TYPE == kSolveCollision){
+		solveCollision(xIdx, yIdx);
+	}else if(COMPUTE_TYPE == kSolveDistanceConstraintsGauss){
+		solveDistanceConstraintsGauss(xIdx);
+	}else if(COMPUTE_TYPE == kSolveDistanceConstraintsJacobi){
+		solveDistanceConstraintsJacobi(xIdx);
+	}else if(COMPUTE_TYPE == kAddCorrections){
+		addCorrections(xIdx);
+	}else if(COMPUTE_TYPE == kUpdateVel){
+		updateVel(xIdx);
+	}else if(COMPUTE_TYPE == kUpdateMesh){
+		updateMesh(xIdx);
+	}else if(COMPUTE_TYPE == kUpdateNormals){
+		updateNormals(xIdx);
+	}else if(COMPUTE_TYPE == kRaycastingTriangleDistance){
+		raycastingTriangleDistance(xIdx);
+	}
+}

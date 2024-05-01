@@ -7,6 +7,9 @@ https://github.com/KhronosGroup/Vulkan-Hpp
 
 */
 
+//
+#include "vgeu_buffer.hpp"
+
 // libs
 #include <Vulkan-Hpp/vulkan/vulkan.hpp>
 #include <Vulkan-Hpp/vulkan/vulkan_raii.hpp>
@@ -53,12 +56,16 @@ vk::raii::Instance createInstance(const vk::raii::Context& context,
 vk::DebugUtilsMessengerCreateInfoEXT createDebugCreateInfo();
 bool checkValidationLayerSupport(const vk::raii::Context& context);
 std::vector<const char*> getRequiredExtensions(bool enableValidationLayers);
+bool isDeviceExtensionSupported(
+    const std::vector<std::string>& supportedDeviceExtensions,
+    const std::string& extension);
 vk::raii::DebugUtilsMessengerEXT setupDebugMessenger(
     vk::raii::Instance& instance);
 
 vk::raii::Device createLogicalDevice(
     const vk::raii::PhysicalDevice& physicalDevice,
     const QueueFamilyIndices& queueFamilyIndices,
+    const std::vector<std::string>& supportedDeviceExtensions,
     const std::vector<const char*>& extensions = {},
     const vk::PhysicalDeviceFeatures* physicalDeviceFeatures = nullptr,
     const void* pNext = nullptr, bool useSwapChain = true,
@@ -186,5 +193,18 @@ void setImageLayout(const vk::raii::CommandBuffer& commandBuffer,
 // get aligned size of uniform/storage buffer
 size_t padBufferSize(const vk::raii::PhysicalDevice physicalDevice,
                      size_t originalSize, bool isUniformType);
+
+// mainly used for ownership release and acquire
+void addQueueFamilyOwnershipTransferBarriers(
+    uint32_t srcQueueFamilyIndex, uint32_t dstQueueFamilyIndex,
+    const vk::raii::CommandBuffer& cmdBuffer,
+    const std::vector<const vgeu::VgeuBuffer*>& targetBufferPtrs,
+    vk::AccessFlags srcAccessMask, vk::AccessFlags dstAccessMask,
+    vk::PipelineStageFlags srcStageMask, vk::PipelineStageFlags dstStageMask);
+
+// mainly used for compute dispatch execution order
+void addComputeToComputeBarriers(
+    const vk::raii::CommandBuffer& cmdBuffer,
+    const std::vector<const vgeu::VgeuBuffer*>& targetBufferPtrs);
 
 }  // namespace vgeu

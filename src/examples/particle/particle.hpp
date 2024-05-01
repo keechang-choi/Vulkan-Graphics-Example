@@ -95,7 +95,7 @@ class VgeExample : public VgeBase {
   VgeExample();
   ~VgeExample();
   virtual void initVulkan();
-  virtual void getEnabledExtensions();
+  virtual void getEnabledFeatures();
   virtual void render();
   virtual void prepare();
   virtual void viewChanged();

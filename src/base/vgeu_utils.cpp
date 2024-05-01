@@ -4,6 +4,7 @@
 #include <GLFW/glfw3.h>
 
 // std
+#include <algorithm>
 #include <iostream>
 #include <limits>
 
@@ -107,9 +108,18 @@ vk::raii::DebugUtilsMessengerEXT setupDebugMessenger(
   return vk::raii::DebugUtilsMessengerEXT(instance, createDebugCreateInfo());
 }
 
+bool isDeviceExtensionSupported(
+    const std::vector<std::string>& supportedDeviceExtensions,
+    const std::string& extension) {
+  return (std::find(supportedDeviceExtensions.begin(),
+                    supportedDeviceExtensions.end(),
+                    extension) != supportedDeviceExtensions.end());
+}
+
 vk::raii::Device createLogicalDevice(
     const vk::raii::PhysicalDevice& physicalDevice,
     const QueueFamilyIndices& queueFamilyIndices,
+    const std::vector<std::string>& supportedDeviceExtensions,
     const std::vector<const char*>& extensions,
     const vk::PhysicalDeviceFeatures* physicalDeviceFeatures, const void* pNext,
     bool useSwapChain, vk::QueueFlags requestedQueueTypes) {
@@ -123,17 +133,24 @@ vk::raii::Device createLogicalDevice(
   }
 
   if (requestedQueueTypes & vk::QueueFlagBits::eCompute) {
-    vk::DeviceQueueCreateInfo deviceQueueCreateInfo(
-        vk::DeviceQueueCreateFlags(), queueFamilyIndices.compute, 1,
-        &queuePriority);
-    queueCreateInfos.push_back(deviceQueueCreateInfo);
+    // only if dedicated compute queue supported
+    if (queueFamilyIndices.compute != queueFamilyIndices.graphics) {
+      vk::DeviceQueueCreateInfo deviceQueueCreateInfo(
+          vk::DeviceQueueCreateFlags(), queueFamilyIndices.compute, 1,
+          &queuePriority);
+      queueCreateInfos.push_back(deviceQueueCreateInfo);
+    }
   }
 
   if (requestedQueueTypes & vk::QueueFlagBits::eTransfer) {
-    vk::DeviceQueueCreateInfo deviceQueueCreateInfo(
-        vk::DeviceQueueCreateFlags(), queueFamilyIndices.transfer, 1,
-        &queuePriority);
-    queueCreateInfos.push_back(deviceQueueCreateInfo);
+    // only if dedicated transfer queue supported
+    if ((queueFamilyIndices.transfer != queueFamilyIndices.graphics) &&
+        (queueFamilyIndices.transfer != queueFamilyIndices.compute)) {
+      vk::DeviceQueueCreateInfo deviceQueueCreateInfo(
+          vk::DeviceQueueCreateFlags(), queueFamilyIndices.transfer, 1,
+          &queuePriority);
+      queueCreateInfos.push_back(deviceQueueCreateInfo);
+    }
   }
 
   std::vector<const char*> deviceExtensions(extensions);
@@ -141,6 +158,13 @@ vk::raii::Device createLogicalDevice(
     deviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
   }
 
+  for (const char* enabledExtension : deviceExtensions) {
+    if (!vgeu::isDeviceExtensionSupported(supportedDeviceExtensions,
+                                          enabledExtension)) {
+      std::cerr << "Enabled device extension \"" << enabledExtension
+                << "\" is not present at device level\n";
+    }
+  }
   vk::DeviceCreateInfo deviceCreateInfo(vk::DeviceCreateFlags(),
                                         queueCreateInfos, {}, deviceExtensions,
                                         physicalDeviceFeatures, pNext);
@@ -681,6 +705,44 @@ size_t padBufferSize(const vk::raii::PhysicalDevice physicalDevice,
     alignedSize = (alignedSize + minUboAlignment - 1) & ~(minUboAlignment - 1);
   }
   return alignedSize;
+}
+
+void addQueueFamilyOwnershipTransferBarriers(
+    uint32_t srcQueueFamilyIndex, uint32_t dstQueueFamilyIndex,
+    const vk::raii::CommandBuffer& cmdBuffer,
+    const std::vector<const vgeu::VgeuBuffer*>& targetBufferPtrs,
+    vk::AccessFlags srcAccessMask, vk::AccessFlags dstAccessMask,
+    vk::PipelineStageFlags srcStageMask, vk::PipelineStageFlags dstStageMask) {
+  bool dedicatedComputeQueue = (srcQueueFamilyIndex == dstQueueFamilyIndex);
+
+  if (dedicatedComputeQueue) {
+    std::vector<vk::BufferMemoryBarrier> bufferBarriers;
+    for (const auto targetBuffer : targetBufferPtrs) {
+      bufferBarriers.emplace_back(srcAccessMask, dstAccessMask,
+                                  srcQueueFamilyIndex, dstQueueFamilyIndex,
+                                  targetBuffer->getBuffer(), 0ull,
+                                  targetBuffer->getBufferSize());
+    }
+
+    cmdBuffer.pipelineBarrier(srcStageMask, dstStageMask, vk::DependencyFlags{},
+                              nullptr, bufferBarriers, nullptr);
+  }
+}
+
+void addComputeToComputeBarriers(
+    const vk::raii::CommandBuffer& cmdBuffer,
+    const std::vector<const vgeu::VgeuBuffer*>& targetBufferPtrs) {
+  std::vector<vk::BufferMemoryBarrier> bufferBarriers;
+  for (const auto targetBuffer : targetBufferPtrs) {
+    bufferBarriers.emplace_back(
+        vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eShaderRead,
+        VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+        targetBuffer->getBuffer(), 0ull, targetBuffer->getBufferSize());
+  }
+  cmdBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,
+                            vk::PipelineStageFlagBits::eComputeShader,
+                            vk::DependencyFlags{}, nullptr, bufferBarriers,
+                            nullptr);
 }
 
 }  // namespace vgeu
