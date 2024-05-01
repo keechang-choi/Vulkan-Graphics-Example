@@ -305,9 +305,9 @@ void VgeExample::initClothModels() {
         descriptorPool, common.particleDescriptorSetLayout,
         compute.constraintDescriptorSetLayout, MAX_CONCURRENT_FRAMES);
 
-    float kFlagScale = 10.f;
+    float kFlagScale = 5.f;
     glm::mat4 translateMat =
-        glm::translate(glm::mat4{1.f}, glm::vec3{30.f, -8.f, 0.f});
+        glm::translate(glm::mat4{1.f}, glm::vec3{3.f, -8.f, 0.f});
     glm::mat4 rotateMat{1.f};
     // FlipY manually
     // NOTE: not only flip Y, also need flip z to preserve orientation
@@ -1891,9 +1891,9 @@ void VgeExample::buildComputeCommandBuffers() {
           *compute.pipelines.pipelinesCloth[static_cast<uint32_t>(
               ComputeType::kSolveCollision)]);
 
-      std::vector<size_t> collisionInstanceIndices{findInstances("fox0")[0],
-                                                   findInstances("fox1")[0]};
-
+      std::vector<size_t> collisionInstanceIndices{
+          findInstances("fox2")[0],
+      };
       for (auto collisionInstanceIdx : collisionInstanceIndices) {
         // uint32_t collisionInstanceIdx = findInstances("fox2")[0];
         // bind SSBO for skin matrix and animated vertices
@@ -2752,9 +2752,9 @@ void Cloth::initParticlesData(const std::vector<vgeu::glTF::Vertex>& vertices,
       pos.w = 1.f;
     }
     // hardcoded fix position
-    // if (i == 0 || i == 150 * 99) {
-    //   pos.w = 0.f;
-    // }
+    if (i == 0 || i == 150 * 99) {
+      pos.w = 0.f;
+    }
     // else w as invMass
     ParticleCalculate newParticle{};
     newParticle.pos = pos;

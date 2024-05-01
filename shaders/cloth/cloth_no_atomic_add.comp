@@ -165,6 +165,7 @@ void integrate(in uint xIdx){
 	if (xIdx >= calculateParticles.length()) {
 		return;	
 	}
+	// hard-coded fixed point
 	if (xIdx == 0 || xIdx == 150 * 99){
 		return;
 	}
@@ -207,7 +208,9 @@ void solveCollision(in uint xIdx, in uint yIdx){
 	if (xIdx >= calculateParticles.length()) {
 		return;	
 	}
-	if(yIdx >= verticesOut.length() + indicesIn.length()/3){
+	// NOTE: for model face center
+	//  + indicesIn.length()/3
+	if(yIdx >= verticesOut.length()){
 		return;
 	}
 

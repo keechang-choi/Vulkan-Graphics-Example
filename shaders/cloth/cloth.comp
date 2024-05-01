@@ -165,9 +165,9 @@ void integrate(in uint xIdx){
 	if (xIdx >= calculateParticles.length()) {
 		return;	
 	}
-	// if (xIdx == 0 || xIdx == 150 * 99){
-	// 	return;
-	// }
+	if (xIdx == 0 || xIdx == 150 * 99){
+		return;
+	}
 
 	float sdt = computeUbo.dt / float(computeUbo.numSubsteps);
 	calculateParticles[xIdx].prevPos = prevCalculateParticles[xIdx].pos;
