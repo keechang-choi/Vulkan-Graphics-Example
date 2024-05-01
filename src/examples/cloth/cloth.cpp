@@ -155,7 +155,7 @@ void VgeExample::prepareCommon() {
   createDescriptorSetLayout();
 
   // use modelInstances size
-  // TODO: add maximum cloth model size
+  // NOTE: use maximum cloth model size
   createDescriptorPool();
 
   // NOTE: use global descriptor pool for cloth
@@ -236,7 +236,6 @@ void VgeExample::createDescriptorSetLayout() {
     layoutBindings.emplace_back(1 /*binding*/,
                                 vk::DescriptorType::eStorageBuffer, 1,
                                 vk::ShaderStageFlagBits::eAll);
-    // TODO: fix descriptor pool size
     //  calculation particles prev frame
     layoutBindings.emplace_back(2 /*binding*/,
                                 vk::DescriptorType::eStorageBuffer, 1,
@@ -612,7 +611,7 @@ void VgeExample::createComputeDescriptorSets() {
     device.updateDescriptorSets(writeDescriptorSets, nullptr);
   }
 
-  // TODO: raycastingTriangleDescriptorSets
+  // raycastingTriangleDescriptorSets
   {
     vk::DescriptorSetAllocateInfo allocInfo(
         *descriptorPool, *compute.raycastingTriangleDescriptorSetLayout);
@@ -724,7 +723,7 @@ void VgeExample::createComputePipelines() {
       compClothShaderModule = vgeu::createShaderModule(device, compClothCode);
     }
 
-    // TODO: change specialization data for each type
+    // change specialization data for each type
     for (auto i = 0;
          i <= static_cast<uint32_t>(ComputeType::kRaycastingTriangleDistance);
          i++) {
@@ -1824,13 +1823,12 @@ void VgeExample::buildComputeCommandBuffers() {
     }
   }
 
-  // TODO: check only animated buffer should be used
+  // NOTE: check only animated buffer should be used
   // compute execution memory barrier
   vgeu::addComputeToComputeBarriers(
       compute.cmdBuffers[currentFrameIndex],
       common.ownershipTransferBufferPtrs[currentFrameIndex]);
 
-  // TODO: substeps need  or just submit with dt/numsubsteps
   for (auto substep = 0; substep < opts.numSubsteps; substep++) {
     //  integrate
     {
@@ -2074,11 +2072,8 @@ void VgeExample::buildComputeCommandBuffers() {
           1);
     }
   }
-  // TODO: triangle distance from ray start
-  // check ray intersection using barycentric coords in compute shader
 
-  // TODO: other compute shader dispatch call
-  // support [one animated model - multi clothes] interation
+  // TODO: support [one animated model - multi clothes] interation
 
   // release barrier
   {
@@ -2145,8 +2140,6 @@ void VgeExample::updateComputeUbo() {
     glm::vec4 rayDir(glm::normalize(rayEnd - rayStart));
 
     glm::vec4 clickPos{0.f};
-    // TODO: calculate click pos from triangle distance
-    // TODO: transfer  or use coherent triangle distance buffer
     compute.ubo.rayStart = rayStart;
     compute.ubo.rayDir = rayDir;
 
@@ -2184,8 +2177,8 @@ void VgeExample::updateComputeUbo() {
   }
 
   // raycasting triangle distance
+  // TODO: improve command submit structures not to wait
   {
-    // raycasting triangle distance
     if (compute.ubo.clickData.w == 1.0f) {
       if (compute.computeRayDistance) {
         compute.computeRayDistance = false;
@@ -2741,7 +2734,6 @@ void Cloth::initParticlesData(const std::vector<vgeu::glTF::Vertex>& vertices,
   numTris = indices.size() / 3;
   initialTransform = translate * rotate * scale;
 
-  // TODO: initialize using compute shader cosidering performance.
   std::vector<ParticleCalculate> particlesCalculate;
   particlesCalculate.reserve(numParticles);
   for (auto i = 0; i < numParticles; i++) {
@@ -2818,7 +2810,6 @@ void Cloth::initDistConstraintsData(const uint32_t numX, const uint32_t numY) {
       }
     }
   }
-  // TODO: make it independent for performance
   // shearing down right
   for (auto isOdd = 0; isOdd < 2; isOdd++) {
     for (auto xi = 0; xi < (numX - isOdd) / 2; xi++) {
@@ -2840,6 +2831,7 @@ void Cloth::initDistConstraintsData(const uint32_t numX, const uint32_t numY) {
       }
     }
   }
+  // TODO: make it independent for performance
   // bending x
   for (auto xi = 0; xi < numX - 2; xi++) {
     for (auto yi = 0; yi < numY; yi++) {
@@ -2855,33 +2847,13 @@ void Cloth::initDistConstraintsData(const uint32_t numX, const uint32_t numY) {
     }
   }
 
-  // TODO: pre compute rest length in compute shader
+  // NOTE: pre compute rest length in compute shader
   createDistConstraintStorageBuffers(distConstraints);
   createDistConstraintDescriptorSets();
 }
 
 void Cloth::initDistConstraintsData(
     const std::vector<DistConstraint>& distConstraints) {
-  // TODO: not implemented yet
-}
-
-void Cloth::integrate(const uint32_t frameIndex,
-                      const vk::raii::CommandBuffer& cmdBuffer) {
-  // TODO: not implemented yet
-}
-
-void Cloth::solveConstraints(const uint32_t frameIndex,
-                             const vk::raii::CommandBuffer& cmdBuffer) {
-  // TODO: not implemented yet
-}
-
-void Cloth::updateVel(const uint32_t frameIndex,
-                      const vk::raii::CommandBuffer& cmdBuffer) {
-  // TODO: not implemented yet
-}
-
-void Cloth::updateMesh(const uint32_t frameIndex,
-                       const vk::raii::CommandBuffer& cmdBuffer) {
   // TODO: not implemented yet
 }
 

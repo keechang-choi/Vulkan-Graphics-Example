@@ -136,12 +136,7 @@ struct ParticleRender {
 
 /*
 compute type:
-0-> integrate
-1-> solve collision
-2-> solve distance constraints
-3-> update vel
-4-> update mesh
-5-> initialize? (TODO: optional)
+NOTE: should be identical with compute shader
 */
 enum class ComputeType {
   kInitializeParticles = 0,
@@ -239,20 +234,6 @@ class Cloth {
   // cloth-cloth constraints or external fixed point
   void initDistConstraintsData(
       const std::vector<DistConstraint>& distConstraints);
-  // TODO: dispatch group size
-  // integrate and prevPos store
-  void integrate(const uint32_t frameIndex,
-                 const vk::raii::CommandBuffer& cmdBuffer);
-  // bind two?
-  // Gauss-Seidel, Jacobi, correction adder -> by specialize
-  void solveConstraints(const uint32_t frameIndex,
-                        const vk::raii::CommandBuffer& cmdBuffer);
-  // vel update
-  void updateVel(const uint32_t frameIndex,
-                 const vk::raii::CommandBuffer& cmdBuffer);
-  // use model->bindSSBO for getting index buffer as storage buffer
-  void updateMesh(const uint32_t frameIndex,
-                  const vk::raii::CommandBuffer& cmdBuffer);
 
   void bindVertexBuffer(const vk::raii::CommandBuffer& cmdBuffer,
                         const uint32_t frameIndex) {
@@ -316,7 +297,7 @@ class Cloth {
   // used in both of the pipelines
   std::vector<std::unique_ptr<vgeu::VgeuBuffer>> calculateSBs;
   std::vector<std::unique_ptr<vgeu::VgeuBuffer>> renderSBs;
-  // TODO: use model's compute only vertex and index buffer
+  // NOTE: use model's compute only vertex and index buffer
   // to initialize storage buffers
 
   // initial setting
