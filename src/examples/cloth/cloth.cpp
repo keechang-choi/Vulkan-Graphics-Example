@@ -305,9 +305,9 @@ void VgeExample::initClothModels() {
         descriptorPool, common.particleDescriptorSetLayout,
         compute.constraintDescriptorSetLayout, MAX_CONCURRENT_FRAMES);
 
-    float kFlagScale = 5.f;
+    float kFlagScale = 10.f;
     glm::mat4 translateMat =
-        glm::translate(glm::mat4{1.f}, glm::vec3{3.f, -8.f, 0.f});
+        glm::translate(glm::mat4{1.f}, glm::vec3{30.f, -8.f, 0.f});
     glm::mat4 rotateMat{1.f};
     // FlipY manually
     // NOTE: not only flip Y, also need flip z to preserve orientation
@@ -1097,7 +1097,7 @@ void VgeExample::setupDynamicUbo() {
   {
     size_t instanceIndex = findInstances("fox0")[0];
     common.dynamicUbo[instanceIndex].modelMatrix = glm::translate(
-        glm::mat4{1.f}, glm::vec3{quadScale * 1.5f - 6.f, 0.f, 0.f});
+        glm::mat4{1.f}, glm::vec3{quadScale * 1.5f - 5.f, 0.f, 0.f});
     common.dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
         common.dynamicUbo[instanceIndex].modelMatrix, glm::radians(0.f), up);
     // FlipY manually
@@ -1110,7 +1110,7 @@ void VgeExample::setupDynamicUbo() {
   {
     size_t instanceIndex = findInstances("fox1")[0];
     common.dynamicUbo[instanceIndex].modelMatrix = glm::translate(
-        glm::mat4{1.f}, glm::vec3{quadScale * 1.5f + 6.f, 0.f, 0.f});
+        glm::mat4{1.f}, glm::vec3{quadScale * 1.5f + 5.f, 0.f, 0.f});
     common.dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
         common.dynamicUbo[instanceIndex].modelMatrix, glm::radians(180.f), up);
     // FlipY manually
@@ -1886,43 +1886,52 @@ void VgeExample::buildComputeCommandBuffers() {
           vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 0 /*set*/,
           *compute.descriptorSets[currentFrameIndex], nullptr);
 
-      uint32_t collisionInstanceIdx = findInstances("fox2")[0];
-      // bind SSBO for skin matrix and animated vertices
-      compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
-          vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 3 /*set*/,
-          *compute.skinDescriptorSets[currentFrameIndex][collisionInstanceIdx],
-          nullptr);
-      const auto& collisionModelInstance = modelInstances[collisionInstanceIdx];
-
       compute.cmdBuffers[currentFrameIndex].bindPipeline(
           vk::PipelineBindPoint::eCompute,
           *compute.pipelines.pipelinesCloth[static_cast<uint32_t>(
               ComputeType::kSolveCollision)]);
-      for (auto instanceIdx = 0; instanceIdx < modelInstances.size();
-           instanceIdx++) {
-        const auto& modelInstance = modelInstances[instanceIdx];
-        if (!modelInstance.clothModel) {
-          continue;
-        }
+
+      std::vector<size_t> collisionInstanceIndices{findInstances("fox0")[0],
+                                                   findInstances("fox1")[0]};
+
+      for (auto collisionInstanceIdx : collisionInstanceIndices) {
+        // uint32_t collisionInstanceIdx = findInstances("fox2")[0];
+        // bind SSBO for skin matrix and animated vertices
         compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
-            vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 4 /*set*/,
-            modelInstance.clothModel->getParticleDescriptorSet(
-                currentFrameIndex),
+            vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 3 /*set*/,
+            *compute
+                 .skinDescriptorSets[currentFrameIndex][collisionInstanceIdx],
             nullptr);
-        // NOTE: add model face center as collision point
-        compute.cmdBuffers[currentFrameIndex].dispatch(
-            modelInstance.clothModel->getNumParticles() / sharedDataSize + 1,
-            (collisionModelInstance.model->getVertexCount() +
-             collisionModelInstance.model->getIndexCount() / 3) /
-                    collisionWorkGroupSize +
-                1,
-            1);
+        const auto& collisionModelInstance =
+            modelInstances[collisionInstanceIdx];
+
+        for (auto instanceIdx = 0; instanceIdx < modelInstances.size();
+             instanceIdx++) {
+          const auto& modelInstance = modelInstances[instanceIdx];
+          if (!modelInstance.clothModel) {
+            continue;
+          }
+          compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+              vk::PipelineBindPoint::eCompute, *compute.pipelineLayout,
+              4 /*set*/,
+              modelInstance.clothModel->getParticleDescriptorSet(
+                  currentFrameIndex),
+              nullptr);
+          // NOTE: add model face center as collision point
+          // +collisionModelInstance.model->getIndexCount() / 3
+          compute.cmdBuffers[currentFrameIndex].dispatch(
+              modelInstance.clothModel->getNumParticles() / sharedDataSize + 1,
+              (collisionModelInstance.model->getVertexCount()) /
+                      collisionWorkGroupSize +
+                  1,
+              1);
+        }
+        // compute execution memory barrier
+        vgeu::addComputeToComputeBarriers(
+            compute.cmdBuffers[currentFrameIndex],
+            compute.calculateBufferPtrs[currentFrameIndex]);
       }
     }
-    // compute execution memory barrier
-    vgeu::addComputeToComputeBarriers(
-        compute.cmdBuffers[currentFrameIndex],
-        compute.calculateBufferPtrs[currentFrameIndex]);
 
     // solve distance constraints
     {
@@ -2743,9 +2752,9 @@ void Cloth::initParticlesData(const std::vector<vgeu::glTF::Vertex>& vertices,
       pos.w = 1.f;
     }
     // hardcoded fix position
-    if (i == 0 || i == 150 * 99) {
-      pos.w = 0.f;
-    }
+    // if (i == 0 || i == 150 * 99) {
+    //   pos.w = 0.f;
+    // }
     // else w as invMass
     ParticleCalculate newParticle{};
     newParticle.pos = pos;
