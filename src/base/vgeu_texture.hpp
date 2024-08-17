@@ -14,15 +14,31 @@ https://github.com/SaschaWillems/Vulkan/blob/master/base/VulkanTexture.h
 #include "vgeu_buffer.hpp"
 
 // libs
-#include <stb_image.h>
-#include <tiny_gltf.h>
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <Vulkan-Hpp/vulkan/vulkan.hpp>
 #include <Vulkan-Hpp/vulkan/vulkan_raii.hpp>
+#define TINYGLTF_IMPLEMENTATION
+#include <tiny_gltf.h>
+#define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <stb_image.h>
 
 // std
 #include <memory>
+
+namespace vgeu {
+
+bool isKtx(const tinygltf::Image& gltfImage);
+bool loadImageDataFunc(tinygltf::Image* gltfImage, const int imageIndex,
+                       std::string* error, std::string* warning, int req_width,
+                       int req_height, const unsigned char* bytes, int size,
+                       void* userData);
+bool loadImageDataFuncEmpty(tinygltf::Image* image, const int imageIndex,
+                            std::string* error, std::string* warning,
+                            int req_width, int req_height,
+                            const unsigned char* bytes, int size,
+                            void* userData);
 
 struct Texture {
   std::unique_ptr<vgeu::VgeuImage> vgeuImage;
@@ -35,16 +51,16 @@ struct Texture {
   vk::raii::Sampler sampler = nullptr;
 
   // fromglTFImage
-  Texture(tinygltf::Image& gltfimage, std::string path,
-          const vk::raii::Device& device, VmaAllocator allocator,
-          const vk::raii::Queue& transferQueue,
+  Texture(const tinygltf::Image& gltfimage, const vk::raii::Device& device,
+          VmaAllocator allocator, const vk::raii::Queue& transferQueue,
           const vk::raii::CommandPool& commandPool);
   // empty texture
   Texture(const vk::raii::Device& device, VmaAllocator allocator,
           const vk::raii::Queue& transferQueue,
           const vk::raii::CommandPool& commandPool);
 
-  void fromglTFImage(tinygltf::Image& gltfimage, std::string path,
+  // TODO: move into gltf using inheritance
+  void fromglTFImage(const tinygltf::Image& gltfimage,
                      const vk::raii::Device& device, VmaAllocator allocator,
                      const vk::raii::Queue& transferQueue,
                      const vk::raii::CommandPool& commandPool);
@@ -58,3 +74,5 @@ struct Texture {
   // NOTE: used at the end of fromglTFImage()
   void updateDescriptorInfo();
 };
+
+}  // namespace vgeu

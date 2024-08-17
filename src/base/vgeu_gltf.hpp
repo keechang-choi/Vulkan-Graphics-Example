@@ -10,10 +10,11 @@ https://github.com/SaschaWillems/Vulkan/blob/master/base/VulkanglTFModel.h
 
 #include "vgeu_buffer.hpp"
 #include "vgeu_flags.hpp"
+#include "vgeu_texture.hpp"
 #include "vgeu_utils.hpp"
 
 // libs
-#include "tiny_gltf.h"
+// #include "tiny_gltf.h"
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <Vulkan-Hpp/vulkan/vulkan.hpp>
@@ -73,14 +74,14 @@ struct Material {
   float metallicFactor = 1.0f;
   float roughnessFactor = 1.0f;
   glm::vec4 baseColorFactor = glm::vec4(1.0f);
-  const vgeu::glTF::Texture* baseColorTexture = nullptr;
-  const vgeu::glTF::Texture* metallicRoughnessTexture = nullptr;
-  const vgeu::glTF::Texture* normalTexture = nullptr;
-  const vgeu::glTF::Texture* occlusionTexture = nullptr;
-  const vgeu::glTF::Texture* emissiveTexture = nullptr;
+  const vgeu::Texture* baseColorTexture = nullptr;
+  const vgeu::Texture* metallicRoughnessTexture = nullptr;
+  const vgeu::Texture* normalTexture = nullptr;
+  const vgeu::Texture* occlusionTexture = nullptr;
+  const vgeu::Texture* emissiveTexture = nullptr;
   // NOTE: not yet used.
-  const vgeu::glTF::Texture* specularGlossinessTexture = nullptr;
-  const vgeu::glTF::Texture* diffuseTexture = nullptr;
+  const vgeu::Texture* specularGlossinessTexture = nullptr;
+  const vgeu::Texture* diffuseTexture = nullptr;
 
   vk::raii::DescriptorSet descriptorSet = nullptr;
 
