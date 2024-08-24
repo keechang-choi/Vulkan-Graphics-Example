@@ -14,7 +14,7 @@ https://github.com/SaschaWillems/Vulkan/blob/master/base/VulkanglTFModel.h
 #include "vgeu_utils.hpp"
 
 // libs
-// #include "tiny_gltf.h"
+#include "tiny_gltf.h"
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <Vulkan-Hpp/vulkan/vulkan.hpp>
@@ -64,6 +64,22 @@ struct FlagTraits<RenderFlagBits> {
 };
 namespace glTF {
 
+class TextureglTF : public Texture {
+ public:
+  // fromglTFImage
+  TextureglTF(const tinygltf::Image& gltfimage, const vk::raii::Device& device,
+              VmaAllocator allocator, const vk::raii::Queue& transferQueue,
+              const vk::raii::CommandPool& commandPool);
+  // empty texture
+  TextureglTF(const vk::raii::Device& device, VmaAllocator allocator,
+              const vk::raii::Queue& transferQueue,
+              const vk::raii::CommandPool& commandPool);
+  void fromglTFImage(const tinygltf::Image& gltfimage,
+                     const vk::raii::Device& device, VmaAllocator allocator,
+                     const vk::raii::Queue& transferQueue,
+                     const vk::raii::CommandPool& commandPool);
+};
+
 struct Node;
 
 struct Material {
@@ -111,7 +127,7 @@ struct Primitive {
 
   void setDimensions(glm::vec3 min, glm::vec3 max);
   Primitive(uint32_t firstIndex, uint32_t indexCount, const Material& material)
-      : firstIndex(firstIndex), indexCount(indexCount), material(material){};
+      : firstIndex(firstIndex), indexCount(indexCount), material(material) {};
 };
 
 #define MAX_JOINT_MATRICES 64

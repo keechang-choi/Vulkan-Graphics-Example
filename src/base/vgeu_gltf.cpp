@@ -1,15 +1,138 @@
 #include "vgeu_gltf.hpp"
 
-#include "vgeu_texture.hpp"
 #include "vgeu_utils.hpp"
+
+// libs
+#define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#define TINYGLTF_IMPLEMENTATION
+#include "tiny_gltf.h"
 
 // std
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
 
+namespace {
+
+bool isKtx(const tinygltf::Image& gltfImage) {
+  bool isUriKtx{false};
+  if (gltfImage.uri.find_last_of(".") != std::string::npos) {
+    if (gltfImage.uri.substr(gltfImage.uri.find_last_of(".") + 1) == "ktx") {
+      isUriKtx = true;
+    }
+  }
+  return isUriKtx;
+}
+bool loadImageDataFunc(tinygltf::Image* gltfImage, const int imageIndex,
+                       std::string* error, std::string* warning, int req_width,
+                       int req_height, const unsigned char* bytes, int size,
+                       void* userData) {
+  if (isKtx(*gltfImage)) {
+    return true;
+  }
+  return tinygltf::LoadImageData(gltfImage, imageIndex, error, warning,
+                                 req_width, req_height, bytes, size, userData);
+}
+
+bool loadImageDataFuncEmpty(tinygltf::Image* image, const int imageIndex,
+                            std::string* error, std::string* warning,
+                            int req_width, int req_height,
+                            const unsigned char* bytes, int size,
+                            void* userData) {
+  return true;
+}
+}  // namespace
 namespace vgeu {
 namespace glTF {
+
+TextureglTF::TextureglTF(const tinygltf::Image& gltfimage,
+                         const vk::raii::Device& device, VmaAllocator allocator,
+                         const vk::raii::Queue& transferQueue,
+                         const vk::raii::CommandPool& commandPool)
+    : Texture() {
+  fromglTFImage(gltfimage, device, allocator, transferQueue, commandPool);
+}
+
+TextureglTF::TextureglTF(const vk::raii::Device& device, VmaAllocator allocator,
+                         const vk::raii::Queue& transferQueue,
+                         const vk::raii::CommandPool& commandPool)
+    : Texture(device, allocator, transferQueue, commandPool) {}
+
+void TextureglTF::fromglTFImage(const tinygltf::Image& gltfImage,
+                                const vk::raii::Device& device,
+                                VmaAllocator allocator,
+                                const vk::raii::Queue& transferQueue,
+                                const vk::raii::CommandPool& commandPool) {
+  if (!isKtx(gltfImage)) {
+    // NOTE: SetPreserveimageChannels false by default
+    assert(gltfImage.component == 4 && "failed: image channel is not RGBA");
+    vk::DeviceSize bufferSize = gltfImage.image.size();
+    uint32_t pixelCount = gltfImage.width * gltfImage.height;
+    uint32_t pixelSize = gltfImage.bits / 8 * gltfImage.component;
+    assert(pixelSize == 4 || pixelSize == 8);
+    vk::Format format = vk::Format::eR8G8B8A8Unorm;
+    if (pixelSize == 8) format = vk::Format::eR16G16B16A16Unorm;
+    assert(bufferSize == pixelCount * pixelSize);
+
+    width = gltfImage.width;
+    height = gltfImage.height;
+    mipLevels = static_cast<uint32_t>(
+        std::floor(std::log2(std::max(width, height))) + 1.0);
+    // TODO: check physical device format properties support?
+
+    // NOTE: create image mipLevels-count, copy 0-level image
+    {
+      vgeu::VgeuBuffer stagingBuffer(
+          allocator, pixelSize, width * height,
+          vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_AUTO,
+          VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+              VMA_ALLOCATION_CREATE_MAPPED_BIT);
+
+      std::memcpy(stagingBuffer.getMappedData(), gltfImage.image.data(),
+                  stagingBuffer.getBufferSize());
+
+      vgeuImage = std::make_unique<VgeuImage>(
+          device, allocator, format, vk::Extent2D(width, height),
+          vk::ImageTiling::eOptimal,
+          vk::ImageUsageFlagBits::eSampled |
+              vk::ImageUsageFlagBits::eTransferSrc |
+              vk::ImageUsageFlagBits::eTransferDst,
+          vk::ImageLayout::eUndefined, VmaMemoryUsage::VMA_MEMORY_USAGE_AUTO,
+          VmaAllocationCreateFlagBits::
+              VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
+          vk::ImageAspectFlagBits::eColor, mipLevels);
+
+      // NOTE: row length, image height : 0 for buffer packed tightly
+      vk::BufferImageCopy region(
+          0, 0, 0,
+          vk::ImageSubresourceLayers{vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+          vk::Offset3D{0, 0, 0}, vk::Extent3D{width, height, 1});
+      // NOTE: 0-mipLevel image copy and transition all mipLevels to dst
+      oneTimeSubmit(device, commandPool, transferQueue,
+                    [&](const vk::raii::CommandBuffer& cmdBuffer) {
+                      setImageLayout(cmdBuffer, vgeuImage->getImage(),
+                                     vgeuImage->getFormat(), 0, mipLevels,
+                                     vk::ImageLayout::eUndefined,
+                                     vk::ImageLayout::eTransferDstOptimal);
+                      cmdBuffer.copyBufferToImage(
+                          stagingBuffer.getBuffer(), vgeuImage->getImage(),
+                          vk::ImageLayout::eTransferDstOptimal, region);
+                    });
+    }
+    oneTimeSubmit(device, commandPool, transferQueue,
+                  [this](const vk::raii::CommandBuffer& cmdBuffer) {
+                    this->generateMipmaps(cmdBuffer);
+                  });
+    imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+
+  } else {
+    // NOTE: loading texture using KTX format not yet added.
+    assert(false && "failed: not yet implemented KTX format texture loading");
+  }
+  createSampler(device);
+  updateDescriptorInfo();
+}
 Model::Model(const vk::raii::Device& device, VmaAllocator allocator,
              const vk::raii::Queue& transferQueue,
              const vk::raii::CommandPool& commandPool,
@@ -325,12 +448,12 @@ void Model::loadFromFile(std::string filename,
 
 void Model::loadImages(tinygltf::Model& gltfModel) {
   for (tinygltf::Image& gltfImage : gltfModel.images) {
-    textures.push_back(std::make_unique<Texture>(gltfImage, device, allocator,
-                                                 transferQueue, commandPool));
+    textures.push_back(std::make_unique<TextureglTF>(
+        gltfImage, device, allocator, transferQueue, commandPool));
   }
   // Create an empty texture to be used for empty material images
-  emptyTexture =
-      std::make_unique<Texture>(device, allocator, transferQueue, commandPool);
+  emptyTexture = std::make_unique<TextureglTF>(device, allocator, transferQueue,
+                                               commandPool);
 }
 
 void Model::loadMaterials(const tinygltf::Model& gltfModel) {
