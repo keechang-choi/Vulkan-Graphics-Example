@@ -3,9 +3,12 @@
 #include "vgeu_utils.hpp"
 
 // libs
-// #define STB_IMAGE_IMPLEMENTATION
-// #define STB_IMAGE_WRITE_IMPLEMENTATION
-// #include <stb_image.h>
+// NOTE: impl def macro included in tinygltf
+#include <stb_image.h>
+
+// std
+#include <cassert>
+#include <stdexcept>
 
 namespace vgeu {
 
@@ -125,5 +128,94 @@ void Texture::updateDescriptorInfo() {
   descriptorInfo.sampler = *sampler;
   descriptorInfo.imageView = *vgeuImage->getImageView();
   descriptorInfo.imageLayout = imageLayout;
+}
+
+Texture2D::Texture2D(const std::string filename, const vk::raii::Device& device,
+                     VmaAllocator allocator,
+                     const vk::raii::Queue& transferQueue,
+                     const vk::raii::CommandPool& commandPool,
+                     bool use_mipmap = true)
+    : Texture() {
+  this->loadFromFile(filename, device, allocator, transferQueue, commandPool,
+                     use_mipmap);
+}
+void Texture2D::loadFromFile(const std::string filename,
+                             const vk::raii::Device& device,
+                             VmaAllocator allocator,
+                             const vk::raii::Queue& transferQueue,
+                             const vk::raii::CommandPool& commandPool,
+                             bool use_mipmap) {
+  int texWidth, texHeight, texChannels;
+  stbi_uc* pixels = stbi_load(filename.c_str(), &texWidth, &texHeight,
+                              &texChannels, STBI_rgb_alpha);
+  if (!pixels) {
+    std::cout << "reason: " << stbi_failure_reason() << std::endl;
+    throw std::runtime_error("failed to load texture image!");
+  }
+
+  this->width = static_cast<uint32_t>(texWidth);
+  this->height = static_cast<uint32_t>(texHeight);
+  assert(texChannels == 4 && "texture channel not rgba");
+
+  uint32_t pixelSize = 4;
+  vk::Format format = vk::Format::eR8G8B8A8Unorm;
+  uint32_t pixelCount = this->width * this->height;
+
+  if (use_mipmap) {
+    this->mipLevels = static_cast<uint32_t>(
+        std::floor(std::log2(std::max(width, height))) + 1.0);
+  } else {
+    this->mipLevels = 1u;
+  }
+
+  // TODO: check physical device format properties support?
+
+  // NOTE: create image mipLevels-count, copy 0-level image
+  {
+    vgeu::VgeuBuffer stagingBuffer(
+        allocator, pixelSize, pixelCount, vk::BufferUsageFlagBits::eTransferSrc,
+        VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT);
+
+    std::memcpy(stagingBuffer.getMappedData(), (void*)pixels,
+                stagingBuffer.getBufferSize());
+    stbi_image_free(pixels);
+
+    vgeuImage = std::make_unique<VgeuImage>(
+        device, allocator, format, vk::Extent2D(width, height),
+        vk::ImageTiling::eOptimal,
+        vk::ImageUsageFlagBits::eSampled |
+            vk::ImageUsageFlagBits::eTransferSrc |
+            vk::ImageUsageFlagBits::eTransferDst,
+        vk::ImageLayout::eUndefined, VmaMemoryUsage::VMA_MEMORY_USAGE_AUTO,
+        VmaAllocationCreateFlagBits::VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
+        vk::ImageAspectFlagBits::eColor, mipLevels);
+
+    // NOTE: row length, image height : 0 for buffer packed tightly
+    vk::BufferImageCopy region(
+        0, 0, 0,
+        vk::ImageSubresourceLayers{vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+        vk::Offset3D{0, 0, 0}, vk::Extent3D{width, height, 1});
+    // NOTE: 0-mipLevel image copy and transition all mipLevels to dst
+    oneTimeSubmit(device, commandPool, transferQueue,
+                  [&](const vk::raii::CommandBuffer& cmdBuffer) {
+                    setImageLayout(cmdBuffer, vgeuImage->getImage(),
+                                   vgeuImage->getFormat(), 0, mipLevels,
+                                   vk::ImageLayout::eUndefined,
+                                   vk::ImageLayout::eTransferDstOptimal);
+                    cmdBuffer.copyBufferToImage(
+                        stagingBuffer.getBuffer(), vgeuImage->getImage(),
+                        vk::ImageLayout::eTransferDstOptimal, region);
+                  });
+  }
+  oneTimeSubmit(device, commandPool, transferQueue,
+                [this](const vk::raii::CommandBuffer& cmdBuffer) {
+                  this->generateMipmaps(cmdBuffer);
+                });
+  imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+
+  createSampler(device);
+  updateDescriptorInfo();
 }
 }  // namespace vgeu

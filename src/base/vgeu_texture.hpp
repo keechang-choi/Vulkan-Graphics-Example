@@ -52,4 +52,17 @@ class Texture {
   void updateDescriptorInfo();
 };
 
+class Texture2D : public Texture {
+ public:
+  Texture2D(const std::string filename, const vk::raii::Device& device,
+            VmaAllocator allocator, const vk::raii::Queue& transferQueue,
+            const vk::raii::CommandPool& commandPool, bool use_mipmap = true);
+
+  void loadFromFile(std::string filename, const vk::raii::Device& device,
+                    VmaAllocator allocator,
+                    const vk::raii::Queue& transferQueue,
+                    const vk::raii::CommandPool& commandPool,
+                    bool use_mipmap = true);
+};
+
 }  // namespace vgeu
