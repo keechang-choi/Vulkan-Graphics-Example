@@ -133,8 +133,7 @@ void Texture::updateDescriptorInfo() {
 Texture2D::Texture2D(const std::string filename, const vk::raii::Device& device,
                      VmaAllocator allocator,
                      const vk::raii::Queue& transferQueue,
-                     const vk::raii::CommandPool& commandPool,
-                     bool use_mipmap = true)
+                     const vk::raii::CommandPool& commandPool, bool use_mipmap)
     : Texture() {
   this->loadFromFile(filename, device, allocator, transferQueue, commandPool,
                      use_mipmap);
