@@ -331,7 +331,7 @@ struct ModelInstance {
   // initial offset and scale
   vgeu::TransformComponent transform;
   uint32_t getVertexCount() const;
-  ModelInstance(){};
+  ModelInstance() {};
   ModelInstance(const ModelInstance& o) = delete;
   ModelInstance& operator=(const ModelInstance& other) = delete;
   ModelInstance(ModelInstance&& other);
