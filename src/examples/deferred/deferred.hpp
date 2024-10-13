@@ -11,6 +11,9 @@ namespace vge {
 
 #define MAX_LIGHTS 10
 struct Options {
+  float moveSpeed = 10.f;
+  // save camera view. not configurable by panel
+  glm::mat4 cameraView{1.f};
   int32_t debugDisplayarget = 0;
 };
 
@@ -99,19 +102,27 @@ class VgeExample : public VgeBase {
  public:
   VgeExample();
   ~VgeExample();
+  // to separate cmd line init and restart variable
+  virtual void setupCommandLineParser(CLI::App& app);
+  void setOptions(const std::optional<Options>& opts);
+
   virtual void initVulkan();
   virtual void getEnabledExtensions();
   virtual void getEnabledFeatures();
-  virtual void render();
   virtual void prepare();
+  virtual void render();
+
   virtual void viewChanged();
-  virtual void setupCommandLineParser(CLI::App& app);
   virtual void onUpdateUIOverlay();
 
-  // to separate cmd line init and restart variable
-  void setupCommandLineParser(CLI::App& app, Options& opts);
-  // copy option values to member variables
-  void initFromOptions();
+  void loadAssets();
+  void prepareOffScreenFrameBuffer();
+  void prepareUniformBuffers();
+  void setupDescriptors();
+  void preparePipelines();
+
+  void buildCommandBuffers();
+  void buildDefferredCommandBuffers();
 
   Options opts{};
 

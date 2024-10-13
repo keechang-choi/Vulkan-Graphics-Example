@@ -63,7 +63,7 @@ std::pair<glm::vec3, glm::vec3> getRayStartAndDir(const glm::vec2 mousePos,
 
 }  // namespace
 namespace vge {
-VgeExample::VgeExample() : VgeBase() { title = "Particle Example"; }
+VgeExample::VgeExample() : VgeBase() { title = "Cloth Example"; }
 VgeExample::~VgeExample() {}
 
 void VgeExample::initVulkan() {
