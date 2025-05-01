@@ -69,4 +69,70 @@ void VgeExample::render() {}
 void VgeExample::viewChanged() {}
 void VgeExample::onUpdateUIOverlay() {}
 
+void VgeExample::loadAssets() {
+  // NOTE: no flip or preTransform for animation and skinning
+  vgeu::FileLoadingFlags glTFLoadingFlags =
+      vgeu::FileLoadingFlagBits::kPreMultiplyVertexColors;
+  // | vgeu::FileLoadingFlagBits::kPreTransformVertices;
+  //| vgeu::FileLoadingFlagBits::kFlipY;
+  std::shared_ptr<vgeu::glTF::Model> damagedHelmet;
+
+  damagedHelmet = std::make_shared<vgeu::glTF::Model>(
+      device, globalAllocator->getAllocator(), queue, commandPool,
+      MAX_CONCURRENT_FRAMES);
+  damagedHelmet->loadFromFile(
+      getAssetsPath() + "/models/DamagedHelmet/glTF/DamagedHelmet.gltf",
+      glTFLoadingFlags);
+
+  {
+    ModelInstance modelInstance{};
+    modelInstance.model = damagedHelmet;
+    modelInstance.name = "damagedHelmet";
+    addModelInstance(std::move(modelInstance));
+  }
+}
+
+void VgeExample::prepareOffScreenFrameBuffer() {}
+void VgeExample::prepareUniformBuffers() {}
+void VgeExample::setupDescriptors() {}
+void VgeExample::preparePipelines() {}
+
+void VgeExample::buildCommandBuffers() {}
+void VgeExample::buildDefferredCommandBuffers() {}
+
+void VgeExample::addModelInstance(ModelInstance&& newInstance) {
+  size_t instanceIdx = modelInstances.size();
+  modelInstances.push_back(std::move(newInstance));
+  instanceMap[newInstance.name].push_back(instanceIdx);
+}
+
+const std::vector<size_t>& VgeExample::findInstances(const std::string& name) {
+  assert(instanceMap.find(name) != instanceMap.end() &&
+         "failed to find instance by name.");
+  return instanceMap.at(name);
+}
+
+ModelInstance::ModelInstance(ModelInstance&& other) {
+  model = other.model;
+  simpleModel = other.simpleModel;
+  name = other.name;
+  isBone = other.isBone;
+  animationIndex = other.animationIndex;
+  animationTime = other.animationTime;
+  transform = other.transform;
+}
+
+ModelInstance& ModelInstance::operator=(ModelInstance&& other) {
+  model = other.model;
+  simpleModel = other.simpleModel;
+  name = other.name;
+  isBone = other.isBone;
+  animationIndex = other.animationIndex;
+  animationTime = other.animationTime;
+  transform = other.transform;
+  return *this;
+}
+
 }  // namespace vge
+
+VULKAN_EXAMPLE_MAIN()

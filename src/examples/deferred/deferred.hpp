@@ -124,6 +124,9 @@ class VgeExample : public VgeBase {
   void buildCommandBuffers();
   void buildDefferredCommandBuffers();
 
+  void addModelInstance(ModelInstance&& newInstance);
+  const std::vector<size_t>& findInstances(const std::string& name);
+
   Options opts{};
 
   struct Textures {
