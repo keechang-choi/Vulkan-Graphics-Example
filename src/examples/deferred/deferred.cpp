@@ -65,7 +65,18 @@ void VgeExample::prepare() {
   prepared = true;
 }
 
-void VgeExample::render() {}
+void VgeExample::render() {
+  if (!prepared) {
+    return;
+  }
+  // update ubo
+
+  buildCommandBuffers();
+  buildDefferredCommandBuffers();
+
+  // draw
+}
+
 void VgeExample::viewChanged() {}
 void VgeExample::onUpdateUIOverlay() {}
 
@@ -92,13 +103,62 @@ void VgeExample::loadAssets() {
   }
 }
 
-void VgeExample::prepareOffScreenFrameBuffer() {}
+std::unique_ptr<vgeu::VgeuImage> VgeExample::createAttachment(
+    vk::Format format, vk::ImageUsageFlagBits usage) {
+  return std::make_unique<vgeu::VgeuImage>(
+      device, globalAllocator->getAllocator(), vk::Format::eR16G16B16A16Sfloat,
+      vk::Extent2D{offScreenFrameBuf.width, offScreenFrameBuf.height},
+      vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eColorAttachment,
+      vk::ImageLayout::eUndefined, VmaMemoryUsage::VMA_MEMORY_USAGE_AUTO,
+      VmaAllocationCreateFlagBits::VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
+      vk::ImageAspectFlagBits::eDepth, 1);
+}
+
+void VgeExample::prepareOffScreenFrameBuffer() {
+  offScreenFrameBuf.width = 2048;
+  offScreenFrameBuf.height = 2048;
+
+  for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    offScreenFrameBuf.position.push_back(
+        std::move(createAttachment(vk::Format::eR16G16B16A16Sfloat,
+                                   vk::ImageUsageFlagBits::eColorAttachment)));
+    offScreenFrameBuf.normal.push_back(
+        std::move(createAttachment(vk::Format::eR16G16B16A16Sfloat,
+                                   vk::ImageUsageFlagBits::eColorAttachment)));
+    offScreenFrameBuf.albedo.push_back(
+        std::move(createAttachment(vk::Format::eR16G16B16A16Sfloat,
+                                   vk::ImageUsageFlagBits::eColorAttachment)));
+    offScreenFrameBuf.depth.push_back(std::move(createAttachment(
+        depthFormat, vk::ImageUsageFlagBits::eDepthStencilAttachment)));
+  }
+  // render pass creation
+
+  vk::FramebufferCreateInfo framebufferCreateInfo(
+      vk::FramebufferCreateFlags(), *renderPass, pDepthImageView ? 2 : 1,
+      attachments, extent.width, extent.height, 1);
+  std::vector<vk::raii::Framebuffer> framebuffers;
+  framebuffers.reserve(imageViews.size());
+  for (auto const& imageView : imageViews) {
+    attachments[0] = *imageView;
+    framebuffers.push_back(
+        vk::raii::Framebuffer(device, framebufferCreateInfo));
+  }
+}
 void VgeExample::prepareUniformBuffers() {}
 void VgeExample::setupDescriptors() {}
 void VgeExample::preparePipelines() {}
 
 void VgeExample::buildCommandBuffers() {}
 void VgeExample::buildDefferredCommandBuffers() {}
+
+void VgeExample::draw() {
+  prepareFrame();
+
+  // offscreen rendering
+  // scene rendering
+
+  submitFrame();
+}
 
 void VgeExample::addModelInstance(ModelInstance&& newInstance) {
   size_t instanceIdx = modelInstances.size();

@@ -117,12 +117,16 @@ class VgeExample : public VgeBase {
 
   void loadAssets();
   void prepareOffScreenFrameBuffer();
+  std::unique_ptr<vgeu::VgeuImage> createAttachment(
+      vk::Format format, vk::ImageUsageFlagBits usage);
   void prepareUniformBuffers();
   void setupDescriptors();
   void preparePipelines();
 
   void buildCommandBuffers();
   void buildDefferredCommandBuffers();
+
+  void draw();
 
   void addModelInstance(ModelInstance&& newInstance);
   const std::vector<size_t>& findInstances(const std::string& name);
