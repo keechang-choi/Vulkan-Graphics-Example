@@ -131,18 +131,86 @@ void VgeExample::prepareOffScreenFrameBuffer() {
     offScreenFrameBuf.depth.push_back(std::move(createAttachment(
         depthFormat, vk::ImageUsageFlagBits::eDepthStencilAttachment)));
   }
-  // render pass creation
+  // render pass creation, subpass dependency
+  std::vector<vk::AttachmentDescription> attachmentDescriptions;
+  // position, normal, albedo, depth
+  for (uint32_t i = 0; i < 4; i++) {
+    vk::ImageLayout finalLayout;
+    if (i == 3) {
+      finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
+    } else {
+      finalLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    }
+    attachmentDescriptions.emplace_back(
+        vk::AttachmentDescriptionFlags(), vk::Format::eUndefined,
+        vk::SampleCountFlagBits::e1, vk::AttachmentLoadOp::eClear,
+        vk::AttachmentStoreOp::eStore, vk::AttachmentLoadOp::eDontCare,
+        vk::AttachmentStoreOp::eDontCare, vk::ImageLayout::eUndefined,
+        finalLayout);
+  }
+  attachmentDescriptions[0].format = offScreenFrameBuf.position[0]->getFormat();
+  attachmentDescriptions[1].format = offScreenFrameBuf.normal[0]->getFormat();
+  attachmentDescriptions[2].format = offScreenFrameBuf.albedo[0]->getFormat();
+  attachmentDescriptions[3].format = offScreenFrameBuf.depth[0]->getFormat();
+  std::vector<vk::AttachmentReference> colorReferences;
+  colorReferences.emplace_back(0, vk::ImageLayout::eColorAttachmentOptimal);
+  colorReferences.emplace_back(1, vk::ImageLayout::eColorAttachmentOptimal);
+  colorReferences.emplace_back(2, vk::ImageLayout::eColorAttachmentOptimal);
+  vk::AttachmentReference depthReference(
+      3, vk::ImageLayout::eDepthAttachmentOptimal);
+  vk::SubpassDescription subpassDescription(
+      vk::SubpassDescriptionFlags(), vk::PipelineBindPoint::eGraphics, {},
+      colorReferences, {}, &depthReference);
 
-  vk::FramebufferCreateInfo framebufferCreateInfo(
-      vk::FramebufferCreateFlags(), *renderPass, pDepthImageView ? 2 : 1,
-      attachments, extent.width, extent.height, 1);
+  // subpass dependencies for layout transition
+  std::vector<vk::SubpassDependency> dependencies;
+  dependencies.emplace_back(VK_SUBPASS_EXTERNAL, 0u,
+                            vk::PipelineStageFlagBits::eEarlyFragmentTests |
+                                vk::PipelineStageFlagBits::eLateFragmentTests,
+                            vk::PipelineStageFlagBits::eEarlyFragmentTests |
+                                vk::PipelineStageFlagBits::eLateFragmentTests,
+                            vk::AccessFlagBits::eDepthStencilAttachmentWrite,
+                            vk::AccessFlagBits::eDepthStencilAttachmentWrite |
+                                vk::AccessFlagBits::eDepthStencilAttachmentRead,
+                            vk::DependencyFlags());
+  dependencies.emplace_back(VK_SUBPASS_EXTERNAL, 0u,
+                            vk::PipelineStageFlagBits::eBottomOfPipe,
+                            vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                            vk::AccessFlagBits::eMemoryRead,
+                            vk::AccessFlagBits::eColorAttachmentWrite |
+                                vk::AccessFlagBits::eColorAttachmentRead,
+                            vk::DependencyFlags());
+  // transition for lighting render pass after geometry pass
+  dependencies.emplace_back(0u, VK_SUBPASS_EXTERNAL,
+                            vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                            vk::PipelineStageFlagBits::eBottomOfPipe,
+                            vk::AccessFlagBits::eColorAttachmentWrite |
+                                vk::AccessFlagBits::eColorAttachmentRead,
+                            vk::AccessFlagBits::eMemoryRead,
+                            vk::DependencyFlags());
+  vk::RenderPassCreateInfo renderPassCreateInfo(
+      vk::RenderPassCreateFlags(), attachmentDescriptions, subpassDescription,
+      dependencies);
+  offScreenFrameBuf.renderPass =
+      vk::raii::RenderPass(device, renderPassCreateInfo);
+  // frame buffer creation
+
   std::vector<vk::raii::Framebuffer> framebuffers;
-  framebuffers.reserve(imageViews.size());
-  for (auto const& imageView : imageViews) {
-    attachments[0] = *imageView;
+  framebuffers.reserve(MAX_CONCURRENT_FRAMES);
+  for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    std::array<vk::ImageView, 4> attachments{};
+    attachments[0] = *offScreenFrameBuf.position[i]->getImageView();
+    attachments[1] = *offScreenFrameBuf.normal[i]->getImageView();
+    attachments[2] = *offScreenFrameBuf.albedo[i]->getImageView();
+    attachments[3] = *offScreenFrameBuf.depth[i]->getImageView();
+
+    vk::FramebufferCreateInfo framebufferCreateInfo(
+        vk::FramebufferCreateFlags(), *renderPass, attachments,
+        offScreenFrameBuf.width, offScreenFrameBuf.height, 1);
     framebuffers.push_back(
         vk::raii::Framebuffer(device, framebufferCreateInfo));
   }
+  // sampler creation
 }
 void VgeExample::prepareUniformBuffers() {}
 void VgeExample::setupDescriptors() {}
