@@ -87,15 +87,28 @@ void VgeExample::loadAssets() {
       vgeu::FileLoadingFlagBits::kPreMultiplyVertexColors;
   // | vgeu::FileLoadingFlagBits::kPreTransformVertices;
   //| vgeu::FileLoadingFlagBits::kFlipY;
-  std::shared_ptr<vgeu::glTF::Model> damagedHelmet;
 
+  std::shared_ptr<vgeu::glTF::Model> apple;
+  apple = std::make_shared<vgeu::glTF::Model>(
+      device, globalAllocator->getAllocator(), queue, commandPool,
+      MAX_CONCURRENT_FRAMES);
+  apple->additionalBufferUsageFlags = vk::BufferUsageFlagBits::eStorageBuffer;
+  apple->loadFromFile(getAssetsPath() + "/models/apple/food_apple_01_4k.gltf",
+                      glTFLoadingFlags);
+  {
+    ModelInstance modelInstance{};
+    modelInstance.model = apple;
+    modelInstance.name = "floor";
+    addModelInstance(std::move(modelInstance));
+  }
+
+  std::shared_ptr<vgeu::glTF::Model> damagedHelmet;
   damagedHelmet = std::make_shared<vgeu::glTF::Model>(
       device, globalAllocator->getAllocator(), queue, commandPool,
       MAX_CONCURRENT_FRAMES);
   damagedHelmet->loadFromFile(
       getAssetsPath() + "/models/DamagedHelmet/glTF/DamagedHelmet.gltf",
       glTFLoadingFlags);
-
   {
     ModelInstance modelInstance{};
     modelInstance.model = damagedHelmet;
@@ -122,9 +135,19 @@ std::unique_ptr<vgeu::VgeuImage> VgeExample::createAttachment(
 }
 
 void VgeExample::setupDynamicUbo() {
-  const float HelmetScale = 1.00f;
   glm::vec3 up{0.f, -1.f, 0.f};
   dynamicUbo.resize(modelInstances.size());
+  {
+    size_t instanceIndex = findInstances("floor")[0];
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::translate(glm::mat4{1.f}, glm::vec3{0.f, 0.f, 0.f});
+    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
+        dynamicUbo[instanceIndex].modelMatrix, glm::radians(0.f), up);
+    dynamicUbo[instanceIndex].modelMatrix = glm::scale(
+        dynamicUbo[instanceIndex].modelMatrix, glm::vec3{10.0, 10.0, 0.1});
+    dynamicUbo[instanceIndex].modelColor = glm::vec4{1.0f, 0.f, 0.f, 0.3f};
+  }
+  const float HelmetScale = 1.00f;
   {
     size_t instanceIndex = findInstances("DamagedHelmet1")[0];
     dynamicUbo[instanceIndex].modelMatrix =
@@ -298,7 +321,11 @@ void VgeExample::prepareUniformBuffers() {
         {std::move(dynamic), std::move(offScreen), std::move(composition)});
   }
 }
-void VgeExample::setupDescriptors() {}
+void VgeExample::setupDescriptors() {
+  // pool
+  // layout
+  // descriptor sets
+}
 void VgeExample::preparePipelines() {}
 
 void VgeExample::buildCommandBuffers() {}
