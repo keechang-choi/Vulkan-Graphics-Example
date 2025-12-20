@@ -195,8 +195,7 @@ void VgeExample::prepareOffScreenFrameBuffer() {
       vk::raii::RenderPass(device, renderPassCreateInfo);
   // frame buffer creation
 
-  std::vector<vk::raii::Framebuffer> framebuffers;
-  framebuffers.reserve(MAX_CONCURRENT_FRAMES);
+  offScreenFrameBuf.frameBuffers.reserve(MAX_CONCURRENT_FRAMES);
   for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
     std::array<vk::ImageView, 4> attachments{};
     attachments[0] = *offScreenFrameBuf.position[i]->getImageView();
@@ -207,10 +206,18 @@ void VgeExample::prepareOffScreenFrameBuffer() {
     vk::FramebufferCreateInfo framebufferCreateInfo(
         vk::FramebufferCreateFlags(), *renderPass, attachments,
         offScreenFrameBuf.width, offScreenFrameBuf.height, 1);
-    framebuffers.push_back(
+    offScreenFrameBuf.frameBuffers.push_back(
         vk::raii::Framebuffer(device, framebufferCreateInfo));
   }
   // sampler creation
+  vk::SamplerCreateInfo samplerCI(
+      vk::SamplerCreateFlags{}, vk::Filter::eNearest, vk::Filter::eNearest,
+      vk::SamplerMipmapMode::eLinear, vk::SamplerAddressMode::eClampToEdge,
+      vk::SamplerAddressMode::eClampToEdge,
+      vk::SamplerAddressMode::eClampToEdge, 0.f, true, 1.0f, false,
+      vk::CompareOp::eNever, 0.f, static_cast<float>(1.f),
+      vk::BorderColor::eFloatOpaqueWhite);
+  colorSampler = vk::raii::Sampler(device, samplerCI);
 }
 void VgeExample::prepareUniformBuffers() {}
 void VgeExample::setupDescriptors() {}
