@@ -26,7 +26,7 @@ struct DynamicUboElt {
 struct UniformDataOffscreen {
   glm::mat4 projection{1.f};
   glm::mat4 view{1.f};
-  glm::mat4 model{1.f};
+  // glm::mat4 model{1.f};
 };
 
 struct Light {
@@ -116,6 +116,7 @@ class VgeExample : public VgeBase {
   virtual void onUpdateUIOverlay();
 
   void loadAssets();
+  void setupDynamicUbo();
   void prepareOffScreenFrameBuffer();
   std::unique_ptr<vgeu::VgeuImage> createAttachment(
       vk::Format format, vk::ImageUsageFlagBits usage);
@@ -146,17 +147,18 @@ class VgeExample : public VgeBase {
   // saves both index for corresponding model and simple model
   std::unordered_map<std::string, std::vector<size_t>> instanceMap;
 
-  UniformDataOffscreen UniformDataOffscreen;
+  UniformDataOffscreen uniformDataOffscreen;
 
   std::vector<DynamicUboElt> dynamicUbo;
   size_t alignedSizeDynamicUboElt = 0;
 
   UniformDataComposition uniformDataComposition;
-  struct {
-    std::vector<std::unique_ptr<vgeu::VgeuBuffer>> dynamicUniformBuffers;
-    std::vector<std::unique_ptr<vgeu::VgeuBuffer>> offScreen;
-    std::vector<std::unique_ptr<vgeu::VgeuBuffer>> composition;
-  } uniformBuffers;
+  struct UniformBuffers {
+    std::unique_ptr<vgeu::VgeuBuffer> dynamic;
+    std::unique_ptr<vgeu::VgeuBuffer> offScreen;
+    std::unique_ptr<vgeu::VgeuBuffer> composition;
+  };
+  std::vector<UniformBuffers> uniformBuffers;
 
   struct {
     vk::raii::Pipeline offScreen = nullptr;

@@ -58,6 +58,7 @@ void VgeExample::getEnabledFeatures() {
 void VgeExample::prepare() {
   VgeBase::prepare();
   loadAssets();
+  setupDynamicUbo();
   prepareOffScreenFrameBuffer();
   prepareUniformBuffers();
   setupDescriptors();
@@ -98,7 +99,13 @@ void VgeExample::loadAssets() {
   {
     ModelInstance modelInstance{};
     modelInstance.model = damagedHelmet;
-    modelInstance.name = "damagedHelmet";
+    modelInstance.name = "damagedHelmet1";
+    addModelInstance(std::move(modelInstance));
+  }
+  {
+    ModelInstance modelInstance{};
+    modelInstance.model = damagedHelmet;
+    modelInstance.name = "damagedHelmet2";
     addModelInstance(std::move(modelInstance));
   }
 }
@@ -112,6 +119,34 @@ std::unique_ptr<vgeu::VgeuImage> VgeExample::createAttachment(
       vk::ImageLayout::eUndefined, VmaMemoryUsage::VMA_MEMORY_USAGE_AUTO,
       VmaAllocationCreateFlagBits::VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
       vk::ImageAspectFlagBits::eDepth, 1);
+}
+
+void VgeExample::setupDynamicUbo() {
+  const float HelmetScale = 1.00f;
+  glm::vec3 up{0.f, -1.f, 0.f};
+  dynamicUbo.resize(modelInstances.size());
+  {
+    size_t instanceIndex = findInstances("DamagedHelmet1")[0];
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::translate(glm::mat4{1.f}, glm::vec3{-4.f, 0.f, 0.f});
+    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
+        dynamicUbo[instanceIndex].modelMatrix, glm::radians(0.f), up);
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+                   glm::vec3{HelmetScale, HelmetScale, HelmetScale});
+    dynamicUbo[instanceIndex].modelColor = glm::vec4{1.0f, 0.f, 0.f, 0.3f};
+  }
+  {
+    size_t instanceIndex = findInstances("DamagedHelmet2")[0];
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::translate(glm::mat4{1.f}, glm::vec3{4.f, 0.f, 0.f});
+    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
+        dynamicUbo[instanceIndex].modelMatrix, glm::radians(0.f), up);
+    dynamicUbo[instanceIndex].modelMatrix =
+        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+                   glm::vec3{HelmetScale, HelmetScale, HelmetScale});
+    dynamicUbo[instanceIndex].modelColor = glm::vec4{1.0f, 0.f, 0.f, 0.3f};
+  }
 }
 
 void VgeExample::prepareOffScreenFrameBuffer() {
@@ -219,7 +254,50 @@ void VgeExample::prepareOffScreenFrameBuffer() {
       vk::BorderColor::eFloatOpaqueWhite);
   colorSampler = vk::raii::Sampler(device, samplerCI);
 }
-void VgeExample::prepareUniformBuffers() {}
+void VgeExample::prepareUniformBuffers() {
+  alignedSizeDynamicUboElt =
+      vgeu::padBufferSize(physicalDevice, sizeof(DynamicUboElt), true);
+
+  uniformBuffers.reserve(MAX_CONCURRENT_FRAMES);
+  for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    std::unique_ptr<vgeu::VgeuBuffer> dynamic =
+        std::make_unique<vgeu::VgeuBuffer>(
+            globalAllocator->getAllocator(), alignedSizeDynamicUboElt,
+            dynamicUbo.size(), vk::BufferUsageFlagBits::eUniformBuffer,
+            VMA_MEMORY_USAGE_AUTO,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                VMA_ALLOCATION_CREATE_MAPPED_BIT |
+                VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
+    for (size_t j = 0; j < dynamicUbo.size(); j++) {
+      std::memcpy(static_cast<char*>(dynamic->getMappedData()) +
+                      j * alignedSizeDynamicUboElt,
+                  &dynamicUbo[j], alignedSizeDynamicUboElt);
+    }
+
+    std::unique_ptr<vgeu::VgeuBuffer> offScreen =
+        std::make_unique<vgeu::VgeuBuffer>(
+            globalAllocator->getAllocator(), sizeof(UniformDataOffscreen), 1,
+            vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_AUTO,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                VMA_ALLOCATION_CREATE_MAPPED_BIT |
+                VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
+    std::memcpy(offScreen->getMappedData(), &uniformDataOffscreen,
+                sizeof(UniformDataOffscreen));
+
+    std::unique_ptr<vgeu::VgeuBuffer> composition =
+        std::make_unique<vgeu::VgeuBuffer>(
+            globalAllocator->getAllocator(), sizeof(UniformDataComposition), 1,
+            vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_AUTO,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                VMA_ALLOCATION_CREATE_MAPPED_BIT |
+                VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
+    std::memcpy(offScreen->getMappedData(), &uniformDataComposition,
+                sizeof(UniformDataComposition));
+
+    uniformBuffers.push_back(
+        {std::move(dynamic), std::move(offScreen), std::move(composition)});
+  }
+}
 void VgeExample::setupDescriptors() {}
 void VgeExample::preparePipelines() {}
 
