@@ -119,5 +119,9 @@ VgeuImage::~VgeuImage() {
   // std::cout << "Call: VgeuImage Destructor" << std::endl;
   vmaDestroyImage(allocator, static_cast<VkImage>(image), alloc);
 }
-
+vk::DescriptorImageInfo VgeuImage::descriptorImageInfo(
+    vk::Sampler sampler, vk::ImageLayout imageLayout) {
+  vk::DescriptorImageInfo descriptorImageInfo(sampler, *imageView, imageLayout);
+  return descriptorImageInfo;
+}
 }  // namespace vgeu

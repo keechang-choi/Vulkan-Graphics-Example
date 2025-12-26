@@ -167,15 +167,18 @@ class VgeExample : public VgeBase {
 
     vk::raii::Pipeline composition = nullptr;
   } pipelines;
-  vk::raii::PipelineLayout pipelineLayout = nullptr;
+  vk::raii::PipelineLayout pipelineLayoutOffScreen = nullptr;
+  vk::raii::PipelineLayout pipelineLayoutCompoisition = nullptr;
 
   struct {
+    // std::vector<vk::raii::DescriptorSet> model;
+    // std::vector<vk::raii::DescriptorSet> floor;
     std::vector<vk::raii::DescriptorSet> dynamicUboDescriptorSets;
-    std::vector<vk::raii::DescriptorSet> model;
-    std::vector<vk::raii::DescriptorSet> floor;
+    std::vector<vk::raii::DescriptorSet> offScreenUboDescriptorSets;
     std::vector<vk::raii::DescriptorSet> composition;
   } descriptorSets;
-  vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
+  vk::raii::DescriptorSetLayout compositionDescriptorSetLayout = nullptr;
+  vk::raii::DescriptorSetLayout offScreenUboDescriptorSetLayout = nullptr;
   vk::raii::DescriptorSetLayout dynamicUboDescriptorSetLayout = nullptr;
 
   struct FrameBuffer {

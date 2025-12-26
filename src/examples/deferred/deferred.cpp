@@ -322,11 +322,193 @@ void VgeExample::prepareUniformBuffers() {
   }
 }
 void VgeExample::setupDescriptors() {
-  // pool
+  // model desciptors in gltf class.
+  // pool. for each descriptor type
+  std::vector<vk::DescriptorPoolSize> poolSizes;
+
+  poolSizes.emplace_back(vk::DescriptorType::eUniformBuffer,
+                         /* uniform offscreen, uniform composition*/
+                         MAX_CONCURRENT_FRAMES + MAX_CONCURRENT_FRAMES);
+  poolSizes.emplace_back(vk::DescriptorType::eUniformBufferDynamic,
+                         /* uniform offscreen */
+                         MAX_CONCURRENT_FRAMES);
+  poolSizes.emplace_back(vk::DescriptorType::eCombinedImageSampler,
+                         /* position, normal, albedo */
+                         MAX_CONCURRENT_FRAMES * 3);
+  // max sets
+  vk::DescriptorPoolCreateInfo descriptorPoolCI(
+      vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+      /* composition set */
+      MAX_CONCURRENT_FRAMES +
+          /* offscree set (ubo, dynamic)*/
+          MAX_CONCURRENT_FRAMES * 2,
+      poolSizes);
+  descriptorPool = vk::raii::DescriptorPool(device, descriptorPoolCI);
   // layout
+  // can use generalized descriptor set layout for offscreen and composition,
+  // but we dont.
+  {
+    // deferred compisition
+    std::vector<vk::DescriptorSetLayout> setLayouts;
+    {
+      // set 0
+      std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
+      // position
+      layoutBindings.emplace_back(0 /* binding */,
+                                  vk::DescriptorType::eCombinedImageSampler, 1,
+                                  vk::ShaderStageFlagBits::eFragment);
+      // normal
+      layoutBindings.emplace_back(1 /* binding */,
+                                  vk::DescriptorType::eCombinedImageSampler, 1,
+                                  vk::ShaderStageFlagBits::eFragment);
+      // albedo
+      layoutBindings.emplace_back(2 /* binding */,
+                                  vk::DescriptorType::eCombinedImageSampler, 1,
+                                  vk::ShaderStageFlagBits::eFragment);
+      // fragment uniform
+      layoutBindings.emplace_back(3 /* binding */,
+                                  vk::DescriptorType::eUniformBuffer, 1,
+                                  vk::ShaderStageFlagBits::eFragment);
+      vk::DescriptorSetLayoutCreateInfo layoutCI(
+          vk::DescriptorSetLayoutCreateFlags{}, layoutBindings);
+      compositionDescriptorSetLayout =
+          vk::raii::DescriptorSetLayout(device, layoutCI);
+      setLayouts.push_back(*compositionDescriptorSetLayout);
+    }
+    // create pipelineLayout
+    vk::PipelineLayoutCreateInfo pipelineLayoutCI({}, setLayouts);
+    pipelineLayoutCompoisition =
+        vk::raii::PipelineLayout(device, pipelineLayoutCI);
+  }
+  {
+    // off screen
+    std::vector<vk::DescriptorSetLayout> setLayouts;
+    {
+      // set 0
+      std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
+      // vertex uniform
+      layoutBindings.emplace_back(0 /* binding */,
+                                  vk::DescriptorType::eUniformBuffer, 1,
+                                  vk::ShaderStageFlagBits::eVertex);
+      vk::DescriptorSetLayoutCreateInfo layoutCI(
+          vk::DescriptorSetLayoutCreateFlags{}, layoutBindings);
+      offScreenUboDescriptorSetLayout =
+          vk::raii::DescriptorSetLayout(device, layoutCI);
+      setLayouts.push_back(*offScreenUboDescriptorSetLayout);
+    }
+    // set 1
+    {
+      vk::DescriptorSetLayoutBinding layoutBinding(
+          0, vk::DescriptorType::eUniformBufferDynamic, 1,
+          vk::ShaderStageFlagBits::eVertex);
+      vk::DescriptorSetLayoutCreateInfo layoutCI({}, 1, &layoutBinding);
+      dynamicUboDescriptorSetLayout =
+          vk::raii::DescriptorSetLayout(device, layoutCI);
+      setLayouts.push_back(*dynamicUboDescriptorSetLayout);
+    }
+    // set 2
+    // TODO: need to improve structure. descriptorSetLayout per model
+    setLayouts.push_back(*modelInstances[0].model->descriptorSetLayoutImage);
+
+    // set3
+    setLayouts.push_back(*modelInstances[0].model->descriptorSetLayoutUbo);
+
+    // create pipelineLayout
+    vk::PipelineLayoutCreateInfo pipelineLayoutCI({}, setLayouts);
+    pipelineLayoutOffScreen =
+        vk::raii::PipelineLayout(device, pipelineLayoutCI);
+  }
   // descriptor sets
+  {
+    // deferred composition
+    vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
+                                            *compositionDescriptorSetLayout);
+    descriptorSets.composition.reserve(MAX_CONCURRENT_FRAMES);
+    for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      // NOTE: move descriptor set
+      descriptorSets.composition.push_back(
+          std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
+    }
+
+    std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
+    writeDescriptorSets.reserve(descriptorSets.composition.size());
+    for (int i = 0; i < descriptorSets.composition.size(); i++) {
+      std::vector<vk::DescriptorImageInfo> imageInfos;
+      imageInfos.reserve(descriptorSets.composition.size());
+      // copy
+      imageInfos.push_back(offScreenFrameBuf.position[i]->descriptorImageInfo(
+          *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal));
+      imageInfos.push_back(offScreenFrameBuf.normal[i]->descriptorImageInfo(
+          *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal));
+      imageInfos.push_back(offScreenFrameBuf.albedo[i]->descriptorImageInfo(
+          *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal));
+
+      // NOTE: dstBinding, dstArrayElement
+      writeDescriptorSets.emplace_back(
+          *descriptorSets.composition[i], 0, 0,
+          vk::DescriptorType::eCombinedImageSampler, imageInfos, nullptr);
+      writeDescriptorSets.emplace_back(
+          *descriptorSets.composition[i], 1, 1,
+          vk::DescriptorType::eCombinedImageSampler, imageInfos, nullptr);
+      writeDescriptorSets.emplace_back(
+          *descriptorSets.composition[i], 2, 2,
+          vk::DescriptorType::eCombinedImageSampler, imageInfos, nullptr);
+    }
+    device.updateDescriptorSets(writeDescriptorSets, nullptr);
+  }
+  // offscreen UBO
+  {
+    vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
+                                            *offScreenUboDescriptorSetLayout);
+    descriptorSets.offScreenUboDescriptorSets.reserve(MAX_CONCURRENT_FRAMES);
+    for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      // NOTE: move descriptor set
+      descriptorSets.offScreenUboDescriptorSets.push_back(
+          std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
+    }
+    std::vector<vk::DescriptorBufferInfo> bufferInfos;
+    bufferInfos.reserve(descriptorSets.offScreenUboDescriptorSets.size());
+    std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
+    writeDescriptorSets.reserve(
+        descriptorSets.offScreenUboDescriptorSets.size());
+    for (int i = 0; i < descriptorSets.offScreenUboDescriptorSets.size(); i++) {
+      // copy
+      bufferInfos.push_back(uniformBuffers[i].offScreen->descriptorInfo());
+      // NOTE: ArrayProxyNoTemporaries has no T rvalue constructor.
+      writeDescriptorSets.emplace_back(
+          *descriptorSets.offScreenUboDescriptorSets[i], 0, 0,
+          vk::DescriptorType::eUniformBuffer, nullptr, bufferInfos.back());
+    }
+    device.updateDescriptorSets(writeDescriptorSets, nullptr);
+  }
+  // dynamic UBO
+  {
+    vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
+                                            *dynamicUboDescriptorSetLayout);
+    descriptorSets.dynamicUboDescriptorSets.reserve(MAX_CONCURRENT_FRAMES);
+    for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      descriptorSets.dynamicUboDescriptorSets.push_back(
+          std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
+    }
+    std::vector<vk::DescriptorBufferInfo> bufferInfos;
+    bufferInfos.reserve(descriptorSets.dynamicUboDescriptorSets.size());
+    std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
+    writeDescriptorSets.reserve(descriptorSets.dynamicUboDescriptorSets.size());
+    for (int i = 0; i < descriptorSets.dynamicUboDescriptorSets.size(); i++) {
+      // NOTE: descriptorBufferInfo range be alignedSizeDynamicUboElt
+      bufferInfos.push_back(uniformBuffers[i].dynamic->descriptorInfo(
+          alignedSizeDynamicUboElt, 0));
+      writeDescriptorSets.emplace_back(
+          *descriptorSets.dynamicUboDescriptorSets[i], 0, 0,
+          vk::DescriptorType::eUniformBufferDynamic, nullptr,
+          bufferInfos.back());
+    }
+    device.updateDescriptorSets(writeDescriptorSets, nullptr);
+  }
 }
-void VgeExample::preparePipelines() {}
+void VgeExample::preparePipelines() {
+  // pipeline layout already created for offscreen and composition.
+}
 
 void VgeExample::buildCommandBuffers() {}
 void VgeExample::buildDefferredCommandBuffers() {}
