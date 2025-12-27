@@ -717,7 +717,97 @@ void VgeExample::updateUboOffScreen() {
   std::memcpy(uniformBuffers[currentFrameIndex].offScreen->getMappedData(),
               &uniformDataOffscreen, sizeof(UniformDataOffscreen));
 }
-void VgeExample::buildCommandBuffers() {}
+void VgeExample::buildCommandBuffers() {
+  vk::CommandBuffer cmdBuffer = *drawCmdBuffers[currentFrameIndex];
+  cmdBuffer.begin({});
+  // first render pass for offscreen pass to fill g buffers of attachments.
+  {
+    std::array<vk::ClearValue, 4> clearValues;
+    clearValues[0].color = vk::ClearColorValue(0.2f, 0.2f, 0.2f, 0.2f);
+    clearValues[1].color = vk::ClearColorValue(0.2f, 0.2f, 0.2f, 0.2f);
+    clearValues[2].color = vk::ClearColorValue(0.2f, 0.2f, 0.2f, 0.2f);
+    clearValues[3].depthStencil = vk::ClearDepthStencilValue(1.0f, 0);
+
+    vk::RenderPassBeginInfo renderPassBeginInfo(
+        *offScreenFrameBuf.renderPass,
+        *offScreenFrameBuf.frameBuffers[currentImageIndex],
+        vk::Rect2D(vk::Offset2D(0, 0), vk::Extent2D(offScreenFrameBuf.width,
+                                                    offScreenFrameBuf.height)),
+        clearValues);
+
+    cmdBuffer.beginRenderPass(renderPassBeginInfo,
+                              vk::SubpassContents::eInline);
+    cmdBuffer.setViewport(
+        0,
+        vk::Viewport(0.0f, 0.0f, static_cast<float>(offScreenFrameBuf.width),
+                     static_cast<float>(offScreenFrameBuf.height), 0.0f, 1.0f));
+    cmdBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0),
+                                       vk::Extent2D(offScreenFrameBuf.width,
+                                                    offScreenFrameBuf.height)));
+    cmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
+                           *pipelines.offScreen);
+    // offscreen ubo
+    cmdBuffer.bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics, *pipelineLayoutOffScreen, 0 /*set 0*/,
+        {*descriptorSets.offScreenUboDescriptorSets[currentFrameIndex]},
+        nullptr);
+
+    // models
+    for (size_t instanceIdx = 0; instanceIdx < modelInstances.size();
+         instanceIdx++) {
+      const auto& modelInstance = modelInstances[instanceIdx];
+      if (!modelInstance.model) {
+        continue;
+      }
+      // dynamic
+      cmdBuffer.bindDescriptorSets(
+          vk::PipelineBindPoint::eGraphics, *pipelineLayoutOffScreen,
+          1 /*set 1*/,
+          {*descriptorSets.dynamicUboDescriptorSets[currentFrameIndex]},
+          alignedSizeDynamicUboElt * instanceIdx);
+      // modelInstance.model->bindBuffers(drawCmdBuffers[currentFrameIndex]);
+      modelInstance.model->draw(
+          currentFrameIndex, drawCmdBuffers[currentFrameIndex],
+          vgeu::RenderFlagBits::kBindImages, *pipelineLayoutOffScreen, 2);
+    }
+
+    cmdBuffer.endRenderPass();
+  }
+
+  // second render pass for composition
+  // NOTE(kcchoi): no semaphores for explcit synchronizaion.
+  {
+    std::array<vk::ClearValue, 1> clearValues;
+    clearValues[0].color = vk::ClearColorValue(0.2f, 0.0f, 0.0f, 0.0f);
+    clearValues[1].depthStencil = vk::ClearDepthStencilValue(1.0f, 0);
+
+    vk::RenderPassBeginInfo renderPassBeginInfo(
+        *renderPass, *frameBuffers[currentImageIndex],
+        vk::Rect2D(vk::Offset2D(0, 0), swapChainData->swapChainExtent),
+        clearValues);
+
+    cmdBuffer.beginRenderPass(renderPassBeginInfo,
+                              vk::SubpassContents::eInline);
+    cmdBuffer.setViewport(
+        0,
+        vk::Viewport(0.0f, 0.0f,
+                     static_cast<float>(swapChainData->swapChainExtent.width),
+                     static_cast<float>(swapChainData->swapChainExtent.height),
+                     0.0f, 1.0f));
+    cmdBuffer.setScissor(
+        0, vk::Rect2D(vk::Offset2D(0, 0), swapChainData->swapChainExtent));
+    cmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
+                           *pipelines.composition);
+    // composition ubo
+    cmdBuffer.bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics, *pipelineLayoutCompoisition,
+        0 /*set 0*/, {*descriptorSets.composition[currentFrameIndex]}, nullptr);
+    // big triangle covers full screen quad.
+    cmdBuffer.draw(3, 1, 0, 0);
+    cmdBuffer.endRenderPass();
+  }
+  cmdBuffer.end();
+}
 
 void VgeExample::draw() {
   prepareFrame();
