@@ -14,7 +14,7 @@ struct Options {
   float moveSpeed = 10.f;
   // save camera view. not configurable by panel
   glm::mat4 cameraView{1.f};
-  int32_t debugDisplayarget = 0;
+  int32_t debugDisplayTarget = 0;
 };
 
 struct DynamicUboElt {
@@ -124,8 +124,9 @@ class VgeExample : public VgeBase {
   void setupDescriptors();
   void preparePipelines();
 
+  void updateUboComposition();
+  void updateUboOffScreen();
   void buildCommandBuffers();
-  void buildDefferredCommandBuffers();
 
   void draw();
 
@@ -192,8 +193,10 @@ class VgeExample : public VgeBase {
 
   // TODO: check to duplicate for each frame
   vk::raii::Sampler colorSampler = nullptr;
-  // for each frame
-  vk::raii::CommandBuffers offScreenCmdBuffers = nullptr;
-  std::vector<vk::raii::Semaphore> offScreenSemaphores;
+  // for each frame.
+  // NOTE(kcchoi): use same cmd buffers and
+  // implicit synchronization by subpass dependencies.
+  // vk::raii::CommandBuffers offScreenCmdBuffers = nullptr;
+  // std::vector<vk::raii::Semaphore> offScreenSemaphores;
 };
 }  // namespace vge
