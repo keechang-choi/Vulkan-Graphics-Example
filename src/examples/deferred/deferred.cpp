@@ -460,8 +460,8 @@ void VgeExample::setupDescriptors() {
     std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
     writeDescriptorSets.reserve(descriptorSets.composition.size());
     for (int i = 0; i < descriptorSets.composition.size(); i++) {
+      std::vector<vk::DescriptorBufferInfo> bufferInfos;
       std::vector<vk::DescriptorImageInfo> imageInfos;
-      imageInfos.reserve(descriptorSets.composition.size());
       // copy
       imageInfos.push_back(offScreenFrameBuf.position[i]->descriptorImageInfo(
           *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal));
@@ -485,6 +485,12 @@ void VgeExample::setupDescriptors() {
           *descriptorSets.composition[i], 2, 0,
           vk::DescriptorType::eCombinedImageSampler, imageInfos.back(),
           nullptr);
+
+      // copy
+      bufferInfos.push_back(uniformBuffers[i].composition->descriptorInfo());
+      writeDescriptorSets.emplace_back(*descriptorSets.composition[i], 3, 0,
+                                       vk::DescriptorType::eUniformBuffer,
+                                       nullptr, bufferInfos.back());
     }
     device.updateDescriptorSets(writeDescriptorSets, nullptr);
   }
@@ -805,7 +811,7 @@ void VgeExample::buildCommandBuffers() {
   // second render pass for composition
   // NOTE(kcchoi): no semaphores for explcit synchronizaion.
   {
-    std::array<vk::ClearValue, 1> clearValues;
+    std::array<vk::ClearValue, 2> clearValues;
     clearValues[0].color = vk::ClearColorValue(0.2f, 0.0f, 0.0f, 0.0f);
     clearValues[1].depthStencil = vk::ClearDepthStencilValue(1.0f, 0);
 
