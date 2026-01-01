@@ -82,6 +82,7 @@ void VgeExample::onUpdateUIOverlay() {
         std::string caption = "debugDisplayTarget: " + std::to_string(i);
         uiOverlay->radioButton(caption.c_str(), &opts.debugDisplayTarget, i);
       }
+      ImGui::TreePop();
     }
   }
 }
@@ -97,7 +98,9 @@ void VgeExample::loadAssets() {
   apple = std::make_shared<vgeu::glTF::Model>(
       device, globalAllocator->getAllocator(), queue, commandPool,
       MAX_CONCURRENT_FRAMES);
-  apple->additionalBufferUsageFlags = vk::BufferUsageFlagBits::eStorageBuffer;
+  apple->descriptorBindingFlags =
+      vgeu::DescriptorBindingFlagBits::kImageBaseColor |
+      vgeu::DescriptorBindingFlagBits::kImageNormalMap;
   apple->loadFromFile(getAssetsPath() + "/models/apple/food_apple_01_4k.gltf",
                       glTFLoadingFlags);
   {
@@ -111,6 +114,9 @@ void VgeExample::loadAssets() {
   damagedHelmet = std::make_shared<vgeu::glTF::Model>(
       device, globalAllocator->getAllocator(), queue, commandPool,
       MAX_CONCURRENT_FRAMES);
+  damagedHelmet->descriptorBindingFlags =
+      vgeu::DescriptorBindingFlagBits::kImageBaseColor |
+      vgeu::DescriptorBindingFlagBits::kImageNormalMap;
   damagedHelmet->loadFromFile(
       getAssetsPath() + "/models/DamagedHelmet/glTF/DamagedHelmet.gltf",
       glTFLoadingFlags);
@@ -129,10 +135,9 @@ void VgeExample::loadAssets() {
 }
 
 std::unique_ptr<vgeu::VgeuImage> VgeExample::createAttachment(
-    vk::Format format, vk::ImageUsageFlagBits usage) {
+    vk::Format format, vk::ImageUsageFlags usage) {
   vk::ImageAspectFlags aspectMask{};
   vk::ImageLayout imageLayout;
-
   if (usage & vk::ImageUsageFlagBits::eColorAttachment) {
     aspectMask = vk::ImageAspectFlagBits::eColor;
     imageLayout = vk::ImageLayout::eColorAttachmentOptimal;
@@ -142,11 +147,16 @@ std::unique_ptr<vgeu::VgeuImage> VgeExample::createAttachment(
       aspectMask |= vk::ImageAspectFlagBits::eStencil;
     imageLayout = vk::ImageLayout::eDepthAttachmentOptimal;
   }
+  assert(aspectMask != vk::ImageAspectFlagBits::eNone);
+  // NOTE(kcchoi): undefined or preinitialized validation error
+  // VUID-VkImageCreateInfo-initialLayout-00993
+  imageLayout = vk::ImageLayout::eUndefined;
+  usage = usage | vk::ImageUsageFlagBits::eSampled;
   return std::make_unique<vgeu::VgeuImage>(
-      device, globalAllocator->getAllocator(), vk::Format::eR16G16B16A16Sfloat,
+      device, globalAllocator->getAllocator(), format,
       vk::Extent2D{offScreenFrameBuf.width, offScreenFrameBuf.height},
-      vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eColorAttachment,
-      imageLayout, VmaMemoryUsage::VMA_MEMORY_USAGE_AUTO,
+      vk::ImageTiling::eOptimal, usage, imageLayout,
+      VmaMemoryUsage::VMA_MEMORY_USAGE_AUTO,
       VmaAllocationCreateFlagBits::VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
       aspectMask, 1);
 }
@@ -232,7 +242,7 @@ void VgeExample::prepareOffScreenFrameBuffer() {
   colorReferences.emplace_back(1, vk::ImageLayout::eColorAttachmentOptimal);
   colorReferences.emplace_back(2, vk::ImageLayout::eColorAttachmentOptimal);
   vk::AttachmentReference depthReference(
-      3, vk::ImageLayout::eDepthAttachmentOptimal);
+      3, vk::ImageLayout::eDepthStencilAttachmentOptimal);
   vk::SubpassDescription subpassDescription(
       vk::SubpassDescriptionFlags(), vk::PipelineBindPoint::eGraphics, {},
       colorReferences, {}, &depthReference);
@@ -279,8 +289,8 @@ void VgeExample::prepareOffScreenFrameBuffer() {
     attachments[3] = *offScreenFrameBuf.depth[i]->getImageView();
 
     vk::FramebufferCreateInfo framebufferCreateInfo(
-        vk::FramebufferCreateFlags(), *renderPass, attachments,
-        offScreenFrameBuf.width, offScreenFrameBuf.height, 1);
+        vk::FramebufferCreateFlags(), *offScreenFrameBuf.renderPass,
+        attachments, offScreenFrameBuf.width, offScreenFrameBuf.height, 1);
     offScreenFrameBuf.frameBuffers.push_back(
         vk::raii::Framebuffer(device, framebufferCreateInfo));
   }
@@ -455,21 +465,26 @@ void VgeExample::setupDescriptors() {
       // copy
       imageInfos.push_back(offScreenFrameBuf.position[i]->descriptorImageInfo(
           *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal));
-      imageInfos.push_back(offScreenFrameBuf.normal[i]->descriptorImageInfo(
-          *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal));
-      imageInfos.push_back(offScreenFrameBuf.albedo[i]->descriptorImageInfo(
-          *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal));
 
       // NOTE: dstBinding, dstArrayElement
       writeDescriptorSets.emplace_back(
           *descriptorSets.composition[i], 0, 0,
-          vk::DescriptorType::eCombinedImageSampler, imageInfos, nullptr);
+          vk::DescriptorType::eCombinedImageSampler, imageInfos.back(),
+          nullptr);
+
+      imageInfos.push_back(offScreenFrameBuf.normal[i]->descriptorImageInfo(
+          *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal));
       writeDescriptorSets.emplace_back(
-          *descriptorSets.composition[i], 1, 1,
-          vk::DescriptorType::eCombinedImageSampler, imageInfos, nullptr);
+          *descriptorSets.composition[i], 1, 0,
+          vk::DescriptorType::eCombinedImageSampler, imageInfos.back(),
+          nullptr);
+
+      imageInfos.push_back(offScreenFrameBuf.albedo[i]->descriptorImageInfo(
+          *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal));
       writeDescriptorSets.emplace_back(
-          *descriptorSets.composition[i], 2, 2,
-          vk::DescriptorType::eCombinedImageSampler, imageInfos, nullptr);
+          *descriptorSets.composition[i], 2, 0,
+          vk::DescriptorType::eCombinedImageSampler, imageInfos.back(),
+          nullptr);
     }
     device.updateDescriptorSets(writeDescriptorSets, nullptr);
   }
@@ -731,7 +746,7 @@ void VgeExample::updateUboOffScreen() {
               &uniformDataOffscreen, sizeof(UniformDataOffscreen));
 }
 void VgeExample::buildCommandBuffers() {
-  vk::CommandBuffer cmdBuffer = *drawCmdBuffers[currentFrameIndex];
+  const vk::raii::CommandBuffer& cmdBuffer = drawCmdBuffers[currentFrameIndex];
   cmdBuffer.begin({});
   // first render pass for offscreen pass to fill g buffers of attachments.
   {
@@ -778,10 +793,10 @@ void VgeExample::buildCommandBuffers() {
           1 /*set 1*/,
           {*descriptorSets.dynamicUboDescriptorSets[currentFrameIndex]},
           alignedSizeDynamicUboElt * instanceIdx);
-      // modelInstance.model->bindBuffers(drawCmdBuffers[currentFrameIndex]);
-      modelInstance.model->draw(
-          currentFrameIndex, drawCmdBuffers[currentFrameIndex],
-          vgeu::RenderFlagBits::kBindImages, *pipelineLayoutOffScreen, 2);
+      // modelInstance.model->bindBuffers(cmdBuffer);
+      modelInstance.model->draw(currentFrameIndex, cmdBuffer,
+                                vgeu::RenderFlagBits::kBindImages,
+                                *pipelineLayoutOffScreen, 2);
     }
 
     cmdBuffer.endRenderPass();

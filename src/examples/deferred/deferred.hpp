@@ -118,8 +118,8 @@ class VgeExample : public VgeBase {
   void loadAssets();
   void setupDynamicUbo();
   void prepareOffScreenFrameBuffer();
-  std::unique_ptr<vgeu::VgeuImage> createAttachment(
-      vk::Format format, vk::ImageUsageFlagBits usage);
+  std::unique_ptr<vgeu::VgeuImage> createAttachment(vk::Format format,
+                                                    vk::ImageUsageFlags usage);
   void prepareUniformBuffers();
   void setupDescriptors();
   void preparePipelines();
