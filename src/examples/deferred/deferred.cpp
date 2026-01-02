@@ -171,7 +171,7 @@ void VgeExample::setupDynamicUbo() {
     dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
         dynamicUbo[instanceIndex].modelMatrix, glm::radians(0.f), up);
     dynamicUbo[instanceIndex].modelMatrix = glm::scale(
-        dynamicUbo[instanceIndex].modelMatrix, glm::vec3{10.0, 10.0, 0.1});
+        dynamicUbo[instanceIndex].modelMatrix, glm::vec3{100.0, 100.0, 0.1});
     dynamicUbo[instanceIndex].modelColor = glm::vec4{1.0f, 0.f, 0.f, 0.3f};
   }
   const float HelmetScale = 1.00f;

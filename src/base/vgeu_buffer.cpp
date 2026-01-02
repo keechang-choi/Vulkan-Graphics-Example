@@ -113,6 +113,7 @@ VgeuImage::VgeuImage(const vk::raii::Device& device, VmaAllocator allocator,
       vk::ImageViewCreateInfo(
           vk::ImageViewCreateFlags(), image, vk::ImageViewType::e2D, format, {},
           vk::ImageSubresourceRange{aspectMask, 0, mipLevels, 0, 1}));
+  assert(static_cast<VkImageView>(*imageView) != VK_NULL_HANDLE);
 }
 
 VgeuImage::~VgeuImage() {
