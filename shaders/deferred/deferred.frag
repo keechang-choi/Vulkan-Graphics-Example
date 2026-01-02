@@ -13,12 +13,13 @@ struct Light {
 	vec3 color;
 	float radius;
 };
-
+#define MAX_LIGHTS 10
 layout (set = 0, binding = 3) uniform UBO 
 {
-	Light lights[6];
+	Light lights[MAX_LIGHTS];
 	vec4 viewPos;
 	int displayDebugTarget;
+	int numLights;
 } ubo;
 
 void main() 
@@ -49,12 +50,11 @@ void main()
 	}
 
 	// composition 
-#define lightCount 6
 #define ambientIntensity 0.15
 
 	vec3 ambient = albedo.rgb * ambientIntensity;
 	vec3 fragColor = ambient;
-	for(int i=0; i<lightCount; i++){
+	for(int i=0; i<ubo.numLights; i++){
 		vec3 L = ubo.lights[i].position.xyz - fragPos;
 		float distFragToLight = length(L);
 		//if(distFragToLight < ubo.lights[i].radius)

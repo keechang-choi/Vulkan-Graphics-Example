@@ -347,6 +347,8 @@ void VgeExample::prepareUniformBuffers() {
     uniformBuffers.push_back(
         {std::move(dynamic), std::move(offScreen), std::move(composition)});
   }
+  std::cout << "sizeof(UniformDataComposition): "
+            << sizeof(UniformDataComposition) << std::endl;
 }
 void VgeExample::setupDescriptors() {
   // model desciptors in gltf class.
@@ -678,6 +680,7 @@ void VgeExample::preparePipelines() {
   }
 }
 void VgeExample::updateUboComposition() {
+  uniformDataComposition.numLights = 6;
   // White
   uniformDataComposition.lights[0].position = glm::vec4(0.0f, 0.0f, 1.0f, 0.0f);
   uniformDataComposition.lights[0].color = glm::vec3(1.5f);
@@ -739,7 +742,6 @@ void VgeExample::updateUboComposition() {
                                    glm::vec4(-1.0f, 1.0f, -1.0f, 1.0f);
 
   uniformDataComposition.debugDisplayTarget = opts.debugDisplayTarget;
-
   memcpy(uniformBuffers[currentFrameIndex].composition->getMappedData(),
          &uniformDataComposition, sizeof(UniformDataComposition));
 }
@@ -761,10 +763,10 @@ void VgeExample::buildCommandBuffers() {
     clearValues[1].color = vk::ClearColorValue(0.2f, 0.2f, 0.2f, 0.2f);
     clearValues[2].color = vk::ClearColorValue(0.2f, 0.2f, 0.2f, 0.2f);
     clearValues[3].depthStencil = vk::ClearDepthStencilValue(1.0f, 0);
-
+    // NOTE(kcchoi): offscreen frame buffer index as currentFrameIndex
     vk::RenderPassBeginInfo renderPassBeginInfo(
         *offScreenFrameBuf.renderPass,
-        *offScreenFrameBuf.frameBuffers[currentImageIndex],
+        *offScreenFrameBuf.frameBuffers[currentFrameIndex],
         vk::Rect2D(vk::Offset2D(0, 0), vk::Extent2D(offScreenFrameBuf.width,
                                                     offScreenFrameBuf.height)),
         clearValues);

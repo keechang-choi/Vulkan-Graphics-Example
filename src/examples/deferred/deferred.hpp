@@ -35,11 +35,12 @@ struct Light {
   float radius;
 };
 
-struct UniformDataComposition {
-  glm::vec4 viewPos;
+// NOTE: for alignment. default size: 344bytes = 32*10 + 16 + 4 + 4
+struct alignas(64) UniformDataComposition {
   Light lights[MAX_LIGHTS];
-  int numLights;
+  glm::vec4 viewPos;
   int debugDisplayTarget{0};
+  int numLights;
 };
 struct VertexInfos {
   vk::PipelineVertexInputStateCreateInfo vertexInputSCI;
