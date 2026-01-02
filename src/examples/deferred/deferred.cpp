@@ -844,6 +844,14 @@ void VgeExample::buildCommandBuffers() {
 }
 
 void VgeExample::draw() {
+  {
+    // TODO(kcchoi): update base synch primitives
+    vk::Result result =
+        device.waitForFences(*waitFences[currentFrameIndex], VK_TRUE,
+                             std::numeric_limits<uint64_t>::max());
+    assert(result != vk::Result::eTimeout && "Timed out: waitFence");
+    device.resetFences(*waitFences[currentFrameIndex]);
+  }
   prepareFrame();
   // update ubo
   updateUboOffScreen();
@@ -852,6 +860,16 @@ void VgeExample::draw() {
   buildCommandBuffers();
   // offscreen rendering
   // scene rendering
+  {
+    // TODO(kcchoi): present, render sema
+    vk::PipelineStageFlags waitDstStageMask(
+        vk::PipelineStageFlagBits::eColorAttachmentOutput);
+    vk::SubmitInfo submitInfo(*presentCompleteSemaphores[currentFrameIndex],
+                              waitDstStageMask,
+                              *drawCmdBuffers[currentFrameIndex],
+                              *renderCompleteSemaphores[currentFrameIndex]);
+    queue.submit(submitInfo, *waitFences[currentFrameIndex]);
+  }
   submitFrame();
 }
 
