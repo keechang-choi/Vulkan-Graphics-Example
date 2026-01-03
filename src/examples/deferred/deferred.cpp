@@ -220,18 +220,20 @@ void VgeExample::prepareOffScreenFrameBuffer() {
   std::vector<vk::AttachmentDescription> attachmentDescriptions;
   // position, normal, albedo, depth
   for (uint32_t i = 0; i < 4; i++) {
+    vk::ImageLayout initialLayout;
     vk::ImageLayout finalLayout;
     if (i == 3) {
+      initialLayout = vk::ImageLayout::eUndefined;
       finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
     } else {
+      initialLayout = vk::ImageLayout::eUndefined;
       finalLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
     }
     attachmentDescriptions.emplace_back(
         vk::AttachmentDescriptionFlags(), vk::Format::eUndefined,
         vk::SampleCountFlagBits::e1, vk::AttachmentLoadOp::eClear,
         vk::AttachmentStoreOp::eStore, vk::AttachmentLoadOp::eDontCare,
-        vk::AttachmentStoreOp::eDontCare, vk::ImageLayout::eUndefined,
-        finalLayout);
+        vk::AttachmentStoreOp::eDontCare, initialLayout, finalLayout);
   }
   attachmentDescriptions[0].format = offScreenFrameBuf.position[0]->getFormat();
   attachmentDescriptions[1].format = offScreenFrameBuf.normal[0]->getFormat();
