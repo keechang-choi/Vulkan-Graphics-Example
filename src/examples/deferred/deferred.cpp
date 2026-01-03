@@ -18,7 +18,7 @@
 #include <unordered_set>
 
 namespace vge {
-VgeExample::VgeExample() : VgeBase() { title = "Cloth Example"; }
+VgeExample::VgeExample() : VgeBase() { title = "Deferred Shading Example"; }
 VgeExample::~VgeExample() {}
 void VgeExample::setupCommandLineParser(CLI::App& app) {}
 void VgeExample::setOptions(const std::optional<Options>& opts) {
@@ -78,7 +78,7 @@ void VgeExample::viewChanged() {}
 void VgeExample::onUpdateUIOverlay() {
   if (uiOverlay->header("Settings")) {
     if (ImGui::TreeNodeEx("Immediate", ImGuiTreeNodeFlags_DefaultOpen)) {
-      for (auto i = 0; i < 3; i++) {
+      for (auto i = 0; i < 5; i++) {
         std::string caption = "debugDisplayTarget: " + std::to_string(i);
         uiOverlay->radioButton(caption.c_str(), &opts.debugDisplayTarget, i);
       }
@@ -90,9 +90,9 @@ void VgeExample::onUpdateUIOverlay() {
 void VgeExample::loadAssets() {
   // NOTE: no flip or preTransform for animation and skinning
   vgeu::FileLoadingFlags glTFLoadingFlags =
-      vgeu::FileLoadingFlagBits::kPreMultiplyVertexColors;
-  // | vgeu::FileLoadingFlagBits::kPreTransformVertices;
-  //| vgeu::FileLoadingFlagBits::kFlipY;
+      vgeu::FileLoadingFlagBits::kPreMultiplyVertexColors |
+      vgeu::FileLoadingFlagBits::kPreTransformVertices |
+      vgeu::FileLoadingFlagBits::kFlipY;
 
   std::shared_ptr<vgeu::glTF::Model> apple;
   apple = std::make_shared<vgeu::glTF::Model>(
@@ -163,6 +163,8 @@ std::unique_ptr<vgeu::VgeuImage> VgeExample::createAttachment(
 
 void VgeExample::setupDynamicUbo() {
   glm::vec3 up{0.f, -1.f, 0.f};
+  glm::vec3 right{1.f, 0.f, 0.f};
+  glm::vec3 forward{0.f, 0.f, -1.f};
   dynamicUbo.resize(modelInstances.size());
   {
     size_t instanceIndex = findInstances("floor")[0];
@@ -171,16 +173,18 @@ void VgeExample::setupDynamicUbo() {
     dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
         dynamicUbo[instanceIndex].modelMatrix, glm::radians(0.f), up);
     dynamicUbo[instanceIndex].modelMatrix = glm::scale(
-        dynamicUbo[instanceIndex].modelMatrix, glm::vec3{100.0, 100.0, 0.1});
+        dynamicUbo[instanceIndex].modelMatrix, glm::vec3{100.0, 0.1, 100.0});
     dynamicUbo[instanceIndex].modelColor = glm::vec4{1.0f, 0.f, 0.f, 0.3f};
   }
   const float HelmetScale = 1.00f;
   {
     size_t instanceIndex = findInstances("damagedHelmet1")[0];
     dynamicUbo[instanceIndex].modelMatrix =
-        glm::translate(glm::mat4{1.f}, glm::vec3{-4.f, 0.f, 0.f});
+        glm::translate(glm::mat4{1.f}, glm::vec3{-4.f, -4.f, 0.f});
     dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
-        dynamicUbo[instanceIndex].modelMatrix, glm::radians(0.f), up);
+        dynamicUbo[instanceIndex].modelMatrix, glm::radians(90.f), up);
+    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
+        dynamicUbo[instanceIndex].modelMatrix, glm::radians(-90.f), right);
     dynamicUbo[instanceIndex].modelMatrix =
         glm::scale(dynamicUbo[instanceIndex].modelMatrix,
                    glm::vec3{HelmetScale, HelmetScale, HelmetScale});
@@ -189,9 +193,13 @@ void VgeExample::setupDynamicUbo() {
   {
     size_t instanceIndex = findInstances("damagedHelmet2")[0];
     dynamicUbo[instanceIndex].modelMatrix =
-        glm::translate(glm::mat4{1.f}, glm::vec3{4.f, 0.f, 0.f});
+        glm::translate(glm::mat4{1.f}, glm::vec3{4.f, -4.f, 0.f});
+    // {0,-1,0} is up vector, rotate second
     dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
-        dynamicUbo[instanceIndex].modelMatrix, glm::radians(0.f), up);
+        dynamicUbo[instanceIndex].modelMatrix, glm::radians(90.f), up);
+    // {1,0,0} is right vector, rotate first
+    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
+        dynamicUbo[instanceIndex].modelMatrix, glm::radians(-90.f), right);
     dynamicUbo[instanceIndex].modelMatrix =
         glm::scale(dynamicUbo[instanceIndex].modelMatrix,
                    glm::vec3{HelmetScale, HelmetScale, HelmetScale});
@@ -305,6 +313,7 @@ void VgeExample::prepareOffScreenFrameBuffer() {
       vk::CompareOp::eNever, 0.f, static_cast<float>(1.f),
       vk::BorderColor::eFloatOpaqueWhite);
   colorSampler = vk::raii::Sampler(device, samplerCI);
+  assert(static_cast<VkSampler>(*colorSampler) != VK_NULL_HANDLE);
 }
 void VgeExample::prepareUniformBuffers() {
   alignedSizeDynamicUboElt =
@@ -460,16 +469,14 @@ void VgeExample::setupDescriptors() {
       descriptorSets.composition.push_back(
           std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
     }
-
-    std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
-    writeDescriptorSets.reserve(descriptorSets.composition.size());
+    // TODO(kcchoi): check light shading, and depth
     for (int i = 0; i < descriptorSets.composition.size(); i++) {
+      std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
+      writeDescriptorSets.reserve(4);
       std::vector<vk::DescriptorBufferInfo> bufferInfos;
       std::vector<vk::DescriptorImageInfo> imageInfos;
-      // copy
       imageInfos.push_back(offScreenFrameBuf.position[i]->descriptorImageInfo(
           *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal));
-
       // NOTE: dstBinding, dstArrayElement
       writeDescriptorSets.emplace_back(
           *descriptorSets.composition[i], 0, 0,
@@ -490,13 +497,12 @@ void VgeExample::setupDescriptors() {
           vk::DescriptorType::eCombinedImageSampler, imageInfos.back(),
           nullptr);
 
-      // copy
       bufferInfos.push_back(uniformBuffers[i].composition->descriptorInfo());
       writeDescriptorSets.emplace_back(*descriptorSets.composition[i], 3, 0,
                                        vk::DescriptorType::eUniformBuffer,
                                        nullptr, bufferInfos.back());
+      device.updateDescriptorSets(writeDescriptorSets, nullptr);
     }
-    device.updateDescriptorSets(writeDescriptorSets, nullptr);
   }
   // offscreen UBO
   {
@@ -842,6 +848,8 @@ void VgeExample::buildCommandBuffers() {
         0 /*set 0*/, {*descriptorSets.composition[currentFrameIndex]}, nullptr);
     // big triangle covers full screen quad.
     cmdBuffer.draw(3, 1, 0, 0);
+    // UI overlay draw
+    drawUI(cmdBuffer);
     cmdBuffer.endRenderPass();
   }
   cmdBuffer.end();

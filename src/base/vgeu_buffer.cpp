@@ -122,6 +122,7 @@ VgeuImage::~VgeuImage() {
 }
 vk::DescriptorImageInfo VgeuImage::descriptorImageInfo(
     vk::Sampler sampler, vk::ImageLayout imageLayout) {
+  assert(static_cast<VkImageView>(*imageView) != VK_NULL_HANDLE);
   vk::DescriptorImageInfo descriptorImageInfo(sampler, *imageView, imageLayout);
   return descriptorImageInfo;
 }
