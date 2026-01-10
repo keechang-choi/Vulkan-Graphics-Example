@@ -75,6 +75,7 @@ void main()
 			float shininess = 16.0;
 			// TODO: check albedo alpha ->
 			// specular intensity or roughness.
+			albedo.a = 0.3;
 			vec3 specular = ubo.lights[i].color * albedo.a * pow(NdotH, shininess) * atten;
 			fragColor += diffuse + specular;
 		}
