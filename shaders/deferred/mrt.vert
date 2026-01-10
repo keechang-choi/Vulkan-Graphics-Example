@@ -32,7 +32,7 @@ void main()
 	outColor.a = clamp(outColor.a, 0.0, 1.0);
 	outUV = inUV;
 	mat4 worldTransform =  modelUbo.modelMatrix;
-	outWorldPos = worldTransform * vec4(inPos.rgb, 1.0);
+	outWorldPos = worldTransform * vec4(inPos.xyz, 1.0);
 	gl_Position = ubo.projection * ubo.view * outWorldPos;
 	
 	mat3 normalMatrix = inverse(transpose(mat3(worldTransform)));

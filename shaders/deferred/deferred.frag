@@ -26,9 +26,8 @@ void main()
 {
 	// G buffer reading
 	vec3 fragPos = texture(samplerPosition, inUV).rgb;
-	vec3 normal = texture(samplerNormal, inUV).rgb;
+	vec3 normal = normalize(texture(samplerNormal, inUV).rgb);
 	vec4 albedo = texture(samplerAlbedo, inUV);
-
 	// display target. TODO: specialization constant.
 	if (ubo.displayDebugTarget > 0) {
 		switch (ubo.displayDebugTarget) {

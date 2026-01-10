@@ -94,18 +94,19 @@ void VgeExample::loadAssets() {
       vgeu::FileLoadingFlagBits::kPreTransformVertices |
       vgeu::FileLoadingFlagBits::kFlipY;
 
-  std::shared_ptr<vgeu::glTF::Model> apple;
-  apple = std::make_shared<vgeu::glTF::Model>(
+  std::shared_ptr<vgeu::glTF::Model> floor;
+  floor = std::make_shared<vgeu::glTF::Model>(
       device, globalAllocator->getAllocator(), queue, commandPool,
       MAX_CONCURRENT_FRAMES);
-  apple->descriptorBindingFlags =
+  floor->descriptorBindingFlags =
       vgeu::DescriptorBindingFlagBits::kImageBaseColor |
       vgeu::DescriptorBindingFlagBits::kImageNormalMap;
-  apple->loadFromFile(getAssetsPath() + "/models/apple/food_apple_01_4k.gltf",
-                      glTFLoadingFlags);
+  floor->loadFromFile(
+      getAssetsPath() + "/models/metal_plate/metal_plate_1k.gltf",
+      glTFLoadingFlags);
   {
     ModelInstance modelInstance{};
-    modelInstance.model = apple;
+    modelInstance.model = floor;
     modelInstance.name = "floor";
     addModelInstance(std::move(modelInstance));
   }
@@ -173,7 +174,7 @@ void VgeExample::setupDynamicUbo() {
     dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
         dynamicUbo[instanceIndex].modelMatrix, glm::radians(0.f), up);
     dynamicUbo[instanceIndex].modelMatrix = glm::scale(
-        dynamicUbo[instanceIndex].modelMatrix, glm::vec3{100.0, 0.1, 100.0});
+        dynamicUbo[instanceIndex].modelMatrix, glm::vec3{10.0, 10.0, 10.0});
     dynamicUbo[instanceIndex].modelColor = glm::vec4{1.0f, 0.f, 0.f, 0.3f};
   }
   const float HelmetScale = 1.00f;
@@ -652,7 +653,8 @@ void VgeExample::preparePipelines() {
             vgeu::glTF::VertexComponent::kNormal,
             vgeu::glTF::VertexComponent::kTangent,
         });
-    rasterizationSCI.cullMode = vk::CullModeFlagBits::eBack;
+    // TODO(kcchoi): check face winding order in model
+    rasterizationSCI.cullMode = vk::CullModeFlagBits::eNone;
     // TODO(kcchoi): check mask color for 0x0
     // position, normal, albedo
     std::array<vk::PipelineColorBlendAttachmentState, 3> blendAttachmentStates{
