@@ -315,6 +315,17 @@ void VgeExample::prepareOffScreenFrameBuffer() {
       vk::BorderColor::eFloatOpaqueWhite);
   colorSampler = vk::raii::Sampler(device, samplerCI);
   assert(static_cast<VkSampler>(*colorSampler) != VK_NULL_HANDLE);
+  for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    assert(static_cast<VkImageView>(
+               *offScreenFrameBuf.position[i]->getImageView()) !=
+           VK_NULL_HANDLE);
+    assert(static_cast<VkImageView>(
+               *offScreenFrameBuf.normal[i]->getImageView()) != VK_NULL_HANDLE);
+    assert(static_cast<VkImageView>(
+               *offScreenFrameBuf.albedo[i]->getImageView()) != VK_NULL_HANDLE);
+    assert(static_cast<VkImageView>(
+               *offScreenFrameBuf.depth[i]->getImageView()) != VK_NULL_HANDLE);
+  }
 }
 void VgeExample::prepareUniformBuffers() {
   alignedSizeDynamicUboElt =

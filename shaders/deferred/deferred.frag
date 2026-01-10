@@ -26,7 +26,7 @@ void main()
 {
 	// G buffer reading
 	vec3 fragPos = texture(samplerPosition, inUV).rgb;
-	vec3 normal = normalize(texture(samplerNormal, inUV).rgb);
+	vec3 normal = texture(samplerNormal, inUV).rgb;
 	vec4 albedo = texture(samplerAlbedo, inUV);
 	// display target. TODO: specialization constant.
 	if (ubo.displayDebugTarget > 0) {
@@ -35,7 +35,11 @@ void main()
 				outFragColor.rgb = fragPos;
 				break;
 			case 2: 
-				outFragColor.rgb = normal;
+				// tested by vertex normal.
+				vec3 normal_color = normal * vec3(1.0, -1.0, 1.0);
+				normal_color += vec3(1.0, 1.0, 1.0);
+				normal_color *= vec3(0.5, 0.5, 0.5);
+				outFragColor.rgb = normal_color;
 				break;
 			case 3: 
 				outFragColor.rgb = albedo.rgb;

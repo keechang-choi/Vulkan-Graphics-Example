@@ -27,6 +27,7 @@ void main()
 	vec3 T = normalize(inTangent);
 	vec3 B = normalize(cross(N, T));
 	mat3 TBN = mat3(T, B, N);
+	// range [0,1] -> [-1,1]
 	vec3 normalMapSample = texture(samplerNormalMap, inUV).xyz * 2.0 - vec3(1.0);
 	vec3 tnorm = normalize(TBN * normalMapSample);
 	outNormal = vec4(tnorm, 1.0);
