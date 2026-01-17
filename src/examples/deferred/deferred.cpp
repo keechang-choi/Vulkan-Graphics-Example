@@ -277,13 +277,14 @@ void VgeExample::prepareOffScreenFrameBuffer() {
                                 vk::AccessFlagBits::eColorAttachmentRead,
                             vk::DependencyFlags());
   // transition for lighting render pass after geometry pass
-  dependencies.emplace_back(0u, VK_SUBPASS_EXTERNAL,
+  /*dependencies.emplace_back(0u, VK_SUBPASS_EXTERNAL,
                             vk::PipelineStageFlagBits::eColorAttachmentOutput,
                             vk::PipelineStageFlagBits::eBottomOfPipe,
                             vk::AccessFlagBits::eColorAttachmentWrite |
                                 vk::AccessFlagBits::eColorAttachmentRead,
                             vk::AccessFlagBits::eMemoryRead,
-                            vk::DependencyFlags());
+                            vk::DependencyFlags());*/
+
   vk::RenderPassCreateInfo renderPassCreateInfo(
       vk::RenderPassCreateFlags(), attachmentDescriptions, subpassDescription,
       dependencies);
@@ -927,6 +928,7 @@ void VgeExample::draw() {
     queue.submit(submitInfo, *waitFences[currentFrameIndex]);
   }
   submitFrame();
+  // queue.waitIdle(); // for synch test only
 }
 
 void VgeExample::addModelInstance(ModelInstance&& newInstance) {
