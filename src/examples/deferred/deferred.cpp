@@ -832,11 +832,15 @@ void VgeExample::buildCommandBuffers() {
   // Image layout transition from ATTACHMENT_OPTIMAL to SHADER_READ_ONLY for
   // composition
   {
+    // TODO(kcchoi): check why  previous known layout is
+    // VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    // vk::ImageLayout oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
+    vk::ImageLayout oldLayout = vk::ImageLayout::eUndefined;
     std::vector<vk::ImageMemoryBarrier> imageMemoryBarriers;
     // Position image
     imageMemoryBarriers.emplace_back(
         vk::AccessFlagBits::eColorAttachmentWrite,
-        vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eUndefined,
+        vk::AccessFlagBits::eShaderRead, oldLayout,
         vk::ImageLayout::eShaderReadOnlyOptimal, VK_QUEUE_FAMILY_IGNORED,
         VK_QUEUE_FAMILY_IGNORED,
         offScreenFrameBuf.position[currentFrameIndex]->getImage(),
@@ -844,7 +848,7 @@ void VgeExample::buildCommandBuffers() {
     // Normal image
     imageMemoryBarriers.emplace_back(
         vk::AccessFlagBits::eColorAttachmentWrite,
-        vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eUndefined,
+        vk::AccessFlagBits::eShaderRead, oldLayout,
         vk::ImageLayout::eShaderReadOnlyOptimal, VK_QUEUE_FAMILY_IGNORED,
         VK_QUEUE_FAMILY_IGNORED,
         offScreenFrameBuf.normal[currentFrameIndex]->getImage(),
@@ -852,7 +856,7 @@ void VgeExample::buildCommandBuffers() {
     // Albedo image
     imageMemoryBarriers.emplace_back(
         vk::AccessFlagBits::eColorAttachmentWrite,
-        vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eUndefined,
+        vk::AccessFlagBits::eShaderRead, oldLayout,
         vk::ImageLayout::eShaderReadOnlyOptimal, VK_QUEUE_FAMILY_IGNORED,
         VK_QUEUE_FAMILY_IGNORED,
         offScreenFrameBuf.albedo[currentFrameIndex]->getImage(),
