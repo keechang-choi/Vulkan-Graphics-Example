@@ -483,36 +483,33 @@ void VgeExample::setupDescriptors() {
     }
     // TODO(kcchoi): check light shading, and depth
     for (int i = 0; i < descriptorSets.composition.size(); i++) {
+      vk::DescriptorBufferInfo bufferInfo =
+          uniformBuffers[i].composition->descriptorInfo();
+      vk::DescriptorImageInfo posImageInfo =
+          offScreenFrameBuf.position[i]->descriptorImageInfo(
+              *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
+      vk::DescriptorImageInfo normImageInfo =
+          offScreenFrameBuf.normal[i]->descriptorImageInfo(
+              *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
+      vk::DescriptorImageInfo albedoImageInfo =
+          offScreenFrameBuf.albedo[i]->descriptorImageInfo(
+              *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
       std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
       writeDescriptorSets.reserve(4);
-      std::vector<vk::DescriptorBufferInfo> bufferInfos;
-      std::vector<vk::DescriptorImageInfo> imageInfos;
-      imageInfos.push_back(offScreenFrameBuf.position[i]->descriptorImageInfo(
-          *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal));
+
       // NOTE: dstBinding, dstArrayElement
       writeDescriptorSets.emplace_back(
           *descriptorSets.composition[i], 0, 0,
-          vk::DescriptorType::eCombinedImageSampler, imageInfos.back(),
-          nullptr);
-
-      imageInfos.push_back(offScreenFrameBuf.normal[i]->descriptorImageInfo(
-          *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal));
+          vk::DescriptorType::eCombinedImageSampler, posImageInfo, nullptr);
       writeDescriptorSets.emplace_back(
           *descriptorSets.composition[i], 1, 0,
-          vk::DescriptorType::eCombinedImageSampler, imageInfos.back(),
-          nullptr);
-
-      imageInfos.push_back(offScreenFrameBuf.albedo[i]->descriptorImageInfo(
-          *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal));
+          vk::DescriptorType::eCombinedImageSampler, normImageInfo, nullptr);
       writeDescriptorSets.emplace_back(
           *descriptorSets.composition[i], 2, 0,
-          vk::DescriptorType::eCombinedImageSampler, imageInfos.back(),
-          nullptr);
-
-      bufferInfos.push_back(uniformBuffers[i].composition->descriptorInfo());
+          vk::DescriptorType::eCombinedImageSampler, albedoImageInfo, nullptr);
       writeDescriptorSets.emplace_back(*descriptorSets.composition[i], 3, 0,
                                        vk::DescriptorType::eUniformBuffer,
-                                       nullptr, bufferInfos.back());
+                                       nullptr, bufferInfo);
       device.updateDescriptorSets(writeDescriptorSets, nullptr);
     }
   }
@@ -829,6 +826,40 @@ void VgeExample::buildCommandBuffers() {
     }
 
     cmdBuffer.endRenderPass();
+  }
+
+  // Image layout transition from ATTACHMENT_OPTIMAL to SHADER_READ_ONLY for
+  // composition
+  {
+    std::vector<vk::ImageMemoryBarrier> imageMemoryBarriers;
+    // Position image
+    imageMemoryBarriers.emplace_back(
+        vk::AccessFlagBits::eColorAttachmentWrite,
+        vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eShaderReadOnlyOptimal, VK_QUEUE_FAMILY_IGNORED,
+        VK_QUEUE_FAMILY_IGNORED,
+        offScreenFrameBuf.position[currentFrameIndex]->getImage(),
+        vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+    // Normal image
+    imageMemoryBarriers.emplace_back(
+        vk::AccessFlagBits::eColorAttachmentWrite,
+        vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eShaderReadOnlyOptimal, VK_QUEUE_FAMILY_IGNORED,
+        VK_QUEUE_FAMILY_IGNORED,
+        offScreenFrameBuf.normal[currentFrameIndex]->getImage(),
+        vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+    // Albedo image
+    imageMemoryBarriers.emplace_back(
+        vk::AccessFlagBits::eColorAttachmentWrite,
+        vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eShaderReadOnlyOptimal, VK_QUEUE_FAMILY_IGNORED,
+        VK_QUEUE_FAMILY_IGNORED,
+        offScreenFrameBuf.albedo[currentFrameIndex]->getImage(),
+        vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+    cmdBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                              vk::PipelineStageFlagBits::eFragmentShader,
+                              vk::DependencyFlags{}, nullptr, nullptr,
+                              imageMemoryBarriers);
   }
 
   // second render pass for composition
