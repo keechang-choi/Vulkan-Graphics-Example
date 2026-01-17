@@ -777,9 +777,9 @@ void VgeExample::buildCommandBuffers() {
   // first render pass for offscreen pass to fill g buffers of attachments.
   {
     std::array<vk::ClearValue, 4> clearValues;
-    clearValues[0].color = vk::ClearColorValue(0.2f, 0.2f, 0.2f, 0.2f);
-    clearValues[1].color = vk::ClearColorValue(0.2f, 0.2f, 0.2f, 0.2f);
-    clearValues[2].color = vk::ClearColorValue(0.2f, 0.2f, 0.2f, 0.2f);
+    clearValues[0].color = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 0.0f);
+    clearValues[1].color = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 0.0f);
+    clearValues[2].color = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 0.0f);
     clearValues[3].depthStencil = vk::ClearDepthStencilValue(1.0f, 0);
     // NOTE(kcchoi): offscreen frame buffer index as currentFrameIndex
     vk::RenderPassBeginInfo renderPassBeginInfo(
@@ -866,7 +866,7 @@ void VgeExample::buildCommandBuffers() {
   // NOTE(kcchoi): no semaphores for explcit synchronizaion.
   {
     std::array<vk::ClearValue, 2> clearValues;
-    clearValues[0].color = vk::ClearColorValue(0.2f, 0.0f, 0.0f, 0.0f);
+    clearValues[0].color = vk::ClearColorValue(0.5f, 0.5f, 0.5f, 0.5f);
     clearValues[1].depthStencil = vk::ClearDepthStencilValue(1.0f, 0);
 
     vk::RenderPassBeginInfo renderPassBeginInfo(
