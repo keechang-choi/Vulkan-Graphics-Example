@@ -30,7 +30,10 @@ namespace vgeu {
 
 enum class DescriptorBindingFlagBits : uint32_t {
   kImageBaseColor = 0x00000001,
-  kImageNormalMap = 0x00000002
+  kImageNormalMap = 0x00000002,
+  kImageMetallicRoughness = 0x00000004,
+  kImageOcclusion = 0x00000008,
+  kImageEmissive = 0x00000010,
 };
 using DescriptorBindingFlags = Flags<DescriptorBindingFlagBits>;
 template <>

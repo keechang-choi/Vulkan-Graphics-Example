@@ -344,13 +344,13 @@ void Model::loadFromFile(std::string filename,
                          uboCount * framesInFlight);
 
   if (imageCount > 0) {
-    if (descriptorBindingFlags & DescriptorBindingFlagBits::kImageBaseColor) {
-      poolSizes.emplace_back(vk::DescriptorType::eCombinedImageSampler,
-                             imageCount);
-    }
-    if (descriptorBindingFlags & DescriptorBindingFlagBits::kImageNormalMap) {
-      poolSizes.emplace_back(vk::DescriptorType::eCombinedImageSampler,
-                             imageCount);
+    // iterate through all DescriptorBindingFlagBits
+    for (uint32_t bit = 0; bit < 32; ++bit) {
+      auto flag = DescriptorBindingFlagBits(1u << bit);
+      if (descriptorBindingFlags & flag) {
+        poolSizes.emplace_back(vk::DescriptorType::eCombinedImageSampler,
+                               imageCount);
+      }
     }
   }
   poolSizes.emplace_back(vk::DescriptorType::eStorageBuffer, 2);
@@ -386,18 +386,14 @@ void Model::loadFromFile(std::string filename,
     if (!*descriptorSetLayoutImage) {
       std::vector<vk::DescriptorSetLayoutBinding> setLayoutBindings{};
       // binding 0
-      if (descriptorBindingFlags & DescriptorBindingFlagBits::kImageBaseColor) {
-        setLayoutBindings.emplace_back(
-            static_cast<uint32_t>(setLayoutBindings.size()),
-            vk::DescriptorType::eCombinedImageSampler, 1,
-            vk::ShaderStageFlagBits::eFragment);
-      }
-      // binding 0 or 1
-      if (descriptorBindingFlags & DescriptorBindingFlagBits::kImageNormalMap) {
-        setLayoutBindings.emplace_back(
-            static_cast<uint32_t>(setLayoutBindings.size()),
-            vk::DescriptorType::eCombinedImageSampler, 1,
-            vk::ShaderStageFlagBits::eFragment);
+      for (uint32_t bit = 0; bit < 32; ++bit) {
+        auto flag = DescriptorBindingFlagBits(1u << bit);
+        if (descriptorBindingFlags & flag) {
+          setLayoutBindings.emplace_back(
+              static_cast<uint32_t>(setLayoutBindings.size()),
+              vk::DescriptorType::eCombinedImageSampler, 1,
+              vk::ShaderStageFlagBits::eFragment);
+        }
       }
       // NOTE: using constructor of vk::ArrayProxyNoTemporaries
       vk::DescriptorSetLayoutCreateInfo setLayoutCI(
@@ -1214,6 +1210,32 @@ void Material::createDescriptorSet(
         *descriptorSet, static_cast<uint32_t>(writeDescriptorSets.size()), 0,
         vk::DescriptorType::eCombinedImageSampler,
         normalTexture->descriptorInfo, nullptr);
+  }
+
+  if (metallicRoughnessTexture &&
+      descriptorBindingFlags &
+          DescriptorBindingFlagBits::kImageMetallicRoughness) {
+    descriptorInfos.push_back(metallicRoughnessTexture->descriptorInfo);
+    writeDescriptorSets.emplace_back(
+        *descriptorSet, static_cast<uint32_t>(writeDescriptorSets.size()), 0,
+        vk::DescriptorType::eCombinedImageSampler,
+        metallicRoughnessTexture->descriptorInfo, nullptr);
+  }
+  if (occlusionTexture &&
+      descriptorBindingFlags & DescriptorBindingFlagBits::kImageOcclusion) {
+    descriptorInfos.push_back(occlusionTexture->descriptorInfo);
+    writeDescriptorSets.emplace_back(
+        *descriptorSet, static_cast<uint32_t>(writeDescriptorSets.size()), 0,
+        vk::DescriptorType::eCombinedImageSampler,
+        occlusionTexture->descriptorInfo, nullptr);
+  }
+  if (emissiveTexture &&
+      descriptorBindingFlags & DescriptorBindingFlagBits::kImageEmissive) {
+    descriptorInfos.push_back(emissiveTexture->descriptorInfo);
+    writeDescriptorSets.emplace_back(
+        *descriptorSet, static_cast<uint32_t>(writeDescriptorSets.size()), 0,
+        vk::DescriptorType::eCombinedImageSampler,
+        emissiveTexture->descriptorInfo, nullptr);
   }
   device.updateDescriptorSets(writeDescriptorSets, nullptr);
 }
