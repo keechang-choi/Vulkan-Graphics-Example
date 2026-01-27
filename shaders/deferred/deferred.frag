@@ -35,7 +35,7 @@ void main()
 				outFragColor.rgb = fragPos;
 				break;
 			case 2: 
-				// tested by vertex normal.
+				// tested by vertex normal.[-1,1] to [0,1]
 				vec3 normal_color = normal * vec3(1.0, -1.0, 1.0);
 				normal_color += vec3(1.0, 1.0, 1.0);
 				normal_color *= vec3(0.5, 0.5, 0.5);
@@ -53,7 +53,7 @@ void main()
 	}
 
 	// composition 
-#define ambientIntensity 0.15
+#define ambientIntensity 0.35
 
 	vec3 ambient = albedo.rgb * ambientIntensity;
 	vec3 fragColor = ambient;

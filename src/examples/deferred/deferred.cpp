@@ -701,32 +701,31 @@ void VgeExample::preparePipelines() {
 void VgeExample::updateUboComposition() {
   uniformDataComposition.numLights = 6;
   // White
-  uniformDataComposition.lights[0].position = glm::vec4(0.0f, 0.0f, 1.0f, 0.0f);
+  uniformDataComposition.lights[0].position =
+      glm::vec4(0.0f, -5.0f, 1.0f, 0.0f);
   uniformDataComposition.lights[0].color = glm::vec3(1.5f);
   uniformDataComposition.lights[0].radius = 15.0f * 0.25f;
   // Red
   uniformDataComposition.lights[1].position =
-      glm::vec4(-2.0f, 0.0f, 0.0f, 0.0f);
+      glm::vec4(-2.0f, -5.0f, 0.0f, 0.0f);
   uniformDataComposition.lights[1].color = glm::vec3(1.0f, 0.0f, 0.0f);
   uniformDataComposition.lights[1].radius = 15.0f;
   // Blue
   uniformDataComposition.lights[2].position =
-      glm::vec4(2.0f, -1.0f, 0.0f, 0.0f);
+      glm::vec4(2.0f, -5.0f, 0.0f, 0.0f);
   uniformDataComposition.lights[2].color = glm::vec3(0.0f, 0.0f, 2.5f);
   uniformDataComposition.lights[2].radius = 5.0f;
   // Yellow
-  uniformDataComposition.lights[3].position =
-      glm::vec4(0.0f, -0.9f, 0.5f, 0.0f);
+  uniformDataComposition.lights[3].position = glm::vec4(0.0f, -1.f, 0.f, 0.0f);
   uniformDataComposition.lights[3].color = glm::vec3(1.0f, 1.0f, 0.0f);
   uniformDataComposition.lights[3].radius = 2.0f;
   // Green
-  uniformDataComposition.lights[4].position =
-      glm::vec4(0.0f, -0.5f, 0.0f, 0.0f);
+  uniformDataComposition.lights[4].position = glm::vec4(0.0f, -5.f, 0.0f, 0.0f);
   uniformDataComposition.lights[4].color = glm::vec3(0.0f, 1.0f, 0.2f);
   uniformDataComposition.lights[4].radius = 5.0f;
   // Yellow
   uniformDataComposition.lights[5].position =
-      glm::vec4(0.0f, -1.0f, 0.0f, 0.0f);
+      glm::vec4(0.0f, -5.0f, 0.0f, 0.0f);
   uniformDataComposition.lights[5].color = glm::vec3(1.0f, 0.7f, 0.3f);
   uniformDataComposition.lights[5].radius = 25.0f;
 
@@ -829,12 +828,10 @@ void VgeExample::buildCommandBuffers() {
     cmdBuffer.endRenderPass();
   }
 
-  // Image layout transition from ATTACHMENT_OPTIMAL to SHADER_READ_ONLY for
-  // composition
+  // Image layout transition already done by final layout on attachment.
+  // mem availabilty and visilbility.
   {
-    // TODO(kcchoi): check why  previous known layout is
-    // VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-    // vk::ImageLayout oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
+    // NOTE(kcchoi): attachment final layout -> shader read only optimal
     vk::ImageLayout oldLayout = vk::ImageLayout::eUndefined;
     std::vector<vk::ImageMemoryBarrier> imageMemoryBarriers;
     // Position image
