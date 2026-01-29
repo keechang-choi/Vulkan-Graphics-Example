@@ -3,6 +3,7 @@
 layout (set = 0, binding = 0) uniform sampler2D samplerPosition;
 layout (set = 0, binding = 1) uniform sampler2D samplerNormal;
 layout (set = 0, binding = 2) uniform sampler2D samplerAlbedo;
+layout (set = 0, binding = 3) uniform sampler2D samplerDepth;
 
 layout (location = 0) in vec2 inUV;
 
@@ -14,7 +15,7 @@ struct Light {
 	float radius;
 };
 #define MAX_LIGHTS 10
-layout (set = 0, binding = 3) uniform UBO 
+layout (set = 0, binding = 4) uniform UBO 
 {
 	Light lights[MAX_LIGHTS];
 	vec4 viewPos;
@@ -36,7 +37,7 @@ void main()
 				break;
 			case 2: 
 				// tested by vertex normal.[-1,1] to [0,1]
-				vec3 normal_color = normal * vec3(1.0, -1.0, 1.0);
+				vec3 normal_color = normal * vec3(1.0, +1.0, 1.0);
 				normal_color += vec3(1.0, 1.0, 1.0);
 				normal_color *= vec3(0.5, 0.5, 0.5);
 				outFragColor.rgb = normal_color;
@@ -47,13 +48,17 @@ void main()
 			case 4: 
 				outFragColor.rgb = albedo.aaa;
 				break;
+			case 5:
+				float depth = texture(samplerDepth, inUV).r;
+				outFragColor.rgb = vec3(depth);
+				break;
 		}		
 		outFragColor.a = 1.0;
 		return;
 	}
 
 	// composition 
-#define ambientIntensity 0.35
+#define ambientIntensity 0.15
 
 	vec3 ambient = albedo.rgb * ambientIntensity;
 	vec3 fragColor = ambient;

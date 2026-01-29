@@ -78,7 +78,7 @@ void VgeExample::viewChanged() {}
 void VgeExample::onUpdateUIOverlay() {
   if (uiOverlay->header("Settings")) {
     if (ImGui::TreeNodeEx("Immediate", ImGuiTreeNodeFlags_DefaultOpen)) {
-      for (auto i = 0; i < 5; i++) {
+      for (auto i = 0; i < opts.numTargets; i++) {
         std::string caption = "debugDisplayTarget: " + std::to_string(i);
         uiOverlay->radioButton(caption.c_str(), &opts.debugDisplayTarget, i);
       }
@@ -144,8 +144,10 @@ std::unique_ptr<vgeu::VgeuImage> VgeExample::createAttachment(
     imageLayout = vk::ImageLayout::eColorAttachmentOptimal;
   } else if (usage & vk::ImageUsageFlagBits::eDepthStencilAttachment) {
     aspectMask = vk::ImageAspectFlagBits::eDepth;
+    /* NOTE(kcchoi): image view validation error for layout transition
     if (format >= vk::Format::eD16UnormS8Uint)
       aspectMask |= vk::ImageAspectFlagBits::eStencil;
+    */
     imageLayout = vk::ImageLayout::eDepthAttachmentOptimal;
   }
   assert(aspectMask != vk::ImageAspectFlagBits::eNone);
@@ -387,7 +389,7 @@ void VgeExample::setupDescriptors() {
                          MAX_CONCURRENT_FRAMES);
   poolSizes.emplace_back(vk::DescriptorType::eCombinedImageSampler,
                          /* position, normal, albedo */
-                         MAX_CONCURRENT_FRAMES * 3);
+                         MAX_CONCURRENT_FRAMES * 4);
   // max sets
   vk::DescriptorPoolCreateInfo descriptorPoolCI(
       vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
@@ -418,8 +420,12 @@ void VgeExample::setupDescriptors() {
       layoutBindings.emplace_back(2 /* binding */,
                                   vk::DescriptorType::eCombinedImageSampler, 1,
                                   vk::ShaderStageFlagBits::eFragment);
-      // fragment uniform
+      // depth
       layoutBindings.emplace_back(3 /* binding */,
+                                  vk::DescriptorType::eCombinedImageSampler, 1,
+                                  vk::ShaderStageFlagBits::eFragment);
+      // fragment uniform
+      layoutBindings.emplace_back(4 /* binding */,
                                   vk::DescriptorType::eUniformBuffer, 1,
                                   vk::ShaderStageFlagBits::eFragment);
       vk::DescriptorSetLayoutCreateInfo layoutCI(
@@ -482,7 +488,6 @@ void VgeExample::setupDescriptors() {
       descriptorSets.composition.push_back(
           std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
     }
-    // TODO(kcchoi): check light shading, and depth
     for (int i = 0; i < descriptorSets.composition.size(); i++) {
       vk::DescriptorBufferInfo bufferInfo =
           uniformBuffers[i].composition->descriptorInfo();
@@ -495,8 +500,12 @@ void VgeExample::setupDescriptors() {
       vk::DescriptorImageInfo albedoImageInfo =
           offScreenFrameBuf.albedo[i]->descriptorImageInfo(
               *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
+      vk::DescriptorImageInfo depthImageInfo =
+          offScreenFrameBuf.depth[i]->descriptorImageInfo(
+              *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
+
       std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
-      writeDescriptorSets.reserve(4);
+      writeDescriptorSets.reserve(5);
 
       // NOTE: dstBinding, dstArrayElement
       writeDescriptorSets.emplace_back(
@@ -508,7 +517,10 @@ void VgeExample::setupDescriptors() {
       writeDescriptorSets.emplace_back(
           *descriptorSets.composition[i], 2, 0,
           vk::DescriptorType::eCombinedImageSampler, albedoImageInfo, nullptr);
-      writeDescriptorSets.emplace_back(*descriptorSets.composition[i], 3, 0,
+      writeDescriptorSets.emplace_back(
+          *descriptorSets.composition[i], 3, 0,
+          vk::DescriptorType::eCombinedImageSampler, depthImageInfo, nullptr);
+      writeDescriptorSets.emplace_back(*descriptorSets.composition[i], 4, 0,
                                        vk::DescriptorType::eUniformBuffer,
                                        nullptr, bufferInfo);
       device.updateDescriptorSets(writeDescriptorSets, nullptr);
@@ -859,6 +871,24 @@ void VgeExample::buildCommandBuffers() {
         offScreenFrameBuf.albedo[currentFrameIndex]->getImage(),
         vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
     cmdBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                              vk::PipelineStageFlagBits::eFragmentShader,
+                              vk::DependencyFlags{}, nullptr, nullptr,
+                              imageMemoryBarriers);
+  }
+  {
+    vk::ImageLayout oldLayout = vk::ImageLayout::eUndefined;
+    std::vector<vk::ImageMemoryBarrier> imageMemoryBarriers;
+    // depth image
+    imageMemoryBarriers.emplace_back(
+        vk::AccessFlagBits::eDepthStencilAttachmentWrite,
+        vk::AccessFlagBits::eShaderRead, oldLayout,
+        vk::ImageLayout::eShaderReadOnlyOptimal, VK_QUEUE_FAMILY_IGNORED,
+        VK_QUEUE_FAMILY_IGNORED,
+        offScreenFrameBuf.depth[currentFrameIndex]->getImage(),
+        vk::ImageSubresourceRange(
+            vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil,
+            0, 1, 0, 1));
+    cmdBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eLateFragmentTests,
                               vk::PipelineStageFlagBits::eFragmentShader,
                               vk::DependencyFlags{}, nullptr, nullptr,
                               imageMemoryBarriers);

@@ -15,6 +15,7 @@ struct Options {
   // save camera view. not configurable by panel
   glm::mat4 cameraView{1.f};
   int32_t debugDisplayTarget = 0;
+  int32_t numTargets = 6;
 };
 
 struct DynamicUboElt {
