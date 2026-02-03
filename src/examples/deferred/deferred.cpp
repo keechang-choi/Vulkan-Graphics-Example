@@ -283,13 +283,13 @@ void VgeExample::prepareOffScreenFrameBuffer() {
                                 vk::AccessFlagBits::eColorAttachmentRead,
                             vk::DependencyFlags());
   // transition for lighting render pass after geometry pass
-  /*dependencies.emplace_back(0u, VK_SUBPASS_EXTERNAL,
+  dependencies.emplace_back(0u, VK_SUBPASS_EXTERNAL,
                             vk::PipelineStageFlagBits::eColorAttachmentOutput,
                             vk::PipelineStageFlagBits::eBottomOfPipe,
                             vk::AccessFlagBits::eColorAttachmentWrite |
                                 vk::AccessFlagBits::eColorAttachmentRead,
                             vk::AccessFlagBits::eMemoryRead,
-                            vk::DependencyFlags());*/
+                            vk::DependencyFlags());
 
   vk::RenderPassCreateInfo renderPassCreateInfo(
       vk::RenderPassCreateFlags(), attachmentDescriptions, subpassDescription,
@@ -846,7 +846,7 @@ void VgeExample::buildCommandBuffers() {
 
   // Image layout transition already done by final layout on attachment.
   // mem availabilty and visilbility.
-  {
+  /*{
     // NOTE(kcchoi): attachment final layout -> shader read only optimal
     vk::ImageLayout oldLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
     if (offScreenFrameBuf.isFirstFrame[currentFrameIndex]) {
@@ -903,7 +903,7 @@ void VgeExample::buildCommandBuffers() {
                               vk::PipelineStageFlagBits::eFragmentShader,
                               vk::DependencyFlags{}, nullptr, nullptr,
                               imageMemoryBarriers);
-  }
+  }*/
 
   // second render pass for composition
   // NOTE(kcchoi): no semaphores for explcit synchronizaion.
