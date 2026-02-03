@@ -16,6 +16,7 @@ struct Options {
   glm::mat4 cameraView{1.f};
   int32_t debugDisplayTarget = 0;
   int32_t numTargets = 6;
+  float farClamp = 50.f;
 };
 
 struct DynamicUboElt {
@@ -36,12 +37,15 @@ struct Light {
   float radius;
 };
 
-// NOTE: for alignment. default size: 344bytes = 32*10 + 16 + 4 + 4
+// NOTE: for alignment. default size: 352bytes = 32*10 + 16 + 4 + 4 + 4 + 4
 struct alignas(64) UniformDataComposition {
   Light lights[MAX_LIGHTS];
   glm::vec4 viewPos;
   int debugDisplayTarget{0};
   int numLights;
+  float nearPlane;
+  float farPlane;
+  float farClamp;
 };
 struct VertexInfos {
   vk::PipelineVertexInputStateCreateInfo vertexInputSCI;

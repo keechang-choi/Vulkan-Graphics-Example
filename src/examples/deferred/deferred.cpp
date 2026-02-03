@@ -82,6 +82,8 @@ void VgeExample::onUpdateUIOverlay() {
         std::string caption = "debugDisplayTarget: " + std::to_string(i);
         uiOverlay->radioButton(caption.c_str(), &opts.debugDisplayTarget, i);
       }
+      ImGui::DragFloat("Far Clamping", &opts.farClamp, 0.1f,
+                       camera.getNearPlane(), camera.getFarPlane(), "%.1f");
       ImGui::TreePop();
     }
   }
@@ -716,6 +718,9 @@ void VgeExample::preparePipelines() {
 }
 void VgeExample::updateUboComposition() {
   uniformDataComposition.numLights = 6;
+  uniformDataComposition.nearPlane = camera.getNearPlane();
+  uniformDataComposition.farPlane = camera.getFarPlane();
+  uniformDataComposition.farClamp = opts.farClamp;
   // White
   uniformDataComposition.lights[0].position =
       glm::vec4(0.0f, -5.0f, 1.0f, 0.0f);

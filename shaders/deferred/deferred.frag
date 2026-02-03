@@ -21,6 +21,9 @@ layout (set = 0, binding = 4) uniform UBO
 	vec4 viewPos;
 	int displayDebugTarget;
 	int numLights;
+	float nearPlane;
+	float farPlane;
+	float farClamp;
 } ubo;
 
 void main() 
@@ -49,8 +52,16 @@ void main()
 				outFragColor.rgb = albedo.aaa;
 				break;
 			case 5:
-				vec4 depth = texture(samplerDepth, inUV);
-				outFragColor.rgb = vec3((1.0-depth.r)*100.0);
+				vec4 depthRead = texture(samplerDepth, inUV);
+				float depth = depthRead.r;
+				// linearize depth
+				float signedDepth = depth * 2.0 - 1.0; // back to [-1,1]
+				float linearDepth = (2.0 * ubo.nearPlane * ubo.farPlane) / (ubo.farPlane + ubo.nearPlane - signedDepth * (ubo.farPlane - ubo.nearPlane));
+				// remap to [0,1]
+				linearDepth = (linearDepth - ubo.nearPlane) / (ubo.farPlane - ubo.nearPlane);
+				linearDepth = linearDepth * (ubo.farPlane - ubo.nearPlane) / (ubo.farClamp - ubo.nearPlane);
+				linearDepth = clamp(linearDepth, 0.0, 1.0);
+				outFragColor.rgb = vec3(1.0-linearDepth);
 				break;
 		}		
 		outFragColor.a = 1.0;

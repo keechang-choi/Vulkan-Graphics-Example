@@ -42,6 +42,8 @@ class VgeuCamera {
         glm::atan(inverseViewMatrix[0][1], inverseViewMatrix[1][1]),  // Z
     };
   }
+  float getNearPlane() const { return near_; }
+  float getFarPlane() const { return far_; }
 
  private:
   glm::mat4 projectionMatrix{1.f};
