@@ -15,7 +15,7 @@ struct Light {
 	float radius;
 };
 #define MAX_LIGHTS 10
-layout (set = 0, binding = 4) uniform UBO 
+layout (set = 0, binding = 4) uniform UBO
 {
 	Light lights[MAX_LIGHTS];
 	vec4 viewPos;
@@ -49,8 +49,8 @@ void main()
 				outFragColor.rgb = albedo.aaa;
 				break;
 			case 5:
-				float depth = texture(samplerDepth, inUV).r;
-				outFragColor.rgb = vec3(depth);
+				vec4 depth = texture(samplerDepth, inUV);
+				outFragColor.rgb = vec3((1.0-depth.r)*100.0);
 				break;
 		}		
 		outFragColor.a = 1.0;

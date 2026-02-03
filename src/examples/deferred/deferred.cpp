@@ -235,7 +235,10 @@ void VgeExample::prepareOffScreenFrameBuffer() {
     vk::ImageLayout finalLayout;
     if (i == 3) {
       initialLayout = vk::ImageLayout::eUndefined;
-      finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
+      // validation error after adding offscreen depth image
+      // when using vk::ImageLayout::eDepthAttachmentOptimal
+      // finalLayout = vk::ImageLayout::eDepthAttachmentOptimal;
+      finalLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
     } else {
       initialLayout = vk::ImageLayout::eUndefined;
       finalLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
@@ -844,7 +847,7 @@ void VgeExample::buildCommandBuffers() {
   // mem availabilty and visilbility.
   {
     // NOTE(kcchoi): attachment final layout -> shader read only optimal
-    vk::ImageLayout oldLayout = vk::ImageLayout::eUndefined;
+    vk::ImageLayout oldLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
     std::vector<vk::ImageMemoryBarrier> imageMemoryBarriers;
     // Position image
     imageMemoryBarriers.emplace_back(
@@ -876,7 +879,8 @@ void VgeExample::buildCommandBuffers() {
                               imageMemoryBarriers);
   }
   {
-    vk::ImageLayout oldLayout = vk::ImageLayout::eUndefined;
+    // eDepthStencilAttachmentOptimal -> validation error in subresurce range
+    vk::ImageLayout oldLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
     std::vector<vk::ImageMemoryBarrier> imageMemoryBarriers;
     // depth image
     imageMemoryBarriers.emplace_back(
@@ -959,7 +963,7 @@ void VgeExample::draw() {
     queue.submit(submitInfo, *waitFences[currentFrameIndex]);
   }
   submitFrame();
-  // queue.waitIdle(); // for synch test only
+  // queue.waitIdle();  // for synch test only
 }
 
 void VgeExample::addModelInstance(ModelInstance&& newInstance) {
