@@ -191,6 +191,7 @@ class VgeExample : public VgeBase {
     std::vector<std::unique_ptr<vgeu::VgeuImage>> position, normal, albedo;
     std::vector<std::unique_ptr<vgeu::VgeuImage>> depth;
     vk::raii::RenderPass renderPass = nullptr;
+    std::vector<bool> isFirstFrame;
   } offScreenFrameBuf;
 
   // TODO: check to duplicate for each frame

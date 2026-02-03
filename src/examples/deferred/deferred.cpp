@@ -214,6 +214,7 @@ void VgeExample::prepareOffScreenFrameBuffer() {
   offScreenFrameBuf.width = 2048;
   offScreenFrameBuf.height = 2048;
 
+  offScreenFrameBuf.isFirstFrame.resize(MAX_CONCURRENT_FRAMES, true);
   for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
     offScreenFrameBuf.position.push_back(
         std::move(createAttachment(vk::Format::eR16G16B16A16Sfloat,
@@ -848,6 +849,9 @@ void VgeExample::buildCommandBuffers() {
   {
     // NOTE(kcchoi): attachment final layout -> shader read only optimal
     vk::ImageLayout oldLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    if (offScreenFrameBuf.isFirstFrame[currentFrameIndex]) {
+      oldLayout = vk::ImageLayout::eUndefined;
+    }
     std::vector<vk::ImageMemoryBarrier> imageMemoryBarriers;
     // Position image
     imageMemoryBarriers.emplace_back(
@@ -881,6 +885,9 @@ void VgeExample::buildCommandBuffers() {
   {
     // eDepthStencilAttachmentOptimal -> validation error in subresurce range
     vk::ImageLayout oldLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    if (offScreenFrameBuf.isFirstFrame[currentFrameIndex]) {
+      oldLayout = vk::ImageLayout::eUndefined;
+    }
     std::vector<vk::ImageMemoryBarrier> imageMemoryBarriers;
     // depth image
     imageMemoryBarriers.emplace_back(
@@ -933,6 +940,7 @@ void VgeExample::buildCommandBuffers() {
     cmdBuffer.endRenderPass();
   }
   cmdBuffer.end();
+  offScreenFrameBuf.isFirstFrame[currentFrameIndex] = false;
 }
 
 void VgeExample::draw() {
