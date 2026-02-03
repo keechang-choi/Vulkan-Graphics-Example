@@ -3,7 +3,8 @@
 layout (set = 0, binding = 0) uniform sampler2D samplerPosition;
 layout (set = 0, binding = 1) uniform sampler2D samplerNormal;
 layout (set = 0, binding = 2) uniform sampler2D samplerAlbedo;
-layout (set = 0, binding = 3) uniform sampler2D samplerDepth;
+layout (set = 0, binding = 3) uniform sampler2D samplerArm;
+layout (set = 0, binding = 4) uniform sampler2D samplerDepth;
 
 layout (location = 0) in vec2 inUV;
 
@@ -15,7 +16,7 @@ struct Light {
 	float radius;
 };
 #define MAX_LIGHTS 10
-layout (set = 0, binding = 4) uniform UBO
+layout (set = 0, binding = 5) uniform UBO
 {
 	Light lights[MAX_LIGHTS];
 	vec4 viewPos;
@@ -32,6 +33,7 @@ void main()
 	vec3 fragPos = texture(samplerPosition, inUV).rgb;
 	vec3 normal = texture(samplerNormal, inUV).rgb;
 	vec4 albedo = texture(samplerAlbedo, inUV);
+	vec3 arm = texture(samplerArm, inUV).rgb;
 	// display target. TODO: specialization constant.
 	if (ubo.displayDebugTarget > 0) {
 		switch (ubo.displayDebugTarget) {
@@ -49,9 +51,18 @@ void main()
 				outFragColor.rgb = albedo.rgb;
 				break;
 			case 4: 
-				outFragColor.rgb = albedo.aaa;
+				outFragColor.rgb = arm.rgb;
 				break;
-			case 5:
+			case 5: 
+				outFragColor.rgb = arm.rrr;
+				break;
+			case 6: 
+				outFragColor.rgb = arm.ggg;
+				break;
+			case 7: 
+				outFragColor.rgb = arm.bbb;
+				break;
+			case 8:
 				vec4 depthRead = texture(samplerDepth, inUV);
 				float depth = depthRead.r;
 				// linearize depth

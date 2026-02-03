@@ -102,7 +102,8 @@ void VgeExample::loadAssets() {
       MAX_CONCURRENT_FRAMES);
   floor->descriptorBindingFlags =
       vgeu::DescriptorBindingFlagBits::kImageBaseColor |
-      vgeu::DescriptorBindingFlagBits::kImageNormalMap;
+      vgeu::DescriptorBindingFlagBits::kImageNormalMap |
+      vgeu::DescriptorBindingFlagBits::kImageMetallicRoughness;
   floor->loadFromFile(
       getAssetsPath() + "/models/metal_plate/metal_plate_1k.gltf",
       glTFLoadingFlags);
@@ -119,7 +120,8 @@ void VgeExample::loadAssets() {
       MAX_CONCURRENT_FRAMES);
   damagedHelmet->descriptorBindingFlags =
       vgeu::DescriptorBindingFlagBits::kImageBaseColor |
-      vgeu::DescriptorBindingFlagBits::kImageNormalMap;
+      vgeu::DescriptorBindingFlagBits::kImageNormalMap |
+      vgeu::DescriptorBindingFlagBits::kImageMetallicRoughness;
   damagedHelmet->loadFromFile(
       getAssetsPath() + "/models/DamagedHelmet/glTF/DamagedHelmet.gltf",
       glTFLoadingFlags);
@@ -227,16 +229,19 @@ void VgeExample::prepareOffScreenFrameBuffer() {
     offScreenFrameBuf.albedo.push_back(
         std::move(createAttachment(vk::Format::eR16G16B16A16Sfloat,
                                    vk::ImageUsageFlagBits::eColorAttachment)));
+    offScreenFrameBuf.arm.push_back(
+        std::move(createAttachment(vk::Format::eR16G16B16A16Sfloat,
+                                   vk::ImageUsageFlagBits::eColorAttachment)));
     offScreenFrameBuf.depth.push_back(std::move(createAttachment(
         depthFormat, vk::ImageUsageFlagBits::eDepthStencilAttachment)));
   }
   // render pass creation, subpass dependency
   std::vector<vk::AttachmentDescription> attachmentDescriptions;
-  // position, normal, albedo, depth
-  for (uint32_t i = 0; i < 4; i++) {
+  // position, normal, albedo, arm, depth
+  for (uint32_t i = 0; i < offScreenFrameBuf.numAttachments; i++) {
     vk::ImageLayout initialLayout;
     vk::ImageLayout finalLayout;
-    if (i == 3) {
+    if (i == offScreenFrameBuf.numAttachments - 1) {
       initialLayout = vk::ImageLayout::eUndefined;
       // validation error after adding offscreen depth image
       // when using vk::ImageLayout::eDepthAttachmentOptimal
@@ -255,13 +260,15 @@ void VgeExample::prepareOffScreenFrameBuffer() {
   attachmentDescriptions[0].format = offScreenFrameBuf.position[0]->getFormat();
   attachmentDescriptions[1].format = offScreenFrameBuf.normal[0]->getFormat();
   attachmentDescriptions[2].format = offScreenFrameBuf.albedo[0]->getFormat();
-  attachmentDescriptions[3].format = offScreenFrameBuf.depth[0]->getFormat();
+  attachmentDescriptions[3].format = offScreenFrameBuf.arm[0]->getFormat();
+  attachmentDescriptions[4].format = offScreenFrameBuf.depth[0]->getFormat();
   std::vector<vk::AttachmentReference> colorReferences;
   colorReferences.emplace_back(0, vk::ImageLayout::eColorAttachmentOptimal);
   colorReferences.emplace_back(1, vk::ImageLayout::eColorAttachmentOptimal);
   colorReferences.emplace_back(2, vk::ImageLayout::eColorAttachmentOptimal);
+  colorReferences.emplace_back(3, vk::ImageLayout::eColorAttachmentOptimal);
   vk::AttachmentReference depthReference(
-      3, vk::ImageLayout::eDepthStencilAttachmentOptimal);
+      4, vk::ImageLayout::eDepthStencilAttachmentOptimal);
   vk::SubpassDescription subpassDescription(
       vk::SubpassDescriptionFlags(), vk::PipelineBindPoint::eGraphics, {},
       colorReferences, {}, &depthReference);
@@ -302,11 +309,12 @@ void VgeExample::prepareOffScreenFrameBuffer() {
 
   offScreenFrameBuf.frameBuffers.reserve(MAX_CONCURRENT_FRAMES);
   for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
-    std::array<vk::ImageView, 4> attachments{};
+    std::array<vk::ImageView, 5> attachments{};
     attachments[0] = *offScreenFrameBuf.position[i]->getImageView();
     attachments[1] = *offScreenFrameBuf.normal[i]->getImageView();
     attachments[2] = *offScreenFrameBuf.albedo[i]->getImageView();
-    attachments[3] = *offScreenFrameBuf.depth[i]->getImageView();
+    attachments[3] = *offScreenFrameBuf.arm[i]->getImageView();
+    attachments[4] = *offScreenFrameBuf.depth[i]->getImageView();
 
     vk::FramebufferCreateInfo framebufferCreateInfo(
         vk::FramebufferCreateFlags(), *offScreenFrameBuf.renderPass,
@@ -332,6 +340,8 @@ void VgeExample::prepareOffScreenFrameBuffer() {
                *offScreenFrameBuf.normal[i]->getImageView()) != VK_NULL_HANDLE);
     assert(static_cast<VkImageView>(
                *offScreenFrameBuf.albedo[i]->getImageView()) != VK_NULL_HANDLE);
+    assert(static_cast<VkImageView>(
+               *offScreenFrameBuf.arm[i]->getImageView()) != VK_NULL_HANDLE);
     assert(static_cast<VkImageView>(
                *offScreenFrameBuf.depth[i]->getImageView()) != VK_NULL_HANDLE);
   }
@@ -393,9 +403,10 @@ void VgeExample::setupDescriptors() {
   poolSizes.emplace_back(vk::DescriptorType::eUniformBufferDynamic,
                          /* uniform offscreen */
                          MAX_CONCURRENT_FRAMES);
-  poolSizes.emplace_back(vk::DescriptorType::eCombinedImageSampler,
-                         /* position, normal, albedo */
-                         MAX_CONCURRENT_FRAMES * 4);
+  poolSizes.emplace_back(
+      vk::DescriptorType::eCombinedImageSampler,
+      /* position, normal, albedo, arm, depth */
+      MAX_CONCURRENT_FRAMES * offScreenFrameBuf.numAttachments);
   // max sets
   vk::DescriptorPoolCreateInfo descriptorPoolCI(
       vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
@@ -426,12 +437,16 @@ void VgeExample::setupDescriptors() {
       layoutBindings.emplace_back(2 /* binding */,
                                   vk::DescriptorType::eCombinedImageSampler, 1,
                                   vk::ShaderStageFlagBits::eFragment);
-      // depth
+      // arm
       layoutBindings.emplace_back(3 /* binding */,
                                   vk::DescriptorType::eCombinedImageSampler, 1,
                                   vk::ShaderStageFlagBits::eFragment);
-      // fragment uniform
+      // depth
       layoutBindings.emplace_back(4 /* binding */,
+                                  vk::DescriptorType::eCombinedImageSampler, 1,
+                                  vk::ShaderStageFlagBits::eFragment);
+      // fragment uniform
+      layoutBindings.emplace_back(5 /* binding */,
                                   vk::DescriptorType::eUniformBuffer, 1,
                                   vk::ShaderStageFlagBits::eFragment);
       vk::DescriptorSetLayoutCreateInfo layoutCI(
@@ -506,6 +521,9 @@ void VgeExample::setupDescriptors() {
       vk::DescriptorImageInfo albedoImageInfo =
           offScreenFrameBuf.albedo[i]->descriptorImageInfo(
               *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
+      vk::DescriptorImageInfo armImageInfo =
+          offScreenFrameBuf.arm[i]->descriptorImageInfo(
+              *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
       vk::DescriptorImageInfo depthImageInfo =
           offScreenFrameBuf.depth[i]->descriptorImageInfo(
               *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
@@ -525,8 +543,11 @@ void VgeExample::setupDescriptors() {
           vk::DescriptorType::eCombinedImageSampler, albedoImageInfo, nullptr);
       writeDescriptorSets.emplace_back(
           *descriptorSets.composition[i], 3, 0,
+          vk::DescriptorType::eCombinedImageSampler, armImageInfo, nullptr);
+      writeDescriptorSets.emplace_back(
+          *descriptorSets.composition[i], 4, 0,
           vk::DescriptorType::eCombinedImageSampler, depthImageInfo, nullptr);
-      writeDescriptorSets.emplace_back(*descriptorSets.composition[i], 4, 0,
+      writeDescriptorSets.emplace_back(*descriptorSets.composition[i], 5, 0,
                                        vk::DescriptorType::eUniformBuffer,
                                        nullptr, bufferInfo);
       device.updateDescriptorSets(writeDescriptorSets, nullptr);
@@ -683,8 +704,15 @@ void VgeExample::preparePipelines() {
     // TODO(kcchoi): check face winding order in model
     rasterizationSCI.cullMode = vk::CullModeFlagBits::eNone;
     // TODO(kcchoi): check mask color for 0x0
-    // position, normal, albedo
-    std::array<vk::PipelineColorBlendAttachmentState, 3> blendAttachmentStates{
+    // position, normal, albedo, arm
+    std::array<vk::PipelineColorBlendAttachmentState, 4> blendAttachmentStates{
+        vk::PipelineColorBlendAttachmentState(
+            false, vk::BlendFactor::eZero, vk::BlendFactor::eZero,
+            vk::BlendOp::eAdd, vk::BlendFactor::eZero, vk::BlendFactor::eZero,
+            vk::BlendOp::eAdd,
+            vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+                vk::ColorComponentFlagBits::eB |
+                vk::ColorComponentFlagBits::eA),
         vk::PipelineColorBlendAttachmentState(
             false, vk::BlendFactor::eZero, vk::BlendFactor::eZero,
             vk::BlendOp::eAdd, vk::BlendFactor::eZero, vk::BlendFactor::eZero,
@@ -797,11 +825,12 @@ void VgeExample::buildCommandBuffers() {
   cmdBuffer.begin({});
   // first render pass for offscreen pass to fill g buffers of attachments.
   {
-    std::array<vk::ClearValue, 4> clearValues;
+    std::array<vk::ClearValue, 5> clearValues;
     clearValues[0].color = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 0.0f);
     clearValues[1].color = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 0.0f);
     clearValues[2].color = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 0.0f);
-    clearValues[3].depthStencil = vk::ClearDepthStencilValue(1.0f, 0);
+    clearValues[3].color = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 0.0f);
+    clearValues[4].depthStencil = vk::ClearDepthStencilValue(1.0f, 0);
     // NOTE(kcchoi): offscreen frame buffer index as currentFrameIndex
     vk::RenderPassBeginInfo renderPassBeginInfo(
         *offScreenFrameBuf.renderPass,
@@ -881,6 +910,14 @@ void VgeExample::buildCommandBuffers() {
         vk::ImageLayout::eShaderReadOnlyOptimal, VK_QUEUE_FAMILY_IGNORED,
         VK_QUEUE_FAMILY_IGNORED,
         offScreenFrameBuf.albedo[currentFrameIndex]->getImage(),
+        vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+    // ARM image
+    imageMemoryBarriers.emplace_back(
+        vk::AccessFlagBits::eColorAttachmentWrite,
+        vk::AccessFlagBits::eShaderRead, oldLayout,
+        vk::ImageLayout::eShaderReadOnlyOptimal, VK_QUEUE_FAMILY_IGNORED,
+        VK_QUEUE_FAMILY_IGNORED,
+        offScreenFrameBuf.arm[currentFrameIndex]->getImage(),
         vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
     cmdBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
                               vk::PipelineStageFlagBits::eFragmentShader,
