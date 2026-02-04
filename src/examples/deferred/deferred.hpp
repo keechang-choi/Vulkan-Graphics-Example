@@ -15,7 +15,7 @@ struct Options {
   // save camera view. not configurable by panel
   glm::mat4 cameraView{1.f};
   int32_t debugDisplayTarget = 0;
-  int32_t numTargets = 9;
+  int32_t numTargets = 10;
   float farClamp = 50.f;
 };
 
@@ -192,9 +192,10 @@ class VgeExample : public VgeBase {
     uint32_t width, height;
     // TODO: check to duplicate for each frame
     std::vector<vk::raii::Framebuffer> frameBuffers;
-    std::vector<std::unique_ptr<vgeu::VgeuImage>> position, normal, albedo, arm;
+    std::vector<std::unique_ptr<vgeu::VgeuImage>> position, normal, albedo, arm,
+        emissive;
     std::vector<std::unique_ptr<vgeu::VgeuImage>> depth;
-    const size_t numAttachments = 5;
+    const size_t numAttachments = 6;
     vk::raii::RenderPass renderPass = nullptr;
     std::vector<bool> isFirstFrame;
   } offScreenFrameBuf;

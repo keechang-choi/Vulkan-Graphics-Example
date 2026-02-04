@@ -3,7 +3,7 @@
 layout (set = 2, binding = 0) uniform sampler2D samplerColorMap;
 layout (set = 2, binding = 1) uniform sampler2D samplerNormalMap;
 layout (set = 2, binding = 2) uniform sampler2D samplerMetallicRoughnessMap;
-// layout (set = 2, binding = 3) uniform sampler2D samplerOcclusionMap;
+layout (set = 2, binding = 3) uniform sampler2D samplerEmissionMap;
 
 layout (location = 0) in vec3 inNormal;
 layout (location = 1) in vec2 inUV;
@@ -15,6 +15,7 @@ layout (location = 0) out vec4 outPosition;
 layout (location = 1) out vec4 outNormal;
 layout (location = 2) out vec4 outAlbedo;
 layout (location = 3) out vec4 outArm;
+layout (location = 4) out vec4 outEmissive;
 
 void main() 
 {
@@ -38,4 +39,7 @@ void main()
 	arm.rgb = texture(samplerMetallicRoughnessMap, inUV).rgb; // metallic roughness
 	// arm.r = texture(samplerOcclusionMap, inUV).r; // occlusion
 	outArm = vec4(arm, 1.0);
+	vec3 emissive = vec3(0.0);
+	emissive.rgb = texture(samplerEmissionMap, inUV).rgb;
+	outEmissive = vec4(emissive, 1.0);
 }

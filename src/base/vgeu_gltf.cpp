@@ -496,6 +496,9 @@ void Model::loadMaterials(const tinygltf::Model& gltfModel) {
                          .textures[mat.additionalValues.at("emissiveTexture")
                                        .TextureIndex()]
                          .source);
+    } else {
+      // TODO(kcchoi): temp test for empty emissive texture
+      material.emissiveTexture = emptyTexture.get();
     }
     if (mat.additionalValues.find("occlusionTexture") !=
         mat.additionalValues.end()) {

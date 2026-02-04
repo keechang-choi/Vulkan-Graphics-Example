@@ -4,7 +4,9 @@ layout (set = 0, binding = 0) uniform sampler2D samplerPosition;
 layout (set = 0, binding = 1) uniform sampler2D samplerNormal;
 layout (set = 0, binding = 2) uniform sampler2D samplerAlbedo;
 layout (set = 0, binding = 3) uniform sampler2D samplerArm;
-layout (set = 0, binding = 4) uniform sampler2D samplerDepth;
+layout (set = 0, binding = 4) uniform sampler2D samplerEmissive;
+layout (set = 0, binding = 5) uniform sampler2D samplerDepth;
+
 
 layout (location = 0) in vec2 inUV;
 
@@ -16,7 +18,7 @@ struct Light {
 	float radius;
 };
 #define MAX_LIGHTS 10
-layout (set = 0, binding = 5) uniform UBO
+layout (set = 0, binding = 6) uniform UBO
 {
 	Light lights[MAX_LIGHTS];
 	vec4 viewPos;
@@ -63,6 +65,9 @@ void main()
 				outFragColor.rgb = arm.bbb;
 				break;
 			case 8:
+				outFragColor.rgb = texture(samplerEmissive, inUV).rgb;
+				break;
+			case 9:
 				vec4 depthRead = texture(samplerDepth, inUV);
 				float depth = depthRead.r;
 				// linearize depth
