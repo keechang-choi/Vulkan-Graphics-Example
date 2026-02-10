@@ -38,7 +38,7 @@ void main()
 	vec3 normal = texture(samplerNormal, inUV).rgb;
 	vec4 albedo = texture(samplerAlbedo, inUV);
 	vec3 arm = texture(samplerArm, inUV).rgb;
-	// display target. TODO: specialization constant.
+	// display target. NOTE: specialization constant.
 	int displayTargetIndex = DISPLAY_TARGET_INDEX;
 	if(displayTargetIndex == 0){
 		displayTargetIndex = ubo.displayDebugTarget;

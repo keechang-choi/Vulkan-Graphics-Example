@@ -1034,12 +1034,12 @@ void VgeExample::buildCommandBuffers() {
 
     cmdBuffer.beginRenderPass(renderPassBeginInfo,
                               vk::SubpassContents::eInline);
-    cmdBuffer.setViewport(
-        0,
-        vk::Viewport(0.0f, 0.0f,
-                     static_cast<float>(swapChainData->swapChainExtent.width),
-                     static_cast<float>(swapChainData->swapChainExtent.height),
-                     0.0f, 1.0f));
+    const float mainViewportWidth =
+        static_cast<float>(swapChainData->swapChainExtent.width);
+    const float mainViewportHeight =
+        static_cast<float>(swapChainData->swapChainExtent.height);
+    cmdBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, mainViewportWidth,
+                                          mainViewportHeight, 0.0f, 1.0f));
     cmdBuffer.setScissor(
         0, vk::Rect2D(vk::Offset2D(0, 0), swapChainData->swapChainExtent));
     cmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
@@ -1050,6 +1050,28 @@ void VgeExample::buildCommandBuffers() {
         0 /*set 0*/, {*descriptorSets.composition[currentFrameIndex]}, nullptr);
     // big triangle covers full screen quad.
     cmdBuffer.draw(3, 1, 0, 0);
+    // displayTargets
+    const int viewportNumRows = 5;
+    const int viewportNumCols = (opts.numTargets - 1) / viewportNumRows + 1;
+    const float scale = 1.f / static_cast<float>(viewportNumRows);
+    const float viewportWidth =
+        static_cast<float>(swapChainData->swapChainExtent.width) * scale;
+    const float viewportHeight =
+        static_cast<float>(swapChainData->swapChainExtent.height) * scale;
+    for (int i = 0; i < opts.numTargets; i++) {
+      float viewportX = (swapChainData->swapChainExtent.width -
+                         viewportWidth * viewportNumCols) +
+                        viewportWidth * (i / viewportNumRows);
+      float viewportY = viewportHeight * (i % viewportNumRows);
+
+      drawCmdBuffers[currentFrameIndex].setViewport(
+          0, vk::Viewport(viewportX, viewportY, viewportWidth, viewportHeight,
+                          0.0f, 1.0f));
+      cmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
+                             *pipelines.displayTargets[i]);
+      // big triangle covers full screen quad.
+      cmdBuffer.draw(3, 1, 0, 0);
+    }
     // UI overlay draw
     drawUI(cmdBuffer);
     cmdBuffer.endRenderPass();
