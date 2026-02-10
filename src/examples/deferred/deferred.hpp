@@ -173,10 +173,14 @@ class VgeExample : public VgeBase {
     vk::raii::Pipeline offScreenSimpleMesh = nullptr;
 
     vk::raii::Pipeline composition = nullptr;
+    std::vector<vk::raii::Pipeline> displayTargets;
   } pipelines;
   vk::raii::PipelineLayout pipelineLayoutOffScreen = nullptr;
   vk::raii::PipelineLayout pipelineLayoutCompoisition = nullptr;
 
+  struct SpecializationData {
+    uint32_t displayTargetIndex;
+  };
   struct {
     // std::vector<vk::raii::DescriptorSet> model;
     // std::vector<vk::raii::DescriptorSet> floor;

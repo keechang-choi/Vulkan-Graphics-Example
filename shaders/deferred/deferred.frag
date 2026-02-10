@@ -10,6 +10,8 @@ layout (set = 0, binding = 5) uniform sampler2D samplerDepth;
 
 layout (location = 0) in vec2 inUV;
 
+layout (constant_id = 0) const int DISPLAY_TARGET_INDEX = 0;
+
 layout (location = 0) out vec4 outFragColor;
 
 struct Light {
@@ -37,8 +39,12 @@ void main()
 	vec4 albedo = texture(samplerAlbedo, inUV);
 	vec3 arm = texture(samplerArm, inUV).rgb;
 	// display target. TODO: specialization constant.
-	if (ubo.displayDebugTarget > 0) {
-		switch (ubo.displayDebugTarget) {
+	int displayTargetIndex = DISPLAY_TARGET_INDEX;
+	if(displayTargetIndex == 0){
+		displayTargetIndex = ubo.displayDebugTarget;
+	}
+	if (displayTargetIndex > 0) {
+		switch (displayTargetIndex) {
 			case 1: 
 				outFragColor.rgb = fragPos;
 				break;
