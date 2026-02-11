@@ -127,17 +127,14 @@ void VgeExample::loadAssets() {
   damagedHelmet->loadFromFile(
       getAssetsPath() + "/models/DamagedHelmet/glTF/DamagedHelmet.gltf",
       glTFLoadingFlags);
-  {
-    ModelInstance modelInstance{};
-    modelInstance.model = damagedHelmet;
-    modelInstance.name = "damagedHelmet1";
-    addModelInstance(std::move(modelInstance));
-  }
-  {
-    ModelInstance modelInstance{};
-    modelInstance.model = damagedHelmet;
-    modelInstance.name = "damagedHelmet2";
-    addModelInstance(std::move(modelInstance));
+  for (int i = 0; i < opts.modelNumZ; i++) {
+    for (int j = 0; j < opts.modelNumX; j++) {
+      ModelInstance modelInstance{};
+      modelInstance.model = damagedHelmet;
+      modelInstance.name =
+          "damagedHelmet_" + std::to_string(i) + "-" + std::to_string(j);
+      addModelInstance(std::move(modelInstance));
+    }
   }
 }
 
@@ -186,33 +183,28 @@ void VgeExample::setupDynamicUbo() {
     dynamicUbo[instanceIndex].modelColor = glm::vec4{1.0f, 0.f, 0.f, 0.3f};
   }
   const float HelmetScale = 1.00f;
-  {
-    size_t instanceIndex = findInstances("damagedHelmet1")[0];
-    dynamicUbo[instanceIndex].modelMatrix =
-        glm::translate(glm::mat4{1.f}, glm::vec3{-4.f, -4.f, 0.f});
-    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
-        dynamicUbo[instanceIndex].modelMatrix, glm::radians(90.f), up);
-    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
-        dynamicUbo[instanceIndex].modelMatrix, glm::radians(-90.f), right);
-    dynamicUbo[instanceIndex].modelMatrix =
-        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
-                   glm::vec3{HelmetScale, HelmetScale, HelmetScale});
-    dynamicUbo[instanceIndex].modelColor = glm::vec4{1.0f, 0.f, 0.f, 0.3f};
-  }
-  {
-    size_t instanceIndex = findInstances("damagedHelmet2")[0];
-    dynamicUbo[instanceIndex].modelMatrix =
-        glm::translate(glm::mat4{1.f}, glm::vec3{4.f, -4.f, 0.f});
-    // {0,-1,0} is up vector, rotate second
-    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
-        dynamicUbo[instanceIndex].modelMatrix, glm::radians(90.f), up);
-    // {1,0,0} is right vector, rotate first
-    dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
-        dynamicUbo[instanceIndex].modelMatrix, glm::radians(-90.f), right);
-    dynamicUbo[instanceIndex].modelMatrix =
-        glm::scale(dynamicUbo[instanceIndex].modelMatrix,
-                   glm::vec3{HelmetScale, HelmetScale, HelmetScale});
-    dynamicUbo[instanceIndex].modelColor = glm::vec4{1.0f, 0.f, 0.f, 0.3f};
+  for (int i = 0; i < opts.modelNumZ; i++) {
+    for (int j = 0; j < opts.modelNumX; j++) {
+      size_t instanceIndex = findInstances(
+          "damagedHelmet_" + std::to_string(i) + "-" + std::to_string(j))[0];
+      const float x =
+          -((opts.modelNumX - 1) * opts.spacingX * 0.5f) + j * opts.spacingX;
+      const float z =
+          -((opts.modelNumZ - 1) * opts.spacingZ * 0.5f) + i * opts.spacingZ;
+      const float y = -4.f;
+      dynamicUbo[instanceIndex].modelMatrix =
+          glm::translate(glm::mat4{1.f}, glm::vec3{x, y, z});
+      // {0,-1,0} is up vector, rotate second
+      dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
+          dynamicUbo[instanceIndex].modelMatrix, glm::radians(90.f), up);
+      // {1,0,0} is right vector, rotate first
+      dynamicUbo[instanceIndex].modelMatrix = glm::rotate(
+          dynamicUbo[instanceIndex].modelMatrix, glm::radians(-90.f), right);
+      dynamicUbo[instanceIndex].modelMatrix =
+          glm::scale(dynamicUbo[instanceIndex].modelMatrix,
+                     glm::vec3{HelmetScale, HelmetScale, HelmetScale});
+      dynamicUbo[instanceIndex].modelColor = glm::vec4{1.0f, 0.f, 0.f, 0.3f};
+    }
   }
 }
 
@@ -1058,7 +1050,8 @@ void VgeExample::buildCommandBuffers() {
         static_cast<float>(swapChainData->swapChainExtent.width) * scale;
     const float viewportHeight =
         static_cast<float>(swapChainData->swapChainExtent.height) * scale;
-    for (int i = 0; i < opts.numTargets; i++) {
+    // NOTE(kcchoi): skip 0 same as mainview.
+    for (int i = 1; i < opts.numTargets; i++) {
       float viewportX = (swapChainData->swapChainExtent.width -
                          viewportWidth * viewportNumCols) +
                         viewportWidth * (i / viewportNumRows);
