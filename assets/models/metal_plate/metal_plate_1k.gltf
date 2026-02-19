@@ -31,34 +31,19 @@
 	"materials":[
 		{
 			"doubleSided":true,
-			"name":"metal_plate",
+			"name":"metal_plate.001",
 			"normalTexture":{
 				"index":0
 			},
-			"pbrMetallicRoughness":{
-				"baseColorTexture":{
-					"index":1
-				},
-				"metallicRoughnessTexture":{
-					"index":2
-				}
-			}
-		},
-		{
-			"doubleSided":true,
-			"name":"metal_plate.001",
-			"normalTexture":{
-				"index":3
-			},
 			"occlusionTexture":{
-				"index":4
+				"index":1
 			},
 			"pbrMetallicRoughness":{
 				"baseColorTexture":{
-					"index":5
+					"index":2
 				},
 				"metallicRoughnessTexture":{
-					"index":4
+					"index":1
 				}
 			}
 		}
@@ -90,7 +75,7 @@
 						"TANGENT":8
 					},
 					"indices":9,
-					"material":1
+					"material":0
 				}
 			]
 		}
@@ -107,18 +92,6 @@
 		{
 			"sampler":0,
 			"source":2
-		},
-		{
-			"sampler":0,
-			"source":0
-		},
-		{
-			"sampler":0,
-			"source":3
-		},
-		{
-			"sampler":0,
-			"source":1
 		}
 	],
 	"images":[
@@ -128,19 +101,14 @@
 			"uri":"metal_plate_Nor_4k.png"
 		},
 		{
-			"mimeType":"image/jpeg",
-			"name":"metal_plate_diff_4k",
-			"uri":"metal_plate_diff_4k.jpg"
-		},
-		{
-			"mimeType":"image/png",
-			"name":"metal_plate_metal_8k-metal_plate_rough_4k",
-			"uri":"metal_plate_metal_8k-metal_plate_rough_4k.png"
-		},
-		{
 			"mimeType":"image/png",
 			"name":"metal_plate_ao_1k-metal_plate_rough_4k-metal_plate_metal_8k",
 			"uri":"metal_plate_ao_1k-metal_plate_rough_4k-metal_plate_metal_8k.png"
+		},
+		{
+			"mimeType":"image/jpeg",
+			"name":"metal_plate_diff_4k",
+			"uri":"metal_plate_diff_4k.jpg"
 		}
 	],
 	"accessors":[
@@ -187,7 +155,7 @@
 		{
 			"bufferView":5,
 			"componentType":5126,
-			"count":18432,
+			"count":19074,
 			"max":[
 				1.25,
 				0.25,
@@ -203,19 +171,19 @@
 		{
 			"bufferView":6,
 			"componentType":5126,
-			"count":18432,
+			"count":19074,
 			"type":"VEC3"
 		},
 		{
 			"bufferView":7,
 			"componentType":5126,
-			"count":18432,
+			"count":19074,
 			"type":"VEC2"
 		},
 		{
 			"bufferView":8,
 			"componentType":5126,
-			"count":18432,
+			"count":19074,
 			"type":"VEC4"
 		},
 		{
@@ -258,32 +226,32 @@
 		},
 		{
 			"buffer":0,
-			"byteLength":221184,
+			"byteLength":228888,
 			"byteOffset":204,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":221184,
-			"byteOffset":221388,
+			"byteLength":228888,
+			"byteOffset":229092,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":147456,
-			"byteOffset":442572,
+			"byteLength":152592,
+			"byteOffset":457980,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":294912,
-			"byteOffset":590028,
+			"byteLength":305184,
+			"byteOffset":610572,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":55296,
-			"byteOffset":884940,
+			"byteOffset":915756,
 			"target":34963
 		}
 	],
@@ -295,7 +263,7 @@
 	],
 	"buffers":[
 		{
-			"byteLength":940236,
+			"byteLength":971052,
 			"uri":"metal_plate_1k.bin"
 		}
 	]
