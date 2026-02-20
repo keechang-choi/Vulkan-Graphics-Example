@@ -198,7 +198,7 @@ class VgeExample : public VgeBase {
 
   struct FrameBuffer {
     uint32_t width, height;
-    // TODO: check to duplicate for each frame
+    // NOTE: check to duplicate for each frame
     std::vector<vk::raii::Framebuffer> frameBuffers;
     std::vector<std::unique_ptr<vgeu::VgeuImage>> position, normal, albedo, arm,
         emissive;
@@ -208,7 +208,6 @@ class VgeExample : public VgeBase {
     std::vector<bool> isFirstFrame;
   } offScreenFrameBuf;
 
-  // TODO: check to duplicate for each frame
   vk::raii::Sampler colorSampler = nullptr;
   // for each frame.
   // NOTE(kcchoi): use same cmd buffers and

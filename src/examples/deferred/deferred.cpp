@@ -745,9 +745,9 @@ void VgeExample::preparePipelines() {
             vgeu::glTF::VertexComponent::kNormal,
             vgeu::glTF::VertexComponent::kTangent,
         });
-    // TODO(kcchoi): check face winding order in model
+    // NOTE(kcchoi): check face winding order in model
     rasterizationSCI.cullMode = vk::CullModeFlagBits::eNone;
-    // TODO(kcchoi): check mask color for 0x0
+    // NOTE(kcchoi): check mask color for 0x0
     // position, normal, albedo, arm, emissive
     std::array<vk::PipelineColorBlendAttachmentState, 5> blendAttachmentStates{
         vk::PipelineColorBlendAttachmentState(
@@ -1075,7 +1075,7 @@ void VgeExample::buildCommandBuffers() {
 
 void VgeExample::draw() {
   {
-    // TODO(kcchoi): update base synch primitives
+    // NOTE(kcchoi): update base synch primitives
     vk::Result result =
         device.waitForFences(*waitFences[currentFrameIndex], VK_TRUE,
                              std::numeric_limits<uint64_t>::max());
@@ -1091,7 +1091,7 @@ void VgeExample::draw() {
   // offscreen rendering
   // scene rendering
   {
-    // TODO(kcchoi): present, render sema
+    // NOTE(kcchoi): present, render sema
     vk::PipelineStageFlags waitDstStageMask(
         vk::PipelineStageFlagBits::eColorAttachmentOutput);
     vk::SubmitInfo submitInfo(*presentCompleteSemaphores[currentFrameIndex],
