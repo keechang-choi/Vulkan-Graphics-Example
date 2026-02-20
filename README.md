@@ -90,6 +90,8 @@ git submodule update
 
 ## [deferred shading](src/examples/deferred)
 - multi render target offscreen rendering.
-- asset reference: [assets/README.md](assets/README.md)
+- references
+  - code: https://github.com/SaschaWillems/Vulkan/blob/master/examples/deferred/deferred.cpp
+  - assets: [assets/README.md](assets/README.md)
 <img width="2240" height="1506" alt="image" src="https://github.com/user-attachments/assets/f1344597-bb64-435f-b1d9-dce419839038" />
 
