@@ -1,9 +1,12 @@
-#define TINYGLTF_IMPLEMENTATION
-#define STB_IMAGE_IMPLEMENTATION
-#define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "vgeu_gltf.hpp"
 
 #include "vgeu_utils.hpp"
+
+// libs
+#define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#define TINYGLTF_IMPLEMENTATION
+#include "tiny_gltf.h"
 
 // std
 #include <algorithm>
@@ -42,25 +45,26 @@ bool loadImageDataFuncEmpty(tinygltf::Image* image, const int imageIndex,
 }  // namespace
 namespace vgeu {
 namespace glTF {
-Texture::Texture(tinygltf::Image& gltfimage, std::string path,
-                 const vk::raii::Device& device, VmaAllocator allocator,
-                 const vk::raii::Queue& transferQueue,
-                 const vk::raii::CommandPool& commandPool) {
-  fromglTFImage(gltfimage, path, device, allocator, transferQueue, commandPool);
+
+TextureglTF::TextureglTF(const tinygltf::Image& gltfimage,
+                         const vk::raii::Device& device, VmaAllocator allocator,
+                         const vk::raii::Queue& transferQueue,
+                         const vk::raii::CommandPool& commandPool)
+    : Texture() {
+  fromglTFImage(gltfimage, device, allocator, transferQueue, commandPool);
 }
 
-Texture::Texture(const vk::raii::Device& device, VmaAllocator allocator,
-                 const vk::raii::Queue& transferQueue,
-                 const vk::raii::CommandPool& commandPool) {
-  createEmptyTexture(device, allocator, transferQueue, commandPool);
-}
+TextureglTF::TextureglTF(const vk::raii::Device& device, VmaAllocator allocator,
+                         const vk::raii::Queue& transferQueue,
+                         const vk::raii::CommandPool& commandPool)
+    : Texture(device, allocator, transferQueue, commandPool) {}
 
-void Texture::fromglTFImage(tinygltf::Image& gltfImage, std::string path,
-                            const vk::raii::Device& device,
-                            VmaAllocator allocator,
-                            const vk::raii::Queue& transferQueue,
-                            const vk::raii::CommandPool& commandPool) {
-  if (!::isKtx(gltfImage)) {
+void TextureglTF::fromglTFImage(const tinygltf::Image& gltfImage,
+                                const vk::raii::Device& device,
+                                VmaAllocator allocator,
+                                const vk::raii::Queue& transferQueue,
+                                const vk::raii::CommandPool& commandPool) {
+  if (!isKtx(gltfImage)) {
     // NOTE: SetPreserveimageChannels false by default
     assert(gltfImage.component == 4 && "failed: image channel is not RGBA");
     vk::DeviceSize bufferSize = gltfImage.image.size();
@@ -128,118 +132,6 @@ void Texture::fromglTFImage(tinygltf::Image& gltfImage, std::string path,
   }
   createSampler(device);
   updateDescriptorInfo();
-}
-
-void Texture::generateMipmaps(const vk::raii::CommandBuffer& cmdBuffer) {
-  uint32_t mipWidth = width;
-  uint32_t mipHeight = height;
-  for (uint32_t i = 1; i < mipLevels; i++) {
-    setImageLayout(cmdBuffer, vgeuImage->getImage(), vgeuImage->getFormat(),
-                   i - 1, 1, vk::ImageLayout::eTransferDstOptimal,
-                   vk::ImageLayout::eTransferSrcOptimal);
-    uint32_t nextMipWidth = mipWidth > 1 ? mipWidth / 2 : 1u;
-    uint32_t nextMipHeight = mipHeight > 1 ? mipHeight / 2 : 1u;
-
-    vk::ImageBlit region(
-        vk::ImageSubresourceLayers{vk::ImageAspectFlagBits::eColor, i - 1, 0,
-                                   1},
-        {
-            vk::Offset3D{0, 0, 0},
-            vk::Offset3D{static_cast<int>(mipWidth),
-                         static_cast<int>(mipHeight), 1},
-        },
-        vk::ImageSubresourceLayers{vk::ImageAspectFlagBits::eColor, i, 0, 1},
-        {
-            vk::Offset3D{0, 0, 0},
-            vk::Offset3D{static_cast<int>(nextMipWidth),
-                         static_cast<int>(nextMipHeight), 1},
-        });
-
-    cmdBuffer.blitImage(
-        vgeuImage->getImage(), vk::ImageLayout::eTransferSrcOptimal,
-        vgeuImage->getImage(), vk::ImageLayout::eTransferDstOptimal, region,
-        vk::Filter::eLinear);
-    setImageLayout(cmdBuffer, vgeuImage->getImage(), vgeuImage->getFormat(),
-                   i - 1, 1, vk::ImageLayout::eTransferSrcOptimal,
-                   vk::ImageLayout::eShaderReadOnlyOptimal);
-    mipWidth = nextMipWidth;
-    mipHeight = nextMipHeight;
-  }
-  setImageLayout(cmdBuffer, vgeuImage->getImage(), vgeuImage->getFormat(),
-                 mipLevels - 1, 1, vk::ImageLayout::eTransferDstOptimal,
-                 vk::ImageLayout::eShaderReadOnlyOptimal);
-}
-
-void Texture::createEmptyTexture(const vk::raii::Device& device,
-                                 VmaAllocator allocator,
-                                 const vk::raii::Queue& transferQueue,
-                                 const vk::raii::CommandPool& commandPool) {
-  width = 1;
-  height = 1;
-  layerCount = 1;
-  mipLevels = 1;
-  unsigned char buffer = 0u;
-
-  {
-    vgeu::VgeuBuffer stagingBuffer(
-        allocator, 4, width * height, vk::BufferUsageFlagBits::eTransferSrc,
-        VMA_MEMORY_USAGE_AUTO,
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-            VMA_ALLOCATION_CREATE_MAPPED_BIT);
-
-    std::memcpy(stagingBuffer.getMappedData(), &buffer,
-                stagingBuffer.getBufferSize());
-
-    vgeuImage = std::make_unique<VgeuImage>(
-        device, allocator, vk::Format::eR8G8B8A8Unorm,
-        vk::Extent2D(width, height), vk::ImageTiling::eOptimal,
-        vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst,
-        vk::ImageLayout::eUndefined, VmaMemoryUsage::VMA_MEMORY_USAGE_AUTO,
-        VmaAllocationCreateFlagBits::VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
-        vk::ImageAspectFlagBits::eColor, mipLevels);
-
-    // NOTE: 0 for buffer packed tightly
-    vk::BufferImageCopy region(
-        0, 0, 0,
-        vk::ImageSubresourceLayers{vk::ImageAspectFlagBits::eColor, 0, 0, 1},
-        vk::Offset3D{0, 0, 0}, vk::Extent3D{width, height, 1});
-    // layout transition
-    oneTimeSubmit(device, commandPool, transferQueue,
-                  [&](const vk::raii::CommandBuffer& cmdBuffer) {
-                    setImageLayout(cmdBuffer, vgeuImage->getImage(),
-                                   vgeuImage->getFormat(), 0, mipLevels,
-                                   vk::ImageLayout::eUndefined,
-                                   vk::ImageLayout::eTransferDstOptimal);
-                    cmdBuffer.copyBufferToImage(
-                        stagingBuffer.getBuffer(), vgeuImage->getImage(),
-                        vk::ImageLayout::eTransferDstOptimal, region);
-                    setImageLayout(cmdBuffer, vgeuImage->getImage(),
-                                   vgeuImage->getFormat(), 0, mipLevels,
-                                   vk::ImageLayout::eTransferDstOptimal,
-                                   vk::ImageLayout::eShaderReadOnlyOptimal);
-                  });
-    imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-  }
-  createSampler(device);
-  updateDescriptorInfo();
-}
-
-void Texture::createSampler(const vk::raii::Device& device) {
-  // NOTE: maxAnisotorpy fixed. may get it from physical Device.
-  vk::SamplerCreateInfo samplerCI(
-      vk::SamplerCreateFlags{}, vk::Filter::eLinear, vk::Filter::eLinear,
-      vk::SamplerMipmapMode::eLinear, vk::SamplerAddressMode::eRepeat,
-      vk::SamplerAddressMode::eRepeat, vk::SamplerAddressMode::eRepeat, 0.f,
-      true, 8.0f, false, vk::CompareOp::eNever, 0.f,
-      static_cast<float>(mipLevels), vk::BorderColor::eFloatOpaqueWhite);
-
-  sampler = vk::raii::Sampler(device, samplerCI);
-}
-
-void Texture::updateDescriptorInfo() {
-  descriptorInfo.sampler = *sampler;
-  descriptorInfo.imageView = *vgeuImage->getImageView();
-  descriptorInfo.imageLayout = imageLayout;
 }
 Model::Model(const vk::raii::Device& device, VmaAllocator allocator,
              const vk::raii::Queue& transferQueue,
@@ -452,13 +344,13 @@ void Model::loadFromFile(std::string filename,
                          uboCount * framesInFlight);
 
   if (imageCount > 0) {
-    if (descriptorBindingFlags & DescriptorBindingFlagBits::kImageBaseColor) {
-      poolSizes.emplace_back(vk::DescriptorType::eCombinedImageSampler,
-                             imageCount);
-    }
-    if (descriptorBindingFlags & DescriptorBindingFlagBits::kImageNormalMap) {
-      poolSizes.emplace_back(vk::DescriptorType::eCombinedImageSampler,
-                             imageCount);
+    // iterate through all DescriptorBindingFlagBits
+    for (uint32_t bit = 0; bit < 32; ++bit) {
+      auto flag = DescriptorBindingFlagBits(1u << bit);
+      if (descriptorBindingFlags & flag) {
+        poolSizes.emplace_back(vk::DescriptorType::eCombinedImageSampler,
+                               imageCount);
+      }
     }
   }
   poolSizes.emplace_back(vk::DescriptorType::eStorageBuffer, 2);
@@ -494,18 +386,14 @@ void Model::loadFromFile(std::string filename,
     if (!*descriptorSetLayoutImage) {
       std::vector<vk::DescriptorSetLayoutBinding> setLayoutBindings{};
       // binding 0
-      if (descriptorBindingFlags & DescriptorBindingFlagBits::kImageBaseColor) {
-        setLayoutBindings.emplace_back(
-            static_cast<uint32_t>(setLayoutBindings.size()),
-            vk::DescriptorType::eCombinedImageSampler, 1,
-            vk::ShaderStageFlagBits::eFragment);
-      }
-      // binding 0 or 1
-      if (descriptorBindingFlags & DescriptorBindingFlagBits::kImageNormalMap) {
-        setLayoutBindings.emplace_back(
-            static_cast<uint32_t>(setLayoutBindings.size()),
-            vk::DescriptorType::eCombinedImageSampler, 1,
-            vk::ShaderStageFlagBits::eFragment);
+      for (uint32_t bit = 0; bit < 32; ++bit) {
+        auto flag = DescriptorBindingFlagBits(1u << bit);
+        if (descriptorBindingFlags & flag) {
+          setLayoutBindings.emplace_back(
+              static_cast<uint32_t>(setLayoutBindings.size()),
+              vk::DescriptorType::eCombinedImageSampler, 1,
+              vk::ShaderStageFlagBits::eFragment);
+        }
       }
       // NOTE: using constructor of vk::ArrayProxyNoTemporaries
       vk::DescriptorSetLayoutCreateInfo setLayoutCI(
@@ -556,12 +444,12 @@ void Model::loadFromFile(std::string filename,
 
 void Model::loadImages(tinygltf::Model& gltfModel) {
   for (tinygltf::Image& gltfImage : gltfModel.images) {
-    textures.push_back(std::make_unique<Texture>(
-        gltfImage, path, device, allocator, transferQueue, commandPool));
+    textures.push_back(std::make_unique<TextureglTF>(
+        gltfImage, device, allocator, transferQueue, commandPool));
   }
   // Create an empty texture to be used for empty material images
-  emptyTexture =
-      std::make_unique<Texture>(device, allocator, transferQueue, commandPool);
+  emptyTexture = std::make_unique<TextureglTF>(device, allocator, transferQueue,
+                                               commandPool);
 }
 
 void Model::loadMaterials(const tinygltf::Model& gltfModel) {
@@ -608,6 +496,9 @@ void Model::loadMaterials(const tinygltf::Model& gltfModel) {
                          .textures[mat.additionalValues.at("emissiveTexture")
                                        .TextureIndex()]
                          .source);
+    } else {
+      // TODO(kcchoi): temp test for empty emissive texture
+      material.emissiveTexture = emptyTexture.get();
     }
     if (mat.additionalValues.find("occlusionTexture") !=
         mat.additionalValues.end()) {
@@ -1322,6 +1213,32 @@ void Material::createDescriptorSet(
         *descriptorSet, static_cast<uint32_t>(writeDescriptorSets.size()), 0,
         vk::DescriptorType::eCombinedImageSampler,
         normalTexture->descriptorInfo, nullptr);
+  }
+
+  if (metallicRoughnessTexture &&
+      descriptorBindingFlags &
+          DescriptorBindingFlagBits::kImageMetallicRoughness) {
+    descriptorInfos.push_back(metallicRoughnessTexture->descriptorInfo);
+    writeDescriptorSets.emplace_back(
+        *descriptorSet, static_cast<uint32_t>(writeDescriptorSets.size()), 0,
+        vk::DescriptorType::eCombinedImageSampler,
+        metallicRoughnessTexture->descriptorInfo, nullptr);
+  }
+  if (occlusionTexture &&
+      descriptorBindingFlags & DescriptorBindingFlagBits::kImageOcclusion) {
+    descriptorInfos.push_back(occlusionTexture->descriptorInfo);
+    writeDescriptorSets.emplace_back(
+        *descriptorSet, static_cast<uint32_t>(writeDescriptorSets.size()), 0,
+        vk::DescriptorType::eCombinedImageSampler,
+        occlusionTexture->descriptorInfo, nullptr);
+  }
+  if (emissiveTexture &&
+      descriptorBindingFlags & DescriptorBindingFlagBits::kImageEmissive) {
+    descriptorInfos.push_back(emissiveTexture->descriptorInfo);
+    writeDescriptorSets.emplace_back(
+        *descriptorSet, static_cast<uint32_t>(writeDescriptorSets.size()), 0,
+        vk::DescriptorType::eCombinedImageSampler,
+        emissiveTexture->descriptorInfo, nullptr);
   }
   device.updateDescriptorSets(writeDescriptorSets, nullptr);
 }

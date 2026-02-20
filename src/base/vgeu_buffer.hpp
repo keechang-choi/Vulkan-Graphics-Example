@@ -79,6 +79,8 @@ class VgeuImage {
   vk::Image getImage() const { return image; }
   const vk::raii::ImageView& getImageView() const { return imageView; }
   vk::Format getFormat() const { return format; }
+  vk::DescriptorImageInfo descriptorImageInfo(vk::Sampler sampler,
+                                              vk::ImageLayout imageLayout);
 
  private:
   VmaAllocator allocator = VK_NULL_HANDLE;

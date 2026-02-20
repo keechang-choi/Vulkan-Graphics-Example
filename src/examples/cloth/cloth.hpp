@@ -170,7 +170,7 @@ struct Options {
   float animationSpeed = 0.5f;
   bool renderWireMesh{false};
 
-  // save camera view. not configurable by pannel
+  // save camera view. not configurable by panel
   glm::mat4 cameraView{1.f};
 
   int32_t numSubsteps = 1;
@@ -331,7 +331,7 @@ struct ModelInstance {
   // initial offset and scale
   vgeu::TransformComponent transform;
   uint32_t getVertexCount() const;
-  ModelInstance(){};
+  ModelInstance() {};
   ModelInstance(const ModelInstance& o) = delete;
   ModelInstance& operator=(const ModelInstance& other) = delete;
   ModelInstance(ModelInstance&& other);

@@ -87,3 +87,11 @@ git submodule update
 | ![Untitled (25)](https://github.com/keechang-choi/Vulkan-Graphics-Example/assets/49244613/eb9abc95-140c-485a-b48b-b1f2095b1065) | ![Untitled (14)](https://github.com/keechang-choi/Vulkan-Graphics-Example/assets/49244613/4906d557-bef7-4fd1-9f68-a61591ef3672) |
 | ![Untitled (21)](https://github.com/keechang-choi/Vulkan-Graphics-Example/assets/49244613/33c337d0-80e4-4f45-8aaa-09e2116b97bb) | ![Untitled (26)](https://github.com/keechang-choi/Vulkan-Graphics-Example/assets/49244613/428520ff-5fd9-4595-b88a-63adac9340a4) |
 
+
+## [deferred shading](src/examples/deferred)
+- multi render target offscreen rendering.
+- references
+  - code: https://github.com/SaschaWillems/Vulkan/blob/master/examples/deferred/deferred.cpp
+  - assets: [assets/README.md](assets/README.md)
+<img width="2240" height="1506" alt="image" src="https://github.com/user-attachments/assets/f1344597-bb64-435f-b1d9-dce419839038" />
+

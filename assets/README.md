@@ -12,3 +12,10 @@
 4. ship
    - CC0
    - https://polyhaven.com/a/dutch_ship_medium
+5. Damaged helmet
+   - CC-by-NC
+   - [./models/DamagedHelmet/README.md](./models/DamagedHelmet/README.md)
+   - https://github.com/KhronosGroup/glTF-Sample-Models/tree/main/2.0/DamagedHelmet
+6. metal plate
+   - CC0
+   - https://polyhaven.com/a/metal_plate

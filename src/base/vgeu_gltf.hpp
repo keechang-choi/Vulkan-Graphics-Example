@@ -10,19 +10,18 @@ https://github.com/SaschaWillems/Vulkan/blob/master/base/VulkanglTFModel.h
 
 #include "vgeu_buffer.hpp"
 #include "vgeu_flags.hpp"
+#include "vgeu_texture.hpp"
 #include "vgeu_utils.hpp"
 
 // libs
 #include "tiny_gltf.h"
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#include <Vulkan-Hpp/vulkan/vulkan.hpp>
+#include <Vulkan-Hpp/vulkan/vulkan_raii.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
-
-//
-#include <Vulkan-Hpp/vulkan/vulkan.hpp>
-#include <Vulkan-Hpp/vulkan/vulkan_raii.hpp>
 
 // std
 #include <limits>
@@ -31,7 +30,10 @@ namespace vgeu {
 
 enum class DescriptorBindingFlagBits : uint32_t {
   kImageBaseColor = 0x00000001,
-  kImageNormalMap = 0x00000002
+  kImageNormalMap = 0x00000002,
+  kImageMetallicRoughness = 0x00000004,
+  kImageOcclusion = 0x00000008,
+  kImageEmissive = 0x00000010,
 };
 using DescriptorBindingFlags = Flags<DescriptorBindingFlagBits>;
 template <>
@@ -65,43 +67,23 @@ struct FlagTraits<RenderFlagBits> {
 };
 namespace glTF {
 
-struct Node;
-
-// modified existing structure to fit in RAII paradigm.
-struct Texture {
-  std::unique_ptr<vgeu::VgeuImage> vgeuImage;
-  vk::ImageLayout imageLayout{};
-  uint32_t width = 0;
-  uint32_t height = 0;
-  uint32_t mipLevels = 0;
-  uint32_t layerCount = 0;
-  vk::DescriptorImageInfo descriptorInfo{};
-  vk::raii::Sampler sampler = nullptr;
-
+class TextureglTF : public Texture {
+ public:
   // fromglTFImage
-  Texture(tinygltf::Image& gltfimage, std::string path,
-          const vk::raii::Device& device, VmaAllocator allocator,
-          const vk::raii::Queue& transferQueue,
-          const vk::raii::CommandPool& commandPool);
+  TextureglTF(const tinygltf::Image& gltfimage, const vk::raii::Device& device,
+              VmaAllocator allocator, const vk::raii::Queue& transferQueue,
+              const vk::raii::CommandPool& commandPool);
   // empty texture
-  Texture(const vk::raii::Device& device, VmaAllocator allocator,
-          const vk::raii::Queue& transferQueue,
-          const vk::raii::CommandPool& commandPool);
-
-  void fromglTFImage(tinygltf::Image& gltfimage, std::string path,
+  TextureglTF(const vk::raii::Device& device, VmaAllocator allocator,
+              const vk::raii::Queue& transferQueue,
+              const vk::raii::CommandPool& commandPool);
+  void fromglTFImage(const tinygltf::Image& gltfimage,
                      const vk::raii::Device& device, VmaAllocator allocator,
                      const vk::raii::Queue& transferQueue,
                      const vk::raii::CommandPool& commandPool);
-  void generateMipmaps(const vk::raii::CommandBuffer& cmdBuffer);
-  void createEmptyTexture(const vk::raii::Device& device,
-                          VmaAllocator allocator,
-                          const vk::raii::Queue& transferQueue,
-                          const vk::raii::CommandPool& commandPool);
-  // NOTE: use mipLevels
-  void createSampler(const vk::raii::Device& device);
-  // NOTE: used at the end of fromglTFImage()
-  void updateDescriptorInfo();
 };
+
+struct Node;
 
 struct Material {
   enum class AlphaMode { kALPHAMODE_OPAQUE, kALPHAMODE_MASK, kALPHAMODE_BLEND };
@@ -111,14 +93,14 @@ struct Material {
   float metallicFactor = 1.0f;
   float roughnessFactor = 1.0f;
   glm::vec4 baseColorFactor = glm::vec4(1.0f);
-  const vgeu::glTF::Texture* baseColorTexture = nullptr;
-  const vgeu::glTF::Texture* metallicRoughnessTexture = nullptr;
-  const vgeu::glTF::Texture* normalTexture = nullptr;
-  const vgeu::glTF::Texture* occlusionTexture = nullptr;
-  const vgeu::glTF::Texture* emissiveTexture = nullptr;
+  const vgeu::Texture* baseColorTexture = nullptr;
+  const vgeu::Texture* metallicRoughnessTexture = nullptr;
+  const vgeu::Texture* normalTexture = nullptr;
+  const vgeu::Texture* occlusionTexture = nullptr;
+  const vgeu::Texture* emissiveTexture = nullptr;
   // NOTE: not yet used.
-  const vgeu::glTF::Texture* specularGlossinessTexture = nullptr;
-  const vgeu::glTF::Texture* diffuseTexture = nullptr;
+  const vgeu::Texture* specularGlossinessTexture = nullptr;
+  const vgeu::Texture* diffuseTexture = nullptr;
 
   vk::raii::DescriptorSet descriptorSet = nullptr;
 
@@ -148,7 +130,7 @@ struct Primitive {
 
   void setDimensions(glm::vec3 min, glm::vec3 max);
   Primitive(uint32_t firstIndex, uint32_t indexCount, const Material& material)
-      : firstIndex(firstIndex), indexCount(indexCount), material(material){};
+      : firstIndex(firstIndex), indexCount(indexCount), material(material) {};
 };
 
 #define MAX_JOINT_MATRICES 64

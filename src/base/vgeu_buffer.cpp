@@ -113,11 +113,17 @@ VgeuImage::VgeuImage(const vk::raii::Device& device, VmaAllocator allocator,
       vk::ImageViewCreateInfo(
           vk::ImageViewCreateFlags(), image, vk::ImageViewType::e2D, format, {},
           vk::ImageSubresourceRange{aspectMask, 0, mipLevels, 0, 1}));
+  assert(static_cast<VkImageView>(*imageView) != VK_NULL_HANDLE);
 }
 
 VgeuImage::~VgeuImage() {
   // std::cout << "Call: VgeuImage Destructor" << std::endl;
   vmaDestroyImage(allocator, static_cast<VkImage>(image), alloc);
 }
-
+vk::DescriptorImageInfo VgeuImage::descriptorImageInfo(
+    vk::Sampler sampler, vk::ImageLayout imageLayout) {
+  assert(static_cast<VkImageView>(*imageView) != VK_NULL_HANDLE);
+  vk::DescriptorImageInfo descriptorImageInfo(sampler, *imageView, imageLayout);
+  return descriptorImageInfo;
+}
 }  // namespace vgeu

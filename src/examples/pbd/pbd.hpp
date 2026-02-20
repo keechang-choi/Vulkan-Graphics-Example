@@ -221,7 +221,7 @@ struct Options {
   // deg
   std::vector<float> sim5angles;
   bool lastTailOnly{false};
-  // save camera view. not configurable by pannel
+  // save camera view. not configurable by panel
   glm::mat4 cameraView{1.f};
   float edgeCompliance = 0.1f;
   float areaCompliance = 0.001f;
