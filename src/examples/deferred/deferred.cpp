@@ -46,6 +46,12 @@ void VgeExample::initVulkan() {
   // NOTE: coordinate space in world
 
   VgeBase::initVulkan();
+  std::string s =
+      "{\"kind\":{\"graph\":true},"
+      "\"nodes\":[{\"id\":\"1\"},{\"id\":\"2\"}],"
+      "\"edges\":[{\"from\":\"1\",\"to\":\"2\"}]}";
+  const char* c = s.c_str();
+  std::cout << s << std::endl;
 }
 
 void VgeExample::getEnabledExtensions() {}

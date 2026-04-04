@@ -8,6 +8,7 @@ cmake_minimum_required(VERSION 3.11.0)
 
 set(NAME VulkanGraphicsExample)
 
+option(LLVM "Use LLVM/Clang compiler" OFF)
 if(WIN32)
   if("$ENV{VK_SDK_PATH}" STREQUAL "")
     set(VK_SDK_PATH C:/VulkanSDK/1.3.216.0)
@@ -22,23 +23,42 @@ if(WIN32)
   message(STATUS "build type: ${CMAKE_BUILD_TYPE}")
 
   if(WIN32)
-    if("$ENV{MINGW_PATH}" STREQUAL "")
-      set(MINGW_PATH "C:/Program\ Files/mingw-w64/x86_64-12.2.0-release-posix-seh-rt_v10-rev1/mingw64")
-    else()
+    # set(LLVM "True")
+    if(LLVM)
+      # Visual Studio / LLVM generator automatically sets up include/lib paths.
+      set(USE_LLVM "True")
+      # Optionally allow the user to specify the root of their VS install
+      # via LLVM_PATH for informational purposes (not required by CMake).
+      
+      set(LLVM_PATH "C:/Program Files/LLVM")
+      file(TO_CMAKE_PATH ${LLVM_PATH} LLVM_PATH)
+      message(STATUS "LLVM_PATH = ${LLVM_PATH}")
+      set(CMAKE_C_COMPILER ${LLVM_PATH}/bin/clang.exe)
+      set(CMAKE_CXX_COMPILER ${LLVM_PATH}/bin/clang++.exe)
+      message(STATUS "LLVM compiler detected: ${CMAKE_CXX_COMPILER_ID} (${CMAKE_CXX_COMPILER})")
+
+    elseif(DEFINED ENV{MINGW_PATH})
+      # user-specified MinGW installation
       set(MINGW_PATH "$ENV{MINGW_PATH}")
       file(TO_CMAKE_PATH ${MINGW_PATH} MINGW_PATH)
+      message(STATUS "Using MinGW from ${MINGW_PATH}")
+      set(USE_MINGW "True")
+      set(CMAKE_C_COMPILER ${MINGW_PATH}/bin/gcc.exe)
+      set(CMAKE_CXX_COMPILER ${MINGW_PATH}/bin/g++.exe)
+      # mingw runtime issue
+      # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D__USE_MINGW_ANSI_STDIO=1")
+    else()
+      # default MinGW path if nothing else is specified
+      set(MINGW_PATH "C:/Program Files/mingw-w64/x86_64-12.2.0-release-posix-seh-rt_v10-rev1/mingw64")
+      message(STATUS "Default MINGW_PATH = ${MINGW_PATH}")
+      set(USE_MINGW "True")
+      set(CMAKE_C_COMPILER ${MINGW_PATH}/bin/gcc.exe)
+      set(CMAKE_CXX_COMPILER ${MINGW_PATH}/bin/g++.exe)
     endif()
-
-    message("MINGW_PATH = ${MINGW_PATH}")
-    set(USE_MINGW "True")
-    set(CMAKE_C_COMPILER ${MINGW_PATH}/bin/gcc.exe)
-    set(CMAKE_CXX_COMPILER ${MINGW_PATH}/bin/g++.exe)
-
-    # mingw runtime issue
-    # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D__USE_MINGW_ANSI_STDIO=1")
   endif()
 endif()
-
+# add compiler versioin c++17
+set(CMAKE_CXX_STANDARD 17)
 project(${NAME})
 
 if(DEFINED VK_SDK_PATH)
@@ -72,6 +92,9 @@ include_directories(
 if(USE_MINGW)
   include_directories(${MINGW_PATH}/include)
   link_directories(${MINGW_PATH}/lib)
+else(USE_LLVM)
+  include_directories(${LLVM_PATH}/include)
+  link_directories(${LLVM_PATH}/lib)
 endif()
 
 add_subdirectory(${PROJECT_SOURCE_DIR}/external/glfw)

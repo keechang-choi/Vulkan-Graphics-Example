@@ -26,7 +26,7 @@
                     "ignoreFailures": true
                 }
             ],
-            "preLaunchTask": "build",
+            // "preLaunchTask": "build",
             "program": "${workspaceFolder}/build/${input:pickProgram}.exe",
             "args": [
                 "${input:cmdArgs}"
@@ -39,6 +39,7 @@
             "description": "Select program to debug",
             "type": "pickString",
             "options": [
+                "deferred",
                 "cloth",
                 "pbd",
                 "particle",

@@ -95,5 +95,5 @@
         "queue": "cpp"
     },
     "C_Cpp.intelliSenseEngineFallback": "disabled",
-    "cmake.configureOnOpen": false
+    "cmake.configureOnOpen": false,
 }

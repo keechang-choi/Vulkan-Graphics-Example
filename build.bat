@@ -6,8 +6,8 @@ if "%arg1%" equ "Release" (
     set "arg1=-DCMAKE_BUILD_TYPE^=Release"
 ) else if "%arg1%" equ "Debug" (
     set "arg1=-DCMAKE_BUILD_TYPE^=Debug"
-) else (
-    set "arg1=-DCMAKE_BUILD_TYPE^=Debug"
+) else if "%arg1%" equ "LLVM" (
+    set "arg1=-DLLVM^=ON"
 )
 
 REM cmake -S ../ -B . -G "MinGW Makefiles" %arg1%
