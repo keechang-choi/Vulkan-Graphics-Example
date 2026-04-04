@@ -35,3 +35,4 @@ build/*
 scripts/imgui.ini
 scripts/output.txt
 scripts/error.txt
+bash.exe.stackdump

@@ -467,4 +467,136 @@ void VgeExample::setupDescriptors() {
   }
 }
 
+void VgeExample::preparePipelines() {
+  vk::PipelineInputAssemblyStateCreateInfo inputAssemblySCI(
+      {}, vk::PrimitiveTopology::eTriangleList);
+  vk::PipelineRasterizationStateCreateInfo rasterizationSCI(
+      {}, false, false, vk::PolygonMode::eFill,
+      vk::CullModeFlagBits::eBack, vk::FrontFace::eCounterClockwise,
+      false, 0.f, 0.f, 0.f, 1.f);
+  vk::PipelineColorBlendAttachmentState blendAttachment(
+      false, vk::BlendFactor::eZero, vk::BlendFactor::eZero, vk::BlendOp::eAdd,
+      vk::BlendFactor::eZero, vk::BlendFactor::eZero, vk::BlendOp::eAdd,
+      vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+      vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA);
+  vk::PipelineColorBlendStateCreateInfo colorBlendSCI(
+      {}, false, vk::LogicOp::eNoOp, blendAttachment, {{1.f, 1.f, 1.f, 1.f}});
+  vk::StencilOpState stencilOpState(vk::StencilOp::eKeep, vk::StencilOp::eKeep,
+                                    vk::StencilOp::eKeep, vk::CompareOp::eAlways);
+  vk::PipelineDepthStencilStateCreateInfo depthStencilSCI(
+      {}, true, true, vk::CompareOp::eLessOrEqual, false, false,
+      stencilOpState, stencilOpState);
+  vk::PipelineViewportStateCreateInfo viewportSCI({}, 1, nullptr, 1, nullptr);
+  vk::PipelineMultisampleStateCreateInfo multisampleSCI({}, vk::SampleCountFlagBits::e1);
+  std::array<vk::DynamicState, 3> dynStates = {
+      vk::DynamicState::eViewport, vk::DynamicState::eScissor, vk::DynamicState::eLineWidth};
+  vk::PipelineDynamicStateCreateInfo dynamicSCI({}, dynStates);
+
+  // --- Composition pipeline (PBR deferred lighting) ---
+  {
+    auto vertCode = vgeu::readFile(getShadersPath() + "/pbr/pbr.vert.spv");
+    auto fragCode = vgeu::readFile(getShadersPath() + "/pbr/pbr.frag.spv");
+    auto vertModule = vgeu::createShaderModule(device, vertCode);
+    auto fragModule = vgeu::createShaderModule(device, fragCode);
+
+    SpecializationData specData{0};
+    std::vector<vk::SpecializationMapEntry> specEntries;
+    specEntries.emplace_back(0u, offsetof(SpecializationData, displayTargetIndex), sizeof(uint32_t));
+    vk::SpecializationInfo specInfo(specEntries,
+        vk::ArrayProxyNoTemporaries<const SpecializationData>(specData));
+
+    std::array<vk::PipelineShaderStageCreateInfo, 2> stages{
+        vk::PipelineShaderStageCreateInfo({}, vk::ShaderStageFlagBits::eVertex,
+                                          *vertModule, "main", nullptr),
+        vk::PipelineShaderStageCreateInfo({}, vk::ShaderStageFlagBits::eFragment,
+                                          *fragModule, "main", &specInfo)};
+
+    vk::PipelineVertexInputStateCreateInfo emptyVertexSCI{};
+    rasterizationSCI.cullMode = vk::CullModeFlagBits::eFront;  // big triangle CW
+
+    vk::GraphicsPipelineCreateInfo pipelineCI(
+        vk::PipelineCreateFlagBits::eAllowDerivatives, stages,
+        &emptyVertexSCI, &inputAssemblySCI, nullptr, &viewportSCI,
+        &rasterizationSCI, &multisampleSCI, &depthStencilSCI, &colorBlendSCI,
+        &dynamicSCI, *pipelineLayoutComposition, *renderPass);
+    pipelines.composition = vk::raii::Pipeline(device, pipelineCache, pipelineCI);
+
+    // Derivative pipelines for debug display targets
+    pipelineCI.flags = vk::PipelineCreateFlagBits::eDerivative;
+    pipelineCI.basePipelineHandle = *pipelines.composition;
+    pipelineCI.basePipelineIndex  = -1;
+    for (uint32_t i = 0; i < static_cast<uint32_t>(opts.numTargets); i++) {
+      specData.displayTargetIndex = i;
+      vk::SpecializationInfo si(specEntries,
+          vk::ArrayProxyNoTemporaries<const SpecializationData>(specData));
+      stages[1] = vk::PipelineShaderStageCreateInfo(
+          {}, vk::ShaderStageFlagBits::eFragment, *fragModule, "main", &si);
+      pipelines.displayTargets.emplace_back(device, pipelineCache, pipelineCI);
+    }
+  }
+
+  // --- G-Buffer (offscreen MRT) pipeline ---
+  {
+    auto vertCode = vgeu::readFile(getShadersPath() + "/pbr/mrt.vert.spv");
+    auto fragCode = vgeu::readFile(getShadersPath() + "/pbr/mrt.frag.spv");
+    auto vertModule = vgeu::createShaderModule(device, vertCode);
+    auto fragModule = vgeu::createShaderModule(device, fragCode);
+
+    std::array<vk::PipelineShaderStageCreateInfo, 2> stages{
+        vk::PipelineShaderStageCreateInfo({}, vk::ShaderStageFlagBits::eVertex,
+                                          *vertModule, "main", nullptr),
+        vk::PipelineShaderStageCreateInfo({}, vk::ShaderStageFlagBits::eFragment,
+                                          *fragModule, "main", nullptr)};
+
+    auto vertexInputSCI = vgeu::glTF::Vertex::getPipelineVertexInputState({
+        vgeu::glTF::VertexComponent::kPosition,
+        vgeu::glTF::VertexComponent::kUV,
+        vgeu::glTF::VertexComponent::kColor,
+        vgeu::glTF::VertexComponent::kNormal,
+        vgeu::glTF::VertexComponent::kTangent});
+    rasterizationSCI.cullMode = vk::CullModeFlagBits::eNone;
+
+    std::array<vk::PipelineColorBlendAttachmentState, 5> blendAttachments;
+    blendAttachments.fill(blendAttachment);
+    colorBlendSCI.setAttachments(blendAttachments);
+
+    vk::GraphicsPipelineCreateInfo pipelineCI(
+        vk::PipelineCreateFlagBits::eAllowDerivatives, stages,
+        &vertexInputSCI, &inputAssemblySCI, nullptr, &viewportSCI,
+        &rasterizationSCI, &multisampleSCI, &depthStencilSCI, &colorBlendSCI,
+        &dynamicSCI, *pipelineLayoutOffScreen, *offScreenFrameBuf.renderPass);
+    pipelines.offScreen = vk::raii::Pipeline(device, pipelineCache, pipelineCI);
+  }
+
+  // --- Sprite pipeline (forward, depth test on, depth write off) ---
+  {
+    auto vertCode = vgeu::readFile(getShadersPath() + "/pbr/sprite.vert.spv");
+    auto fragCode = vgeu::readFile(getShadersPath() + "/pbr/sprite.frag.spv");
+    auto vertModule = vgeu::createShaderModule(device, vertCode);
+    auto fragModule = vgeu::createShaderModule(device, fragCode);
+
+    std::array<vk::PipelineShaderStageCreateInfo, 2> stages{
+        vk::PipelineShaderStageCreateInfo({}, vk::ShaderStageFlagBits::eVertex,
+                                          *vertModule, "main", nullptr),
+        vk::PipelineShaderStageCreateInfo({}, vk::ShaderStageFlagBits::eFragment,
+                                          *fragModule, "main", nullptr)};
+
+    vk::PipelineVertexInputStateCreateInfo emptyVertexSCI{};
+    rasterizationSCI.cullMode = vk::CullModeFlagBits::eNone;
+
+    // Depth test ON, depth write OFF
+    vk::PipelineDepthStencilStateCreateInfo spriteDepthSCI(
+        {}, true /*depthTestEnable*/, false /*depthWriteEnable*/,
+        vk::CompareOp::eLessOrEqual, false, false, stencilOpState, stencilOpState);
+
+    colorBlendSCI.setAttachments(blendAttachment);
+
+    vk::GraphicsPipelineCreateInfo pipelineCI(
+        {}, stages, &emptyVertexSCI, &inputAssemblySCI, nullptr, &viewportSCI,
+        &rasterizationSCI, &multisampleSCI, &spriteDepthSCI, &colorBlendSCI,
+        &dynamicSCI, *pipelineLayoutSprite, *renderPass);
+    pipelines.sprite = vk::raii::Pipeline(device, pipelineCache, pipelineCI);
+  }
+}
+
 }  // namespace vge
