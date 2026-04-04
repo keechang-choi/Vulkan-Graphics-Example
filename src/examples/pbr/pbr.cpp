@@ -729,8 +729,8 @@ void VgeExample::buildCommandBuffers() {
     cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayoutSprite, 1,
         {*descriptorSets.sprite[currentFrameIndex]}, nullptr);
     SpritePushConstants pc{opts.spriteSize};
-    cmd.pushConstants(*pipelineLayoutSprite, vk::ShaderStageFlagBits::eVertex,
-                      0, sizeof(SpritePushConstants), &pc);
+    cmd.pushConstants<SpritePushConstants>(*pipelineLayoutSprite,
+                      vk::ShaderStageFlagBits::eVertex, 0, pc);
     // 6 vertices per quad, opts.numLights instances
     cmd.draw(6, static_cast<uint32_t>(opts.numLights), 0, 0);
 
