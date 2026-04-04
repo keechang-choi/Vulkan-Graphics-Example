@@ -599,4 +599,200 @@ void VgeExample::preparePipelines() {
   }
 }
 
+void VgeExample::updateUboComposition() {
+  // Advance animation time using VgeBase::frameTimer (delta time in seconds)
+  if (opts.animateLights && !paused) {
+    lightAnimTime += frameTimer * opts.rotationSpeed;
+  }
+
+  // Light palette: White, Red, Blue, Yellow, Green, Orange, Purple, Cyan, etc.
+  static const glm::vec3 kColors[MAX_LIGHTS] = {
+      {1.5f, 1.5f, 1.5f}, {1.5f, 0.0f, 0.0f}, {0.0f, 0.0f, 2.5f},
+      {1.5f, 1.5f, 0.0f}, {0.0f, 1.5f, 0.2f}, {1.5f, 0.7f, 0.3f},
+      {1.0f, 0.3f, 1.0f}, {0.3f, 1.0f, 1.0f}, {1.0f, 0.5f, 0.0f},
+      {0.5f, 0.0f, 1.0f}};
+
+  uniformDataComposition.numLights = opts.numLights;
+  for (int i = 0; i < opts.numLights; i++) {
+    float phase = (2.0f * glm::pi<float>() * i) / opts.numLights;
+    float angle = lightAnimTime + phase;
+    uniformDataComposition.lights[i].position = glm::vec4(
+        opts.orbitRadius * std::cos(angle),
+        opts.orbitHeight,
+        opts.orbitRadius * std::sin(angle),
+        1.0f);
+    uniformDataComposition.lights[i].color  = kColors[i % MAX_LIGHTS];
+    uniformDataComposition.lights[i].radius = 15.0f;
+  }
+
+  uniformDataComposition.viewPos =
+      glm::vec4(camera.getPosition(), 0.f) * glm::vec4(-1.f, 1.f, -1.f, 1.f);
+  uniformDataComposition.debugDisplayTarget = opts.debugDisplayTarget;
+  uniformDataComposition.nearPlane = camera.getNearPlane();
+  uniformDataComposition.farPlane  = camera.getFarPlane();
+  uniformDataComposition.farClamp  = opts.farClamp;
+
+  std::memcpy(uniformBuffers[currentFrameIndex].composition->getMappedData(),
+              &uniformDataComposition, sizeof(UniformDataComposition));
+}
+
+void VgeExample::updateUboOffScreen() {
+  uniformDataOffscreen.projection = camera.getProjection();
+  uniformDataOffscreen.view       = camera.getView();
+  std::memcpy(uniformBuffers[currentFrameIndex].offScreen->getMappedData(),
+              &uniformDataOffscreen, sizeof(UniformDataOffscreen));
+}
+
+void VgeExample::buildCommandBuffers() {
+  const vk::raii::CommandBuffer& cmd = drawCmdBuffers[currentFrameIndex];
+  cmd.begin({});
+
+  // --- Pass 1: G-Buffer offscreen ---
+  {
+    std::array<vk::ClearValue, 6> clearValues;
+    for (int i = 0; i < 5; i++) clearValues[i].color = vk::ClearColorValue(0.f, 0.f, 0.f, 0.f);
+    clearValues[5].depthStencil = vk::ClearDepthStencilValue(1.f, 0);
+
+    cmd.beginRenderPass(
+        vk::RenderPassBeginInfo(
+            *offScreenFrameBuf.renderPass,
+            *offScreenFrameBuf.frameBuffers[currentFrameIndex],
+            vk::Rect2D({}, vk::Extent2D(offScreenFrameBuf.width, offScreenFrameBuf.height)),
+            clearValues),
+        vk::SubpassContents::eInline);
+    cmd.setViewport(0, vk::Viewport(0.f, 0.f,
+        static_cast<float>(offScreenFrameBuf.width),
+        static_cast<float>(offScreenFrameBuf.height), 0.f, 1.f));
+    cmd.setScissor(0, vk::Rect2D({}, vk::Extent2D(offScreenFrameBuf.width, offScreenFrameBuf.height)));
+    cmd.setLineWidth(1.f);
+    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipelines.offScreen);
+    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayoutOffScreen, 0,
+        {*descriptorSets.offScreenUboDescriptorSets[currentFrameIndex]}, nullptr);
+
+    for (size_t instIdx = 0; instIdx < modelInstances.size(); instIdx++) {
+      const auto& inst = modelInstances[instIdx];
+      if (!inst.model) continue;
+      cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayoutOffScreen, 1,
+          {*descriptorSets.dynamicUboDescriptorSets[currentFrameIndex]},
+          static_cast<uint32_t>(alignedSizeDynamicUboElt * instIdx));
+      inst.model->draw(currentFrameIndex, cmd, vgeu::RenderFlagBits::kBindImages,
+                       *pipelineLayoutOffScreen, 2);
+    }
+    cmd.endRenderPass();
+  }
+
+  // --- Pass 2: Composition (PBR) + Pass 3: Sprite — same swapchain renderpass ---
+  {
+    std::array<vk::ClearValue, 2> clearValues;
+    clearValues[0].color        = vk::ClearColorValue(0.5f, 0.5f, 0.5f, 0.5f);
+    clearValues[1].depthStencil = vk::ClearDepthStencilValue(1.f, 0);
+
+    cmd.beginRenderPass(
+        vk::RenderPassBeginInfo(
+            *renderPass, *frameBuffers[currentImageIndex],
+            vk::Rect2D({}, swapChainData->swapChainExtent),
+            clearValues),
+        vk::SubpassContents::eInline);
+
+    const float w = static_cast<float>(swapChainData->swapChainExtent.width);
+    const float h = static_cast<float>(swapChainData->swapChainExtent.height);
+    cmd.setViewport(0, vk::Viewport(0.f, 0.f, w, h, 0.f, 1.f));
+    cmd.setScissor(0, vk::Rect2D({}, swapChainData->swapChainExtent));
+    cmd.setLineWidth(1.f);
+
+    // Composition (PBR fullscreen)
+    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipelines.composition);
+    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayoutComposition, 0,
+        {*descriptorSets.composition[currentFrameIndex]}, nullptr);
+    cmd.draw(3, 1, 0, 0);  // big triangle
+
+    // Display target sub-viewports (debug G-buffer views, top-right corner)
+    const int kRows = 5;
+    const int kCols = (opts.numTargets - 1) / kRows + 1;
+    const float scale = 1.f / static_cast<float>(kRows);
+    const float vw = w * scale, vh = h * scale;
+    for (int i = 1; i < opts.numTargets; i++) {
+      float vx = (w - vw * kCols) + vw * (i / kRows);
+      float vy = vh * (i % kRows);
+      cmd.setViewport(0, vk::Viewport(vx, vy, vw, vh, 0.f, 1.f));
+      cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipelines.displayTargets[i]);
+      cmd.draw(3, 1, 0, 0);
+    }
+
+    // Reset viewport to full screen for sprite pass
+    cmd.setViewport(0, vk::Viewport(0.f, 0.f, w, h, 0.f, 1.f));
+
+    // Sprite forward pass (billboard quads for each light)
+    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipelines.sprite);
+    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayoutSprite, 0,
+        {*descriptorSets.offScreenUboDescriptorSets[currentFrameIndex]}, nullptr);
+    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayoutSprite, 1,
+        {*descriptorSets.sprite[currentFrameIndex]}, nullptr);
+    SpritePushConstants pc{opts.spriteSize};
+    cmd.pushConstants(*pipelineLayoutSprite, vk::ShaderStageFlagBits::eVertex,
+                      0, sizeof(SpritePushConstants), &pc);
+    // 6 vertices per quad, opts.numLights instances
+    cmd.draw(6, static_cast<uint32_t>(opts.numLights), 0, 0);
+
+    drawUI(cmd);
+    cmd.endRenderPass();
+  }
+  cmd.end();
+  offScreenFrameBuf.isFirstFrame[currentFrameIndex] = false;
+}
+
+void VgeExample::draw() {
+  {
+    vk::Result result = device.waitForFences(*waitFences[currentFrameIndex],
+        VK_TRUE, std::numeric_limits<uint64_t>::max());
+    assert(result != vk::Result::eTimeout);
+    device.resetFences(*waitFences[currentFrameIndex]);
+  }
+  prepareFrame();
+  updateUboOffScreen();
+  updateUboComposition();
+  buildCommandBuffers();
+  {
+    vk::PipelineStageFlags waitStage(vk::PipelineStageFlagBits::eColorAttachmentOutput);
+    vk::SubmitInfo submitInfo(
+        *presentCompleteSemaphores[currentFrameIndex], waitStage,
+        *drawCmdBuffers[currentFrameIndex],
+        *renderCompleteSemaphores[currentFrameIndex]);
+    queue.submit(submitInfo, *waitFences[currentFrameIndex]);
+  }
+  submitFrame();
+}
+
+void VgeExample::addModelInstance(ModelInstance&& newInstance) {
+  size_t idx = modelInstances.size();
+  instanceMap[newInstance.name].push_back(idx);
+  modelInstances.push_back(std::move(newInstance));
+}
+
+const std::vector<size_t>& VgeExample::findInstances(const std::string& name) {
+  assert(instanceMap.find(name) != instanceMap.end());
+  return instanceMap.at(name);
+}
+
+ModelInstance::ModelInstance(ModelInstance&& other) {
+  model          = other.model;
+  name           = other.name;
+  isBone         = other.isBone;
+  animationIndex = other.animationIndex;
+  animationTime  = other.animationTime;
+  transform      = other.transform;
+}
+
+ModelInstance& ModelInstance::operator=(ModelInstance&& other) {
+  model          = other.model;
+  name           = other.name;
+  isBone         = other.isBone;
+  animationIndex = other.animationIndex;
+  animationTime  = other.animationTime;
+  transform      = other.transform;
+  return *this;
+}
+
 }  // namespace vge
+
+VULKAN_EXAMPLE_MAIN()
