@@ -260,4 +260,211 @@ void VgeExample::prepareOffScreenFrameBuffer() {
   colorSampler = vk::raii::Sampler(device, samplerCI);
 }
 
+void VgeExample::prepareUniformBuffers() {
+  alignedSizeDynamicUboElt = vgeu::padBufferSize(physicalDevice, sizeof(DynamicUboElt), true);
+  uniformBuffers.reserve(MAX_CONCURRENT_FRAMES);
+  for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    auto dynamic = std::make_unique<vgeu::VgeuBuffer>(
+        globalAllocator->getAllocator(), alignedSizeDynamicUboElt, dynamicUbo.size(),
+        vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT |
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
+    for (size_t j = 0; j < dynamicUbo.size(); j++) {
+      std::memcpy(static_cast<char*>(dynamic->getMappedData()) + j * alignedSizeDynamicUboElt,
+                  &dynamicUbo[j], alignedSizeDynamicUboElt);
+    }
+
+    auto offScreen = std::make_unique<vgeu::VgeuBuffer>(
+        globalAllocator->getAllocator(), sizeof(UniformDataOffscreen), 1,
+        vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT |
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
+    std::memcpy(offScreen->getMappedData(), &uniformDataOffscreen, sizeof(UniformDataOffscreen));
+
+    auto composition = std::make_unique<vgeu::VgeuBuffer>(
+        globalAllocator->getAllocator(), sizeof(UniformDataComposition), 1,
+        vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT |
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
+    std::memcpy(composition->getMappedData(), &uniformDataComposition, sizeof(UniformDataComposition));
+
+    uniformBuffers.push_back({std::move(dynamic), std::move(offScreen), std::move(composition)});
+  }
+}
+
+void VgeExample::setupDescriptors() {
+  // Descriptor pool
+  std::vector<vk::DescriptorPoolSize> poolSizes;
+  poolSizes.emplace_back(vk::DescriptorType::eUniformBuffer,
+      MAX_CONCURRENT_FRAMES /*offscreen*/ +
+      MAX_CONCURRENT_FRAMES /*composition*/ +
+      MAX_CONCURRENT_FRAMES /*sprite->compositionUBO*/);
+  poolSizes.emplace_back(vk::DescriptorType::eUniformBufferDynamic,
+      MAX_CONCURRENT_FRAMES /*dynamic*/);
+  poolSizes.emplace_back(vk::DescriptorType::eCombinedImageSampler,
+      static_cast<uint32_t>(MAX_CONCURRENT_FRAMES * offScreenFrameBuf.numAttachments));
+
+  vk::DescriptorPoolCreateInfo poolCI(
+      vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+      MAX_CONCURRENT_FRAMES /*composition*/ +
+      MAX_CONCURRENT_FRAMES * 2 /*offscreen + dynamic*/ +
+      MAX_CONCURRENT_FRAMES /*sprite*/,
+      poolSizes);
+  descriptorPool = vk::raii::DescriptorPool(device, poolCI);
+
+  // Composition descriptor set layout: bindings 0-5 = G-buffer samplers, binding 6 = UBO
+  {
+    std::vector<vk::DescriptorSetLayoutBinding> bindings;
+    for (uint32_t b = 0; b < 6; b++)
+      bindings.emplace_back(b, vk::DescriptorType::eCombinedImageSampler, 1,
+                            vk::ShaderStageFlagBits::eFragment);
+    bindings.emplace_back(6, vk::DescriptorType::eUniformBuffer, 1,
+                          vk::ShaderStageFlagBits::eFragment);
+    compositionDescriptorSetLayout = vk::raii::DescriptorSetLayout(
+        device, vk::DescriptorSetLayoutCreateInfo({}, bindings));
+
+    pipelineLayoutComposition = vk::raii::PipelineLayout(
+        device, vk::PipelineLayoutCreateInfo({}, *compositionDescriptorSetLayout));
+  }
+
+  // Offscreen UBO descriptor set layout: binding 0 = UniformDataOffscreen
+  {
+    vk::DescriptorSetLayoutBinding binding(0, vk::DescriptorType::eUniformBuffer, 1,
+                                           vk::ShaderStageFlagBits::eVertex);
+    offScreenUboDescriptorSetLayout = vk::raii::DescriptorSetLayout(
+        device, vk::DescriptorSetLayoutCreateInfo({}, binding));
+  }
+
+  // Dynamic UBO descriptor set layout: binding 0 = dynamic
+  {
+    vk::DescriptorSetLayoutBinding binding(0, vk::DescriptorType::eUniformBufferDynamic, 1,
+                                           vk::ShaderStageFlagBits::eVertex);
+    dynamicUboDescriptorSetLayout = vk::raii::DescriptorSetLayout(
+        device, vk::DescriptorSetLayoutCreateInfo({}, binding));
+  }
+
+  // Offscreen pipeline layout: set0=offscreenUBO, set1=dynamicUBO, set2=modelImage, set3=modelUBO
+  {
+    std::vector<vk::DescriptorSetLayout> setLayouts = {
+        *offScreenUboDescriptorSetLayout,
+        *dynamicUboDescriptorSetLayout,
+        *modelInstances[0].model->descriptorSetLayoutImage,
+        *modelInstances[0].model->descriptorSetLayoutUbo};
+    pipelineLayoutOffScreen = vk::raii::PipelineLayout(
+        device, vk::PipelineLayoutCreateInfo({}, setLayouts));
+  }
+
+  // Sprite light descriptor set layout: binding 0 = composition UBO (lights)
+  {
+    vk::DescriptorSetLayoutBinding binding(0, vk::DescriptorType::eUniformBuffer, 1,
+        vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment);
+    spriteLightDescriptorSetLayout = vk::raii::DescriptorSetLayout(
+        device, vk::DescriptorSetLayoutCreateInfo({}, binding));
+  }
+
+  // Sprite pipeline layout: set0=offscreenUBO, set1=spriteLightLayout, push constant
+  {
+    std::vector<vk::DescriptorSetLayout> setLayouts = {
+        *offScreenUboDescriptorSetLayout,
+        *spriteLightDescriptorSetLayout};
+    vk::PushConstantRange pcRange(
+        vk::ShaderStageFlagBits::eVertex, 0, sizeof(SpritePushConstants));
+    pipelineLayoutSprite = vk::raii::PipelineLayout(
+        device, vk::PipelineLayoutCreateInfo({}, setLayouts, pcRange));
+  }
+
+  // Allocate and write composition descriptor sets
+  {
+    vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool, *compositionDescriptorSetLayout);
+    descriptorSets.composition.reserve(MAX_CONCURRENT_FRAMES);
+    for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++)
+      descriptorSets.composition.push_back(
+          std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
+
+    for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      auto bufInfo   = uniformBuffers[i].composition->descriptorInfo();
+      auto posInfo   = offScreenFrameBuf.position[i]->descriptorImageInfo(
+          *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
+      auto normInfo  = offScreenFrameBuf.normal[i]->descriptorImageInfo(
+          *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
+      auto albInfo   = offScreenFrameBuf.albedo[i]->descriptorImageInfo(
+          *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
+      auto armInfo   = offScreenFrameBuf.arm[i]->descriptorImageInfo(
+          *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
+      auto emissInfo = offScreenFrameBuf.emissive[i]->descriptorImageInfo(
+          *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
+      auto depthInfo = offScreenFrameBuf.depth[i]->descriptorImageInfo(
+          *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
+
+      std::vector<vk::WriteDescriptorSet> writes;
+      writes.emplace_back(*descriptorSets.composition[i], 0, 0,
+          vk::DescriptorType::eCombinedImageSampler, posInfo,   nullptr);
+      writes.emplace_back(*descriptorSets.composition[i], 1, 0,
+          vk::DescriptorType::eCombinedImageSampler, normInfo,  nullptr);
+      writes.emplace_back(*descriptorSets.composition[i], 2, 0,
+          vk::DescriptorType::eCombinedImageSampler, albInfo,   nullptr);
+      writes.emplace_back(*descriptorSets.composition[i], 3, 0,
+          vk::DescriptorType::eCombinedImageSampler, armInfo,   nullptr);
+      writes.emplace_back(*descriptorSets.composition[i], 4, 0,
+          vk::DescriptorType::eCombinedImageSampler, emissInfo, nullptr);
+      writes.emplace_back(*descriptorSets.composition[i], 5, 0,
+          vk::DescriptorType::eCombinedImageSampler, depthInfo, nullptr);
+      writes.emplace_back(*descriptorSets.composition[i], 6, 0,
+          vk::DescriptorType::eUniformBuffer, nullptr, bufInfo);
+      device.updateDescriptorSets(writes, nullptr);
+    }
+  }
+
+  // Allocate and write offscreen UBO descriptor sets
+  {
+    vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool, *offScreenUboDescriptorSetLayout);
+    descriptorSets.offScreenUboDescriptorSets.reserve(MAX_CONCURRENT_FRAMES);
+    std::vector<vk::DescriptorBufferInfo> bufInfos;
+    std::vector<vk::WriteDescriptorSet> writes;
+    for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      descriptorSets.offScreenUboDescriptorSets.push_back(
+          std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
+      bufInfos.push_back(uniformBuffers[i].offScreen->descriptorInfo());
+      writes.emplace_back(*descriptorSets.offScreenUboDescriptorSets[i], 0, 0,
+          vk::DescriptorType::eUniformBuffer, nullptr, bufInfos.back());
+    }
+    device.updateDescriptorSets(writes, nullptr);
+  }
+
+  // Allocate and write dynamic UBO descriptor sets
+  {
+    vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool, *dynamicUboDescriptorSetLayout);
+    descriptorSets.dynamicUboDescriptorSets.reserve(MAX_CONCURRENT_FRAMES);
+    std::vector<vk::DescriptorBufferInfo> bufInfos;
+    std::vector<vk::WriteDescriptorSet> writes;
+    for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      descriptorSets.dynamicUboDescriptorSets.push_back(
+          std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
+      bufInfos.push_back(uniformBuffers[i].dynamic->descriptorInfo(alignedSizeDynamicUboElt, 0));
+      writes.emplace_back(*descriptorSets.dynamicUboDescriptorSets[i], 0, 0,
+          vk::DescriptorType::eUniformBufferDynamic, nullptr, bufInfos.back());
+    }
+    device.updateDescriptorSets(writes, nullptr);
+  }
+
+  // Allocate and write sprite descriptor sets (binding to composition UBO buffer)
+  {
+    vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool, *spriteLightDescriptorSetLayout);
+    descriptorSets.sprite.reserve(MAX_CONCURRENT_FRAMES);
+    std::vector<vk::DescriptorBufferInfo> bufInfos;
+    std::vector<vk::WriteDescriptorSet> writes;
+    for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      descriptorSets.sprite.push_back(
+          std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
+      bufInfos.push_back(uniformBuffers[i].composition->descriptorInfo());
+      writes.emplace_back(*descriptorSets.sprite[i], 0, 0,
+          vk::DescriptorType::eUniformBuffer, nullptr, bufInfos.back());
+    }
+    device.updateDescriptorSets(writes, nullptr);
+  }
+}
+
 }  // namespace vge
