@@ -86,6 +86,43 @@ void VgeExample::onUpdateUIOverlay() {
   }
 }
 
+std::unique_ptr<vgeu::VgeuImage> VgeExample::createDummyTexture(
+    std::array<uint8_t, 4> rgba) {
+  // Upload a 1x1 RGBA pixel into a shader-readable image.
+  vgeu::VgeuBuffer staging(
+      globalAllocator->getAllocator(), 4, 1,
+      vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_AUTO,
+      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+          VMA_ALLOCATION_CREATE_MAPPED_BIT);
+  std::memcpy(staging.getMappedData(), rgba.data(), 4);
+
+  auto img = std::make_unique<vgeu::VgeuImage>(
+      device, globalAllocator->getAllocator(),
+      vk::Format::eR8G8B8A8Unorm, vk::Extent2D{1, 1},
+      vk::ImageTiling::eOptimal,
+      vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst,
+      vk::ImageLayout::eUndefined, VmaMemoryUsage::VMA_MEMORY_USAGE_AUTO,
+      VmaAllocationCreateFlagBits::VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
+      vk::ImageAspectFlagBits::eColor, 1);
+
+  vk::BufferImageCopy region(
+      0, 0, 0,
+      vk::ImageSubresourceLayers{vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+      vk::Offset3D{0, 0, 0}, vk::Extent3D{1, 1, 1});
+  vgeu::oneTimeSubmit(device, commandPool, queue,
+      [&](const vk::raii::CommandBuffer& cmd) {
+        vgeu::setImageLayout(cmd, img->getImage(), vk::Format::eR8G8B8A8Unorm,
+            0, 1, vk::ImageLayout::eUndefined,
+            vk::ImageLayout::eTransferDstOptimal);
+        cmd.copyBufferToImage(staging.getBuffer(), img->getImage(),
+            vk::ImageLayout::eTransferDstOptimal, region);
+        vgeu::setImageLayout(cmd, img->getImage(), vk::Format::eR8G8B8A8Unorm,
+            0, 1, vk::ImageLayout::eTransferDstOptimal,
+            vk::ImageLayout::eShaderReadOnlyOptimal);
+      });
+  return img;
+}
+
 void VgeExample::loadAssets() {
   vgeu::FileLoadingFlags glTFLoadingFlags =
       vgeu::FileLoadingFlagBits::kPreMultiplyVertexColors |
@@ -124,6 +161,30 @@ void VgeExample::loadAssets() {
       addModelInstance(std::move(inst));
     }
   }
+
+  // Sphere model (geometry only; textures are provided via dummy descriptor set)
+  std::shared_ptr<vgeu::glTF::Model> sphere = std::make_shared<vgeu::glTF::Model>(
+      device, globalAllocator->getAllocator(), queue, commandPool, MAX_CONCURRENT_FRAMES);
+  sphere->loadFromFile(getAssetsPath() + "/models/sphere/untitled.gltf", glTFLoadingFlags);
+  for (int i = 0; i < opts.modelNumZ; i++) {
+    for (int j = 0; j < opts.modelNumX; j++) {
+      ModelInstance inst{};
+      inst.model = sphere;
+      inst.name  = "sphere_" + std::to_string(i) + "-" + std::to_string(j);
+      inst.sceneMode = ModelInstance::SceneMode::kSphereOnly;
+      addModelInstance(std::move(inst));
+    }
+  }
+
+  // 1x1 dummy textures for sphere draw calls:
+  //   albedo  = white     (overridden by modelColor via modelColor.a=1.0)
+  //   normal  = flat +Z   (128,128,255 -> tangent-space (0,0,1) -> passes geometric normal through)
+  //   metrough = neutral  (g=128->roughness~0.5; overridden by pbrOverride)
+  //   emissive = black
+  sphereDummyAlbedo   = createDummyTexture({255, 255, 255, 255});
+  sphereDummyNormal   = createDummyTexture({128, 128, 255, 255});
+  sphereDummyMetRough = createDummyTexture({0,   128,   0, 255});
+  sphereDummyEmissive = createDummyTexture({0,     0,   0, 255});
 }
 
 void VgeExample::setupDynamicUbo() {
