@@ -170,6 +170,11 @@ void VgeExample::loadAssets() {
   // Sphere model (geometry only; textures are provided via dummy descriptor set)
   std::shared_ptr<vgeu::glTF::Model> sphere = std::make_shared<vgeu::glTF::Model>(
       device, globalAllocator->getAllocator(), queue, commandPool, MAX_CONCURRENT_FRAMES);
+  sphere->descriptorBindingFlags =
+      vgeu::DescriptorBindingFlagBits::kImageBaseColor |
+      vgeu::DescriptorBindingFlagBits::kImageNormalMap |
+      vgeu::DescriptorBindingFlagBits::kImageMetallicRoughness |
+      vgeu::DescriptorBindingFlagBits::kImageEmissive;
   sphere->loadFromFile(getAssetsPath() + "/models/sphere/untitled.gltf", glTFLoadingFlags);
   for (int i = 0; i < opts.modelNumZ; i++) {
     for (int j = 0; j < opts.modelNumX; j++) {
@@ -957,6 +962,7 @@ ModelInstance::ModelInstance(ModelInstance&& other) {
   animationIndex = other.animationIndex;
   animationTime  = other.animationTime;
   transform      = other.transform;
+  sceneMode      = other.sceneMode;
 }
 
 ModelInstance& ModelInstance::operator=(ModelInstance&& other) {
@@ -966,6 +972,7 @@ ModelInstance& ModelInstance::operator=(ModelInstance&& other) {
   animationIndex = other.animationIndex;
   animationTime  = other.animationTime;
   transform      = other.transform;
+  sceneMode      = other.sceneMode;
   return *this;
 }
 
