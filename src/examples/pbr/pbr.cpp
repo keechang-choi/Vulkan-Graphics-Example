@@ -810,7 +810,7 @@ void VgeExample::buildCommandBuffers() {
         // Bind dummy textures at set 2; skip kBindImages so model::draw() doesn't override them.
         cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayoutOffScreen, 2,
             {*sphereDummyDescriptorSet}, nullptr);
-        inst.model->draw(currentFrameIndex, cmd, 0 /*no kBindImages*/,
+        inst.model->draw(currentFrameIndex, cmd, vgeu::RenderFlags{} /*no kBindImages*/,
                          *pipelineLayoutOffScreen, 2);
       } else {
         inst.model->draw(currentFrameIndex, cmd, vgeu::RenderFlagBits::kBindImages,
