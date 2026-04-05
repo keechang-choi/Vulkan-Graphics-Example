@@ -12,10 +12,11 @@ layout (set = 0, binding = 0) uniform UBO
     mat4 view;
 } ubo;
 
-layout (set = 1, binding = 0) uniform ModelUbo 
+layout (set = 1, binding = 0) uniform ModelUbo
 {
 	mat4 modelMatrix;
 	vec4 modelColor;
+	vec4 pbrOverride;  // x=metallic, y=roughness, z=useOverride(0/1), w=unused
 } modelUbo;
 
 layout (location = 0) out vec3 outNormal;
