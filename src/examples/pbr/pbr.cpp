@@ -388,13 +388,15 @@ void VgeExample::setupDescriptors() {
   poolSizes.emplace_back(vk::DescriptorType::eUniformBufferDynamic,
       MAX_CONCURRENT_FRAMES /*dynamic*/);
   poolSizes.emplace_back(vk::DescriptorType::eCombinedImageSampler,
-      static_cast<uint32_t>(MAX_CONCURRENT_FRAMES * offScreenFrameBuf.numAttachments));
+      static_cast<uint32_t>(MAX_CONCURRENT_FRAMES * offScreenFrameBuf.numAttachments)
+          + 4u /*sphere dummy: 4 combined image samplers*/);
 
   vk::DescriptorPoolCreateInfo poolCI(
       vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
       MAX_CONCURRENT_FRAMES /*composition*/ +
       MAX_CONCURRENT_FRAMES * 2 /*offscreen + dynamic*/ +
-      MAX_CONCURRENT_FRAMES /*sprite*/,
+      MAX_CONCURRENT_FRAMES /*sprite*/ +
+      1u /*sphere dummy*/,
       poolSizes);
   descriptorPool = vk::raii::DescriptorPool(device, poolCI);
 
@@ -424,7 +426,7 @@ void VgeExample::setupDescriptors() {
   // Dynamic UBO descriptor set layout: binding 0 = dynamic
   {
     vk::DescriptorSetLayoutBinding binding(0, vk::DescriptorType::eUniformBufferDynamic, 1,
-                                           vk::ShaderStageFlagBits::eVertex);
+        vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment);
     dynamicUboDescriptorSetLayout = vk::raii::DescriptorSetLayout(
         device, vk::DescriptorSetLayoutCreateInfo({}, binding));
   }
@@ -546,6 +548,36 @@ void VgeExample::setupDescriptors() {
       writes.emplace_back(*descriptorSets.sprite[i], 0, 0,
           vk::DescriptorType::eUniformBuffer, nullptr, bufInfos.back());
     }
+    device.updateDescriptorSets(writes, nullptr);
+  }
+
+  // Sphere dummy descriptor set (set 2): 4 combined image samplers bound to 1x1 dummy textures.
+  // Uses same layout as glTF model image descriptors (4 bindings matching descriptorBindingFlags).
+  // Bound manually before sphere draws; kBindImages NOT set so model::draw() doesn't override it.
+  {
+    vk::DescriptorSetAllocateInfo allocInfo(
+        *descriptorPool, *modelInstances[0].model->descriptorSetLayoutImage);
+    sphereDummyDescriptorSet = std::move(
+        vk::raii::DescriptorSets(device, allocInfo).front());
+
+    auto albInfo   = sphereDummyAlbedo->descriptorImageInfo(
+        *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
+    auto normInfo  = sphereDummyNormal->descriptorImageInfo(
+        *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
+    auto mrInfo    = sphereDummyMetRough->descriptorImageInfo(
+        *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
+    auto emissInfo = sphereDummyEmissive->descriptorImageInfo(
+        *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
+
+    std::vector<vk::WriteDescriptorSet> writes;
+    writes.emplace_back(*sphereDummyDescriptorSet, 0, 0,
+        vk::DescriptorType::eCombinedImageSampler, albInfo,   nullptr);
+    writes.emplace_back(*sphereDummyDescriptorSet, 1, 0,
+        vk::DescriptorType::eCombinedImageSampler, normInfo,  nullptr);
+    writes.emplace_back(*sphereDummyDescriptorSet, 2, 0,
+        vk::DescriptorType::eCombinedImageSampler, mrInfo,    nullptr);
+    writes.emplace_back(*sphereDummyDescriptorSet, 3, 0,
+        vk::DescriptorType::eCombinedImageSampler, emissInfo, nullptr);
     device.updateDescriptorSets(writes, nullptr);
   }
 }
