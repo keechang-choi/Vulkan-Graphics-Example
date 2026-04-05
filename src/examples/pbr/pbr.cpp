@@ -74,6 +74,11 @@ void VgeExample::onUpdateUIOverlay() {
       ImGui::DragFloat("Far Clamping", &opts.farClamp, 0.1f,
                        camera.getNearPlane(), camera.getFarPlane(), "%.1f");
       ImGui::Separator();
+      ImGui::Checkbox("Show Debug Views", &opts.showDebugViews);
+      ImGui::Checkbox("Use Spheres", &opts.useSpheres);
+      if (opts.useSpheres) {
+        uiOverlay->colorPicker("Sphere Albedo", opts.sphereAlbedo.data());
+      }
       ImGui::Checkbox("Animate Lights", &opts.animateLights);
       ImGui::DragFloat("Rotation Speed", &opts.rotationSpeed, 0.05f, 0.0f, 10.f, "%.2f");
       ImGui::DragFloat("Orbit Radius",   &opts.orbitRadius,   0.1f,  0.5f, 30.f, "%.1f");
