@@ -197,3 +197,24 @@ alignas(16) glm::vec4 dirLightDir;
 ```
 
 **교훈:** GLSL uniform block에 필드를 추가할 때는 std140 alignment 규칙과 C++ struct layout이 항상 일치하는지 검증 필요. `vec2`/`vec4`/`vec3`는 std140에서 각각 8/16/16 byte alignment를 가지지만, C++ `glm::` 타입은 보통 4 byte alignment만 가짐. 중간에 scalar를 끼워넣으면 이후 필드의 오프셋이 달라질 수 있음.
+
+---
+
+## 미해결 문제 — Sphere terminator 경계선
+
+**현상:** Sphere에서 직접광을 받는 면과 받지 않는 면 사이의 색 차이가 뚜렷하게 경계처럼 보임. 빛 방향과 무관하게 항상 보임 (terminator가 항상 어딘가에 존재하기 때문).
+
+**원인 분석:**
+- Flat ambient (`ambientStrength * albedo * ao`)는 방향 무관하게 균일한 보정을 줌
+- 직접광이 0이 되는 terminator에서 `ambient only` → `ambient + direct` 전환 시 밝기 비율 차이가 큼
+- IBL(Image-Based Lighting) 없이 simple ambient만으로는 이 비율 차이를 자연스럽게 메우기 어려움
+
+**시도한 접근:**
+- AO dummy 텍스처 R=255로 수정 (sphere ambient가 0이었던 문제는 해결)
+- pbrOverride 경로에서 AO=1.0으로 수정 (`mrt.frag` — 해결)
+- Hemisphere ambient 적용 (`N.y * 0.5 + 0.5`로 sky/ground 블렌드) — **효과 없어 revert**
+
+**다음에 시도할 것:**
+- Wrap lighting (half-Lambert): `NdotL = dot(N,L) * 0.5 + 0.5` — 물리적으로 부정확하지만 시각적으로 자연스러움
+- Directional light 기준 hemisphere ambient (world Y 기준이 아닌 L 방향 기준)
+- IBL diffuse irradiance map 도입 (근본 해결책이지만 구현 복잡)
