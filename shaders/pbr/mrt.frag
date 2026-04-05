@@ -27,7 +27,7 @@ void main()
 {
 	vec4 albedo = texture(samplerColorMap, inUV);
 	vec3 color = mix(albedo.rgb, inColor.rgb, inColor.a);
-	outAlbedo = albedo;
+	outAlbedo = vec4(color, albedo.a);
 
 	outPosition = inWorldPos;
 
