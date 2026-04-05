@@ -49,7 +49,7 @@ void main()
 	vec3 arm = vec3(0.0);
 	if (modelUbo.pbrOverride.z > 0.5) {
 		// glTF metallicRoughness convention: g=roughness, b=metallic
-		arm = vec3(0.0, modelUbo.pbrOverride.y, modelUbo.pbrOverride.x);
+		arm = vec3(1.0, modelUbo.pbrOverride.y, modelUbo.pbrOverride.x);
 	} else {
 		arm.rgb = texture(samplerMetallicRoughnessMap, inUV).rgb;
 		// arm.r = texture(samplerOcclusionMap, inUV).r; // occlusion
