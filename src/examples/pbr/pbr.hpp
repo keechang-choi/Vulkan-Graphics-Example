@@ -29,6 +29,8 @@ struct Options {
   bool showDebugViews = true;
   bool useSpheres = false;
   std::array<float, 4> sphereAlbedo = {1.0f, 1.0f, 1.0f, 1.0f};
+  bool useDirectionalLight = false;
+  std::array<float, 3> dirLightDir = {0.f, -1.f, -1.f};  // world-space direction toward light
 };
 
 struct DynamicUboElt {
@@ -48,7 +50,7 @@ struct Light {
   float radius;
 };
 
-// NOTE: alignment. size = 10*32 + 16 + 4*5 = 352 bytes
+// NOTE: alignment. size = 10*32 + 16 + 4*5 + 16 + 4*2 = 384 bytes
 struct alignas(64) UniformDataComposition {
   Light lights[MAX_LIGHTS];
   glm::vec4 viewPos;
@@ -57,6 +59,11 @@ struct alignas(64) UniformDataComposition {
   float nearPlane;
   float farPlane;
   float farClamp;
+  int useDirectionalLight{0};
+  glm::vec2 _pad;
+  glm::vec4 dirLightDir;   // xyz = direction toward light (normalized), w = unused
+  glm::vec3 dirLightColor; // pre-multiplied with intensity
+  float _pad2;
 };
 
 struct ModelInstance {

@@ -27,6 +27,11 @@ layout (set = 0, binding = 6) uniform UBO {
     float nearPlane;
     float farPlane;
     float farClamp;
+    int useDirectionalLight;
+    vec2 _pad;
+    vec4 dirLightDir;    // xyz = direction toward light (normalized)
+    vec3 dirLightColor;
+    float _pad2;
 } ubo;
 
 // Normal Distribution: Trowbridge-Reitz GGX
@@ -55,6 +60,21 @@ float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
 // Fresnel-Schlick
 vec3 FresnelSchlick(float cosTheta, vec3 F0) {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+vec3 PBR(vec3 N, vec3 V, vec3 L, vec3 radiance,
+         vec3 albedo, float roughness, float metallic, vec3 F0) {
+    vec3 H = normalize(V + L);
+    float NDF = DistributionGGX(N, H, roughness);
+    float G   = GeometrySmith(N, V, L, roughness);
+    vec3  F   = FresnelSchlick(max(dot(H, V), 0.0), F0);
+
+    vec3 kD = (vec3(1.0) - F) * (1.0 - metallic);
+    float NdotL = max(dot(N, L), 0.0);
+    vec3 specular = (NDF * G * F) /
+        (4.0 * max(dot(N, V), 0.0) * NdotL + 0.0001);
+
+    return (kD * albedo / PI + specular) * radiance * NdotL;
 }
 
 void main() {
@@ -102,25 +122,18 @@ void main() {
     vec3 V = normalize(ubo.viewPos.xyz - fragPos);
 
     vec3 Lo = vec3(0.0);
-    for (int i = 0; i < ubo.numLights; i++) {
-        vec3 L    = normalize(ubo.lights[i].position.xyz - fragPos);
-        vec3 H    = normalize(V + L);
-        float dist = length(ubo.lights[i].position.xyz - fragPos);
-        float attenuation = ubo.lights[i].radius / (dist * dist + 1.0);
-        vec3 radiance = ubo.lights[i].color * attenuation;
-
-        float NDF = DistributionGGX(N, H, roughness);
-        float G   = GeometrySmith(N, V, L, roughness);
-        vec3  F   = FresnelSchlick(max(dot(H, V), 0.0), F0);
-
-        vec3 kS = F;
-        vec3 kD = (vec3(1.0) - kS) * (1.0 - metallic);
-
-        float NdotL = max(dot(N, L), 0.0);
-        vec3 specular = (NDF * G * F) /
-            (4.0 * max(dot(N, V), 0.0) * NdotL + 0.0001);
-
-        Lo += (kD * albedo / PI + specular) * radiance * NdotL;
+    if (ubo.useDirectionalLight != 0) {
+        // Directional light: fixed direction, no attenuation
+        vec3 L = normalize(ubo.dirLightDir.xyz);
+        Lo = PBR(N, V, L, ubo.dirLightColor, albedo, roughness, metallic, F0);
+    } else {
+        for (int i = 0; i < ubo.numLights; i++) {
+            vec3 L    = normalize(ubo.lights[i].position.xyz - fragPos);
+            float dist = length(ubo.lights[i].position.xyz - fragPos);
+            float attenuation = ubo.lights[i].radius / (dist * dist + 1.0);
+            vec3 radiance = ubo.lights[i].color * attenuation;
+            Lo += PBR(N, V, L, radiance, albedo, roughness, metallic, F0);
+        }
     }
 
     vec3 ambient = vec3(0.03) * albedo * ao;

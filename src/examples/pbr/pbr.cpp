@@ -79,13 +79,19 @@ void VgeExample::onUpdateUIOverlay() {
       if (opts.useSpheres) {
         uiOverlay->colorPicker("Sphere Albedo", opts.sphereAlbedo.data());
       }
-      ImGui::Checkbox("Animate Lights", &opts.animateLights);
-      ImGui::DragFloat("Rotation Speed", &opts.rotationSpeed, 0.05f, 0.0f, 10.f, "%.2f");
-      ImGui::DragFloat("Orbit Radius",   &opts.orbitRadius,   0.1f,  0.5f, 30.f, "%.1f");
-      ImGui::DragFloat("Orbit Height",   &opts.orbitHeight,   0.1f, -20.f, 0.f,  "%.1f");
-      ImGui::DragInt("Num Lights", &opts.numLights, 1, 1, MAX_LIGHTS);
+      ImGui::Separator();
+      ImGui::Checkbox("Directional Light", &opts.useDirectionalLight);
+      if (opts.useDirectionalLight) {
+        ImGui::DragFloat3("Dir Light Dir", opts.dirLightDir.data(), 0.01f, -1.f, 1.f, "%.2f");
+      } else {
+        ImGui::Checkbox("Animate Lights", &opts.animateLights);
+        ImGui::DragFloat("Rotation Speed", &opts.rotationSpeed, 0.05f, 0.0f, 10.f, "%.2f");
+        ImGui::DragFloat("Orbit Radius",   &opts.orbitRadius,   0.1f,  0.5f, 30.f, "%.1f");
+        ImGui::DragFloat("Orbit Height",   &opts.orbitHeight,   0.1f, -20.f, 0.f,  "%.1f");
+        ImGui::DragInt("Num Lights", &opts.numLights, 1, 1, MAX_LIGHTS);
+        ImGui::DragFloat("Sprite Size", &opts.spriteSize, 0.01f, 0.05f, 2.f, "%.2f");
+      }
       ImGui::DragFloat("Light Intensity", &opts.lightIntensity, 0.5f, 0.0f, 100.f, "%.1f");
-      ImGui::DragFloat("Sprite Size", &opts.spriteSize, 0.01f, 0.05f, 2.f, "%.2f");
       ImGui::TreePop();
     }
   }
@@ -775,6 +781,11 @@ void VgeExample::updateUboComposition() {
   uniformDataComposition.farPlane  = camera.getFarPlane();
   uniformDataComposition.farClamp  = opts.farClamp;
 
+  uniformDataComposition.useDirectionalLight = opts.useDirectionalLight ? 1 : 0;
+  glm::vec3 dir = glm::normalize(glm::vec3(opts.dirLightDir[0], opts.dirLightDir[1], opts.dirLightDir[2]));
+  uniformDataComposition.dirLightDir   = glm::vec4(dir, 0.f);
+  uniformDataComposition.dirLightColor = glm::vec3(1.f) * opts.lightIntensity;
+
   std::memcpy(uniformBuffers[currentFrameIndex].composition->getMappedData(),
               &uniformDataComposition, sizeof(UniformDataComposition));
 }
@@ -862,18 +873,20 @@ void VgeExample::buildCommandBuffers() {
         {*descriptorSets.composition[currentFrameIndex]}, nullptr);
     cmd.draw(3, 1, 0, 0);  // big triangle
 
-    // Sprite forward pass (billboard quads for each light)
-    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipelines.sprite);
-    std::array<vk::DescriptorSet, 2> spriteDescSets = {
-        *descriptorSets.offScreenUboDescriptorSets[currentFrameIndex],
-        *descriptorSets.sprite[currentFrameIndex]};
-    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayoutSprite, 0,
-        spriteDescSets, nullptr);
-    SpritePushConstants pc{opts.spriteSize};
-    cmd.pushConstants<SpritePushConstants>(*pipelineLayoutSprite,
-                      vk::ShaderStageFlagBits::eVertex, 0, pc);
-    // 6 vertices per quad, opts.numLights instances
-    cmd.draw(6, static_cast<uint32_t>(opts.numLights), 0, 0);
+    // Sprite forward pass (billboard quads for each point light; skip in directional mode)
+    if (!opts.useDirectionalLight) {
+      cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipelines.sprite);
+      std::array<vk::DescriptorSet, 2> spriteDescSets = {
+          *descriptorSets.offScreenUboDescriptorSets[currentFrameIndex],
+          *descriptorSets.sprite[currentFrameIndex]};
+      cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayoutSprite, 0,
+          spriteDescSets, nullptr);
+      SpritePushConstants pc{opts.spriteSize};
+      cmd.pushConstants<SpritePushConstants>(*pipelineLayoutSprite,
+                        vk::ShaderStageFlagBits::eVertex, 0, pc);
+      // 6 vertices per quad, opts.numLights instances
+      cmd.draw(6, static_cast<uint32_t>(opts.numLights), 0, 0);
+    }
 
     // Rebind composition descriptor set before displayTargets loop.
     // After the sprite pass, set 0 is bound with pipelineLayoutSprite.
