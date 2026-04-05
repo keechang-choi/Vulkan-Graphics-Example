@@ -793,11 +793,24 @@ void VgeExample::buildCommandBuffers() {
     for (size_t instIdx = 0; instIdx < modelInstances.size(); instIdx++) {
       const auto& inst = modelInstances[instIdx];
       if (!inst.model) continue;
+      // Skip instances that belong to the inactive mode
+      if (inst.sceneMode == ModelInstance::SceneMode::kModelOnly && opts.useSpheres) continue;
+      if (inst.sceneMode == ModelInstance::SceneMode::kSphereOnly && !opts.useSpheres) continue;
+
       cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayoutOffScreen, 1,
           {*descriptorSets.dynamicUboDescriptorSets[currentFrameIndex]},
           static_cast<uint32_t>(alignedSizeDynamicUboElt * instIdx));
-      inst.model->draw(currentFrameIndex, cmd, vgeu::RenderFlagBits::kBindImages,
-                       *pipelineLayoutOffScreen, 2);
+
+      if (inst.sceneMode == ModelInstance::SceneMode::kSphereOnly) {
+        // Bind dummy textures at set 2; skip kBindImages so model::draw() doesn't override them.
+        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayoutOffScreen, 2,
+            {*sphereDummyDescriptorSet}, nullptr);
+        inst.model->draw(currentFrameIndex, cmd, 0 /*no kBindImages*/,
+                         *pipelineLayoutOffScreen, 2);
+      } else {
+        inst.model->draw(currentFrameIndex, cmd, vgeu::RenderFlagBits::kBindImages,
+                         *pipelineLayoutOffScreen, 2);
+      }
     }
     cmd.endRenderPass();
   }
@@ -848,16 +861,18 @@ void VgeExample::buildCommandBuffers() {
         {*descriptorSets.composition[currentFrameIndex]}, nullptr);
 
     // Display target sub-viewports (debug G-buffer views, top-right corner) - drawn last to stay on top
-    const int kRows = 5;
-    const int kCols = (opts.numTargets - 1) / kRows + 1;
-    const float scale = 1.f / static_cast<float>(kRows);
-    const float vw = w * scale, vh = h * scale;
-    for (int i = 1; i < opts.numTargets; i++) {
-      float vx = (w - vw * kCols) + vw * (i / kRows);
-      float vy = vh * (i % kRows);
-      cmd.setViewport(0, vk::Viewport(vx, vy, vw, vh, 0.f, 1.f));
-      cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipelines.displayTargets[i]);
-      cmd.draw(3, 1, 0, 0);
+    if (opts.showDebugViews) {
+      const int kRows = 5;
+      const int kCols = (opts.numTargets - 1) / kRows + 1;
+      const float scale = 1.f / static_cast<float>(kRows);
+      const float vw = w * scale, vh = h * scale;
+      for (int i = 1; i < opts.numTargets; i++) {
+        float vx = (w - vw * kCols) + vw * (i / kRows);
+        float vy = vh * (i % kRows);
+        cmd.setViewport(0, vk::Viewport(vx, vy, vw, vh, 0.f, 1.f));
+        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipelines.displayTargets[i]);
+        cmd.draw(3, 1, 0, 0);
+      }
     }
 
     // Reset viewport to full screen for UI
