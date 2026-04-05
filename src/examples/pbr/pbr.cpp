@@ -181,7 +181,7 @@ void VgeExample::loadAssets() {
       vgeu::DescriptorBindingFlagBits::kImageNormalMap |
       vgeu::DescriptorBindingFlagBits::kImageMetallicRoughness |
       vgeu::DescriptorBindingFlagBits::kImageEmissive;
-  sphere->loadFromFile(getAssetsPath() + "/models/sphere/untitled.gltf", glTFLoadingFlags);
+  sphere->loadFromFile(getAssetsPath() + "/models/sphere/smooth_sphere.gltf", glTFLoadingFlags);
   for (int i = 0; i < opts.modelNumZ; i++) {
     for (int j = 0; j < opts.modelNumX; j++) {
       ModelInstance inst{};
