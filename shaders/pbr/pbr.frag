@@ -137,7 +137,12 @@ void main() {
         }
     }
 
-    vec3 ambient = vec3(ubo.ambientStrength) * albedo * ao;
+    // Hemisphere ambient: sky (Y+) brighter, ground (Y-) dimmer
+    // N.y in [-1,1] → skyBlend in [0,1]
+    float skyBlend   = N.y * 0.5 + 0.5;
+    vec3 skyColor    = vec3(ubo.ambientStrength);
+    vec3 groundColor = vec3(ubo.ambientStrength * 0.2);
+    vec3 ambient = mix(groundColor, skyColor, skyBlend) * albedo * ao;
     vec3 color = ambient + Lo + emissive;
 
     // Reinhard tone mapping
