@@ -28,6 +28,7 @@ layout (set = 0, binding = 6) uniform UBO {
     float farPlane;
     float farClamp;
     int useDirectionalLight;
+    float ambientStrength;
     vec2 _pad;
     vec4 dirLightDir;    // xyz = direction toward light (normalized)
     vec3 dirLightColor;
@@ -72,7 +73,7 @@ vec3 PBR(vec3 N, vec3 V, vec3 L, vec3 radiance,
     vec3 kD = (vec3(1.0) - F) * (1.0 - metallic);
     float NdotL = max(dot(N, L), 0.0);
     vec3 specular = (NDF * G * F) /
-        (4.0 * max(dot(N, V), 0.0) * NdotL + 0.0001);
+        max(4.0 * max(dot(N, V), 0.0) * NdotL, 0.001);
 
     return (kD * albedo / PI + specular) * radiance * NdotL;
 }
@@ -136,7 +137,7 @@ void main() {
         }
     }
 
-    vec3 ambient = vec3(0.03) * albedo * ao;
+    vec3 ambient = vec3(ubo.ambientStrength) * albedo * ao;
     vec3 color = ambient + Lo + emissive;
 
     // Reinhard tone mapping

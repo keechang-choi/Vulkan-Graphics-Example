@@ -92,6 +92,7 @@ void VgeExample::onUpdateUIOverlay() {
         ImGui::DragFloat("Sprite Size", &opts.spriteSize, 0.01f, 0.05f, 2.f, "%.2f");
       }
       ImGui::DragFloat("Light Intensity", &opts.lightIntensity, 0.5f, 0.0f, 100.f, "%.1f");
+      ImGui::DragFloat("Ambient Strength", &opts.ambientStrength, 0.005f, 0.0f, 0.5f, "%.3f");
       ImGui::TreePop();
     }
   }
@@ -199,7 +200,7 @@ void VgeExample::loadAssets() {
   //   emissive = black
   sphereDummyAlbedo   = createDummyTexture({255, 255, 255, 255});
   sphereDummyNormal   = createDummyTexture({128, 128, 255, 255});
-  sphereDummyMetRough = createDummyTexture({0,   128,   0, 255});
+  sphereDummyMetRough = createDummyTexture({255, 128,   0, 255});  // AO=1, roughness≈0.5, metallic=0
   sphereDummyEmissive = createDummyTexture({0,     0,   0, 255});
 }
 
@@ -781,6 +782,7 @@ void VgeExample::updateUboComposition() {
   uniformDataComposition.farPlane  = camera.getFarPlane();
   uniformDataComposition.farClamp  = opts.farClamp;
 
+  uniformDataComposition.ambientStrength = opts.ambientStrength;
   uniformDataComposition.useDirectionalLight = opts.useDirectionalLight ? 1 : 0;
   glm::vec3 dir = glm::normalize(glm::vec3(opts.dirLightDir[0], opts.dirLightDir[1], opts.dirLightDir[2]));
   uniformDataComposition.dirLightDir   = glm::vec4(dir, 0.f);

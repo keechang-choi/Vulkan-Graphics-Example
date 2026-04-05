@@ -31,6 +31,7 @@ struct Options {
   std::array<float, 4> sphereAlbedo = {1.0f, 1.0f, 1.0f, 1.0f};
   bool useDirectionalLight = false;
   std::array<float, 3> dirLightDir = {0.f, -1.f, -1.f};  // world-space direction toward light
+  float ambientStrength = 0.03f;
 };
 
 struct DynamicUboElt {
@@ -60,6 +61,7 @@ struct alignas(64) UniformDataComposition {
   float farPlane;
   float farClamp;
   int useDirectionalLight{0};
+  float ambientStrength{0.03f};
   glm::vec2 _pad;
   glm::vec4 dirLightDir;   // xyz = direction toward light (normalized), w = unused
   glm::vec3 dirLightColor; // pre-multiplied with intensity
