@@ -212,6 +212,27 @@ void VgeExample::setupDynamicUbo() {
       dynamicUbo[idx].modelColor  = glm::vec4{1.f, 0.f, 0.f, 0.3f};
     }
   }
+  // Sphere instances: row i (Z axis) = metallic 0→1, col j (X axis) = roughness 0→1
+  const float sphereScale = 1.5f;
+  for (int i = 0; i < opts.modelNumZ; i++) {
+    for (int j = 0; j < opts.modelNumX; j++) {
+      size_t idx = findInstances(
+          "sphere_" + std::to_string(i) + "-" + std::to_string(j))[0];
+      const float x = -((opts.modelNumX - 1) * opts.spacingX * 0.5f) + j * opts.spacingX;
+      const float z = -((opts.modelNumZ - 1) * opts.spacingZ * 0.5f) + i * opts.spacingZ;
+      const float y = -4.f;
+      dynamicUbo[idx].modelMatrix = glm::translate(glm::mat4{1.f}, glm::vec3{x, y, z});
+      dynamicUbo[idx].modelMatrix = glm::scale(dynamicUbo[idx].modelMatrix,
+                                               glm::vec3{sphereScale, sphereScale, sphereScale});
+      float metallic  = (opts.modelNumZ <= 1) ? 0.0f
+                      : static_cast<float>(i) / static_cast<float>(opts.modelNumZ - 1);
+      float roughness = (opts.modelNumX <= 1) ? 0.0f
+                      : static_cast<float>(j) / static_cast<float>(opts.modelNumX - 1);
+      dynamicUbo[idx].pbrOverride = glm::vec4(metallic, roughness, 1.0f, 0.0f);
+      dynamicUbo[idx].modelColor  = glm::vec4(opts.sphereAlbedo[0], opts.sphereAlbedo[1],
+                                               opts.sphereAlbedo[2], 1.0f);
+    }
+  }
 }
 
 std::unique_ptr<vgeu::VgeuImage> VgeExample::createAttachment(
