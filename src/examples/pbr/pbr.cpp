@@ -436,12 +436,24 @@ void VgeExample::setupDescriptors() {
         device, vk::DescriptorSetLayoutCreateInfo({}, binding));
   }
 
+  // Sphere image descriptor set layout: 4 CombinedImageSampler bindings (albedo, normal, metRough, emissive)
+  // Used for both the pipeline layout set 2 and the sphere dummy descriptor set allocation.
+  // Must be "identically defined" to floor/helmet models' descriptorSetLayoutImage (same 4 eFragment CIS).
+  {
+    std::vector<vk::DescriptorSetLayoutBinding> bindings;
+    for (uint32_t b = 0; b < 4; b++)
+      bindings.emplace_back(b, vk::DescriptorType::eCombinedImageSampler, 1,
+                            vk::ShaderStageFlagBits::eFragment);
+    sphereImageSetLayout = vk::raii::DescriptorSetLayout(
+        device, vk::DescriptorSetLayoutCreateInfo({}, bindings));
+  }
+
   // Offscreen pipeline layout: set0=offscreenUBO, set1=dynamicUBO, set2=modelImage, set3=modelUBO
   {
     std::vector<vk::DescriptorSetLayout> setLayouts = {
         *offScreenUboDescriptorSetLayout,
         *dynamicUboDescriptorSetLayout,
-        *modelInstances[0].model->descriptorSetLayoutImage,
+        *sphereImageSetLayout,
         *modelInstances[0].model->descriptorSetLayoutUbo};
     pipelineLayoutOffScreen = vk::raii::PipelineLayout(
         device, vk::PipelineLayoutCreateInfo({}, setLayouts));
@@ -561,7 +573,7 @@ void VgeExample::setupDescriptors() {
   // Bound manually before sphere draws; kBindImages NOT set so model::draw() doesn't override it.
   {
     vk::DescriptorSetAllocateInfo allocInfo(
-        *descriptorPool, *modelInstances[0].model->descriptorSetLayoutImage);
+        *descriptorPool, *sphereImageSetLayout);
     sphereDummyDescriptorSet = std::move(
         vk::raii::DescriptorSets(device, allocInfo).front());
 

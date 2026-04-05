@@ -175,6 +175,7 @@ class VgeExample : public VgeBase {
   std::unique_ptr<vgeu::VgeuImage> sphereDummyNormal;
   std::unique_ptr<vgeu::VgeuImage> sphereDummyMetRough;
   std::unique_ptr<vgeu::VgeuImage> sphereDummyEmissive;
+  vk::raii::DescriptorSetLayout sphereImageSetLayout = nullptr;
   vk::raii::DescriptorSet sphereDummyDescriptorSet = nullptr;
 
   // Light animation accumulator
