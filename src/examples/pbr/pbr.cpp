@@ -885,6 +885,20 @@ void VgeExample::buildCommandBuffers() {
   offScreenFrameBuf.isFirstFrame[currentFrameIndex] = false;
 }
 
+void VgeExample::updateDynamicUbo() {
+  // Sync sphere albedo color from opts to GPU for the current frame.
+  // Called every frame so that UI color picker changes take effect immediately.
+  for (size_t instIdx = 0; instIdx < modelInstances.size(); instIdx++) {
+    if (modelInstances[instIdx].sceneMode != ModelInstance::SceneMode::kSphereOnly) continue;
+    dynamicUbo[instIdx].modelColor = glm::vec4(
+        opts.sphereAlbedo[0], opts.sphereAlbedo[1], opts.sphereAlbedo[2], 1.0f);
+    std::memcpy(
+        static_cast<char*>(uniformBuffers[currentFrameIndex].dynamic->getMappedData())
+            + instIdx * alignedSizeDynamicUboElt,
+        &dynamicUbo[instIdx], sizeof(DynamicUboElt));
+  }
+}
+
 void VgeExample::draw() {
   {
     vk::Result result = device.waitForFences(*waitFences[currentFrameIndex],
@@ -895,6 +909,7 @@ void VgeExample::draw() {
   prepareFrame();
   updateUboOffScreen();
   updateUboComposition();
+  updateDynamicUbo();
   buildCommandBuffers();
   {
     vk::PipelineStageFlags waitStage(vk::PipelineStageFlagBits::eColorAttachmentOutput);
