@@ -63,7 +63,7 @@ struct alignas(64) UniformDataComposition {
   int useDirectionalLight{0};
   float ambientStrength{0.03f};
   glm::vec2 _pad;
-  glm::vec4 dirLightDir;   // xyz = direction toward light (normalized), w = unused
+  alignas(16) glm::vec4 dirLightDir;   // xyz = direction toward light (normalized), w = unused
   glm::vec3 dirLightColor; // pre-multiplied with intensity
   float _pad2;
 };
