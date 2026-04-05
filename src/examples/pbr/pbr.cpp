@@ -79,6 +79,7 @@ void VgeExample::onUpdateUIOverlay() {
       ImGui::DragFloat("Orbit Radius",   &opts.orbitRadius,   0.1f,  0.5f, 30.f, "%.1f");
       ImGui::DragFloat("Orbit Height",   &opts.orbitHeight,   0.1f, -20.f, 0.f,  "%.1f");
       ImGui::DragInt("Num Lights", &opts.numLights, 1, 1, MAX_LIGHTS);
+      ImGui::DragFloat("Light Intensity", &opts.lightIntensity, 0.5f, 0.0f, 100.f, "%.1f");
       ImGui::DragFloat("Sprite Size", &opts.spriteSize, 0.01f, 0.05f, 2.f, "%.2f");
       ImGui::TreePop();
     }
@@ -589,7 +590,13 @@ void VgeExample::preparePipelines() {
         {}, true /*depthTestEnable*/, false /*depthWriteEnable*/,
         vk::CompareOp::eLessOrEqual, false, false, stencilOpState, stencilOpState);
 
-    colorBlendSCI.setAttachments(blendAttachment);
+    vk::PipelineColorBlendAttachmentState spriteBlendAttachment(
+        true,
+        vk::BlendFactor::eSrcAlpha, vk::BlendFactor::eOneMinusSrcAlpha, vk::BlendOp::eAdd,
+        vk::BlendFactor::eOne,      vk::BlendFactor::eOneMinusSrcAlpha, vk::BlendOp::eAdd,
+        vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+        vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA);
+    colorBlendSCI.setAttachments(spriteBlendAttachment);
 
     vk::GraphicsPipelineCreateInfo pipelineCI(
         {}, stages, &emptyVertexSCI, &inputAssemblySCI, nullptr, &viewportSCI,
@@ -621,7 +628,7 @@ void VgeExample::updateUboComposition() {
         opts.orbitHeight,
         opts.orbitRadius * std::sin(angle),
         1.0f);
-    uniformDataComposition.lights[i].color  = kColors[i % MAX_LIGHTS];
+    uniformDataComposition.lights[i].color  = kColors[i % MAX_LIGHTS] * opts.lightIntensity;
     uniformDataComposition.lights[i].radius = 15.0f;
   }
 
@@ -706,7 +713,27 @@ void VgeExample::buildCommandBuffers() {
         {*descriptorSets.composition[currentFrameIndex]}, nullptr);
     cmd.draw(3, 1, 0, 0);  // big triangle
 
-    // Display target sub-viewports (debug G-buffer views, top-right corner)
+    // Sprite forward pass (billboard quads for each light)
+    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipelines.sprite);
+    std::array<vk::DescriptorSet, 2> spriteDescSets = {
+        *descriptorSets.offScreenUboDescriptorSets[currentFrameIndex],
+        *descriptorSets.sprite[currentFrameIndex]};
+    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayoutSprite, 0,
+        spriteDescSets, nullptr);
+    SpritePushConstants pc{opts.spriteSize};
+    cmd.pushConstants<SpritePushConstants>(*pipelineLayoutSprite,
+                      vk::ShaderStageFlagBits::eVertex, 0, pc);
+    // 6 vertices per quad, opts.numLights instances
+    cmd.draw(6, static_cast<uint32_t>(opts.numLights), 0, 0);
+
+    // Rebind composition descriptor set before displayTargets loop.
+    // After the sprite pass, set 0 is bound with pipelineLayoutSprite.
+    // displayTargets pipelines use pipelineLayoutComposition, which is incompatible for set 0.
+    // Rebinding here prevents VUID-vkCmdDraw-None-02697.
+    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayoutComposition, 0,
+        {*descriptorSets.composition[currentFrameIndex]}, nullptr);
+
+    // Display target sub-viewports (debug G-buffer views, top-right corner) - drawn last to stay on top
     const int kRows = 5;
     const int kCols = (opts.numTargets - 1) / kRows + 1;
     const float scale = 1.f / static_cast<float>(kRows);
@@ -719,20 +746,8 @@ void VgeExample::buildCommandBuffers() {
       cmd.draw(3, 1, 0, 0);
     }
 
-    // Reset viewport to full screen for sprite pass
+    // Reset viewport to full screen for UI
     cmd.setViewport(0, vk::Viewport(0.f, 0.f, w, h, 0.f, 1.f));
-
-    // Sprite forward pass (billboard quads for each light)
-    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipelines.sprite);
-    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayoutSprite, 0,
-        {*descriptorSets.offScreenUboDescriptorSets[currentFrameIndex]}, nullptr);
-    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayoutSprite, 1,
-        {*descriptorSets.sprite[currentFrameIndex]}, nullptr);
-    SpritePushConstants pc{opts.spriteSize};
-    cmd.pushConstants<SpritePushConstants>(*pipelineLayoutSprite,
-                      vk::ShaderStageFlagBits::eVertex, 0, pc);
-    // 6 vertices per quad, opts.numLights instances
-    cmd.draw(6, static_cast<uint32_t>(opts.numLights), 0, 0);
 
     drawUI(cmd);
     cmd.endRenderPass();

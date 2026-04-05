@@ -106,7 +106,7 @@ void main() {
         vec3 L    = normalize(ubo.lights[i].position.xyz - fragPos);
         vec3 H    = normalize(V + L);
         float dist = length(ubo.lights[i].position.xyz - fragPos);
-        float attenuation = 1.0 / (dist * dist);
+        float attenuation = ubo.lights[i].radius / (dist * dist + 1.0);
         vec3 radiance = ubo.lights[i].color * attenuation;
 
         float NDF = DistributionGGX(N, H, roughness);

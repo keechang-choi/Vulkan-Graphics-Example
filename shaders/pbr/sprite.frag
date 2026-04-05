@@ -10,5 +10,5 @@ void main() {
     float dist = length(uv);
     if (dist > 1.0) discard;
     float intensity = 1.0 - dist;
-    outFragColor = vec4(inColor * intensity, 1.0);
+    outFragColor = vec4(inColor * intensity, intensity);
 }

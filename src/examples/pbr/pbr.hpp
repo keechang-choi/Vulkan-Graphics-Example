@@ -25,6 +25,7 @@ struct Options {
   float orbitHeight = -3.0f;
   float spriteSize = 0.3f;
   int32_t numLights = 6;
+  float lightIntensity = 1.0f;
 };
 
 struct DynamicUboElt {
