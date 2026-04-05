@@ -26,11 +26,15 @@ struct Options {
   float spriteSize = 0.3f;
   int32_t numLights = 6;
   float lightIntensity = 1.0f;
+  bool showDebugViews = true;
+  bool useSpheres = false;
+  std::array<float, 4> sphereAlbedo = {1.0f, 1.0f, 1.0f, 1.0f};
 };
 
 struct DynamicUboElt {
   glm::mat4 modelMatrix{1.f};
   glm::vec4 modelColor{0.f};
+  glm::vec4 pbrOverride{0.f};  // x=metallic, y=roughness, z=useOverride(0/1), w=unused
 };
 
 struct UniformDataOffscreen {
@@ -62,6 +66,8 @@ struct ModelInstance {
   int animationIndex = -1;
   float animationTime = 0.f;
   vgeu::TransformComponent transform;
+  enum class SceneMode { kModelOnly, kSphereOnly };
+  SceneMode sceneMode = SceneMode::kModelOnly;
   ModelInstance(){};
   ModelInstance(const ModelInstance& o) = delete;
   ModelInstance& operator=(const ModelInstance& other) = delete;
@@ -105,6 +111,9 @@ class VgeExample : public VgeBase {
   void updateUboOffScreen();
   void buildCommandBuffers();
   void draw();
+
+  std::unique_ptr<vgeu::VgeuImage> createDummyTexture(std::array<uint8_t, 4> rgba);
+  void updateDynamicUbo();
 
   void addModelInstance(ModelInstance&& newInstance);
   const std::vector<size_t>& findInstances(const std::string& name);
@@ -160,6 +169,13 @@ class VgeExample : public VgeBase {
   } offScreenFrameBuf;
 
   vk::raii::Sampler colorSampler = nullptr;
+
+  // Dummy textures for sphere pass (1x1 pixels)
+  std::unique_ptr<vgeu::VgeuImage> sphereDummyAlbedo;
+  std::unique_ptr<vgeu::VgeuImage> sphereDummyNormal;
+  std::unique_ptr<vgeu::VgeuImage> sphereDummyMetRough;
+  std::unique_ptr<vgeu::VgeuImage> sphereDummyEmissive;
+  vk::raii::DescriptorSet sphereDummyDescriptorSet = nullptr;
 
   // Light animation accumulator
   float lightAnimTime = 0.f;
