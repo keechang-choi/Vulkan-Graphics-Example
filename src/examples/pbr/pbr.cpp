@@ -210,7 +210,7 @@ void VgeExample::setupDynamicUbo() {
   {
     size_t idx = findInstances("floor")[0];
     dynamicUbo[idx].modelMatrix = glm::scale(glm::mat4{1.f}, glm::vec3{10.f, 10.f, 10.f});
-    dynamicUbo[idx].modelColor  = glm::vec4{1.f, 0.f, 0.f, 0.3f};
+    dynamicUbo[idx].modelColor  = glm::vec4{0.f, 0.f, 0.f, 0.f};
   }
   const float helmetScale = 1.0f;
   for (int i = 0; i < opts.modelNumZ; i++) {
@@ -225,7 +225,7 @@ void VgeExample::setupDynamicUbo() {
       dynamicUbo[idx].modelMatrix = glm::rotate(dynamicUbo[idx].modelMatrix, glm::radians(-90.f), right);
       dynamicUbo[idx].modelMatrix = glm::scale(dynamicUbo[idx].modelMatrix,
                                                glm::vec3{helmetScale, helmetScale, helmetScale});
-      dynamicUbo[idx].modelColor  = glm::vec4{1.f, 0.f, 0.f, 0.3f};
+      dynamicUbo[idx].modelColor  = glm::vec4{0.f, 0.f, 0.f, 0.f};
     }
   }
   // Sphere instances: row i (Z axis) = metallic 0→1, col j (X axis) = roughness 0→1
