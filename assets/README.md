@@ -19,3 +19,7 @@
 6. metal plate
    - CC0
    - https://polyhaven.com/a/metal_plate
+7. pirate-gold
+   - https://freepbr.com/product/pirate-gold-pbr/
+8. hdr
+   - https://polyhaven.com/a/tree_lined_driveway

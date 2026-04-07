@@ -28,6 +28,7 @@ struct Options {
   float lightIntensity = 1.0f;
   bool showDebugViews = true;
   bool useSpheres = false;
+  bool useMaterial = false;
   std::array<float, 4> sphereAlbedo = {1.0f, 1.0f, 1.0f, 1.0f};
   bool useDirectionalLight = false;
   std::array<float, 3> dirLightDir = {0.f, -1.f, -1.f};  // world-space direction toward light
@@ -75,7 +76,7 @@ struct ModelInstance {
   int animationIndex = -1;
   float animationTime = 0.f;
   vgeu::TransformComponent transform;
-  enum class SceneMode { kModelOnly, kSphereOnly };
+  enum class SceneMode { kModelOnly, kSphereOnly, kSphereWithMaterial };
   SceneMode sceneMode = SceneMode::kModelOnly;
   ModelInstance(){};
   ModelInstance(const ModelInstance& o) = delete;

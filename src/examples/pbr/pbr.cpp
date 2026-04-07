@@ -77,7 +77,10 @@ void VgeExample::onUpdateUIOverlay() {
       ImGui::Checkbox("Show Debug Views", &opts.showDebugViews);
       ImGui::Checkbox("Use Spheres", &opts.useSpheres);
       if (opts.useSpheres) {
-        uiOverlay->colorPicker("Sphere Albedo", opts.sphereAlbedo.data());
+        ImGui::Checkbox("Use Material", &opts.useMaterial);
+        if (!opts.useMaterial) {
+          uiOverlay->colorPicker("Sphere Albedo", opts.sphereAlbedo.data());
+        }
       }
       ImGui::Separator();
       ImGui::Checkbox("Directional Light", &opts.useDirectionalLight);
@@ -193,6 +196,26 @@ void VgeExample::loadAssets() {
     }
   }
 
+  // Pirate-gold sphere model (with gltf material textures)
+  std::shared_ptr<vgeu::glTF::Model> pirateGold = std::make_shared<vgeu::glTF::Model>(
+      device, globalAllocator->getAllocator(), queue, commandPool, MAX_CONCURRENT_FRAMES);
+  pirateGold->descriptorBindingFlags =
+      vgeu::DescriptorBindingFlagBits::kImageBaseColor |
+      vgeu::DescriptorBindingFlagBits::kImageNormalMap |
+      vgeu::DescriptorBindingFlagBits::kImageMetallicRoughness |
+      vgeu::DescriptorBindingFlagBits::kImageEmissive;
+  pirateGold->loadFromFile(
+      getAssetsPath() + "/models/sphere/pirate-gold/pirate-gold-pbr.gltf", glTFLoadingFlags);
+  for (int i = 0; i < opts.modelNumZ; i++) {
+    for (int j = 0; j < opts.modelNumX; j++) {
+      ModelInstance inst{};
+      inst.model = pirateGold;
+      inst.name  = "pirateGold_" + std::to_string(i) + "-" + std::to_string(j);
+      inst.sceneMode = ModelInstance::SceneMode::kSphereWithMaterial;
+      addModelInstance(std::move(inst));
+    }
+  }
+
   // 1x1 dummy textures for sphere draw calls:
   //   albedo  = white     (overridden by modelColor via modelColor.a=1.0)
   //   normal  = flat +Z   (128,128,255 -> tangent-space (0,0,1) -> passes geometric normal through)
@@ -248,6 +271,22 @@ void VgeExample::setupDynamicUbo() {
       dynamicUbo[idx].pbrOverride = glm::vec4(metallic, roughness, 1.0f, 0.0f);
       dynamicUbo[idx].modelColor  = glm::vec4(opts.sphereAlbedo[0], opts.sphereAlbedo[1],
                                                opts.sphereAlbedo[2], 1.0f);
+    }
+  }
+  // Pirate-gold sphere instances: same grid positions, use gltf material (no pbrOverride)
+  const float pirateGoldScale = 1.5f;
+  for (int i = 0; i < opts.modelNumZ; i++) {
+    for (int j = 0; j < opts.modelNumX; j++) {
+      size_t idx = findInstances(
+          "pirateGold_" + std::to_string(i) + "-" + std::to_string(j))[0];
+      const float x = -((opts.modelNumX - 1) * opts.spacingX * 0.5f) + j * opts.spacingX;
+      const float z = -((opts.modelNumZ - 1) * opts.spacingZ * 0.5f) + i * opts.spacingZ;
+      const float y = -4.f;
+      dynamicUbo[idx].modelMatrix = glm::translate(glm::mat4{1.f}, glm::vec3{x, y, z});
+      dynamicUbo[idx].modelMatrix = glm::scale(dynamicUbo[idx].modelMatrix,
+                                               glm::vec3{pirateGoldScale, pirateGoldScale, pirateGoldScale});
+      dynamicUbo[idx].pbrOverride = glm::vec4(0.f, 0.f, 0.f, 0.f);  // use material textures
+      dynamicUbo[idx].modelColor  = glm::vec4{0.f, 0.f, 0.f, 0.f};
     }
   }
 }
@@ -831,6 +870,9 @@ void VgeExample::buildCommandBuffers() {
       // Skip instances that belong to the inactive mode
       if (inst.sceneMode == ModelInstance::SceneMode::kModelOnly && opts.useSpheres) continue;
       if (inst.sceneMode == ModelInstance::SceneMode::kSphereOnly && !opts.useSpheres) continue;
+      if (inst.sceneMode == ModelInstance::SceneMode::kSphereOnly && opts.useMaterial) continue;
+      if (inst.sceneMode == ModelInstance::SceneMode::kSphereWithMaterial && !opts.useSpheres) continue;
+      if (inst.sceneMode == ModelInstance::SceneMode::kSphereWithMaterial && !opts.useMaterial) continue;
 
       cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayoutOffScreen, 1,
           {*descriptorSets.dynamicUboDescriptorSets[currentFrameIndex]},
