@@ -154,7 +154,7 @@ void Texture2D::loadFromFile(const std::string filename,
 
   this->width = static_cast<uint32_t>(texWidth);
   this->height = static_cast<uint32_t>(texHeight);
-  assert(texChannels == 4 && "texture channel not rgba");
+  // STBI_rgb_alpha forces 4 bytes/pixel regardless of original channel count
 
   uint32_t pixelSize = 4;
   vk::Format format = vk::Format::eR8G8B8A8Unorm;

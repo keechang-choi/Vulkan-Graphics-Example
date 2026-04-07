@@ -12,7 +12,7 @@ struct Options {
   float moveSpeed = 10.f;
   glm::mat4 cameraView{1.f};
   int32_t debugDisplayTarget = 0;
-  int32_t numTargets = 10;
+  int32_t numTargets = 11;
   float farClamp = 50.f;
   int32_t modelNumX = 4;
   int32_t modelNumZ = 4;
@@ -29,6 +29,7 @@ struct Options {
   bool showDebugViews = true;
   bool useSpheres = false;
   bool useMaterial = false;
+  float heightScale = 0.03f;
   std::array<float, 4> sphereAlbedo = {1.0f, 1.0f, 1.0f, 1.0f};
   bool useDirectionalLight = false;
   std::array<float, 3> dirLightDir = {0.f, -1.f, -1.f};  // world-space direction toward light
@@ -44,6 +45,8 @@ struct DynamicUboElt {
 struct UniformDataOffscreen {
   glm::mat4 projection{1.f};
   glm::mat4 view{1.f};
+  glm::vec4 viewPos{0.f};
+  float heightScale{0.05f};
 };
 
 struct Light {
@@ -171,9 +174,9 @@ class VgeExample : public VgeBase {
   struct FrameBuffer {
     uint32_t width, height;
     std::vector<vk::raii::Framebuffer> frameBuffers;
-    std::vector<std::unique_ptr<vgeu::VgeuImage>> position, normal, albedo, arm, emissive;
+    std::vector<std::unique_ptr<vgeu::VgeuImage>> position, normal, albedo, arm, emissive, heightAttach;
     std::vector<std::unique_ptr<vgeu::VgeuImage>> depth;
-    const size_t numAttachments = 6;
+    const size_t numAttachments = 7;
     vk::raii::RenderPass renderPass = nullptr;
     std::vector<bool> isFirstFrame;
   } offScreenFrameBuf;
@@ -187,6 +190,13 @@ class VgeExample : public VgeBase {
   std::unique_ptr<vgeu::VgeuImage> sphereDummyEmissive;
   vk::raii::DescriptorSetLayout sphereImageSetLayout = nullptr;
   vk::raii::DescriptorSet sphereDummyDescriptorSet = nullptr;
+
+  // Height map (set 4): pirate-gold uses real texture, others use white dummy (no parallax)
+  std::unique_ptr<vgeu::Texture2D> pirateGoldHeightTexture;
+  std::unique_ptr<vgeu::VgeuImage> sphereDummyHeight;
+  vk::raii::DescriptorSetLayout heightMapDescriptorSetLayout = nullptr;
+  vk::raii::DescriptorSet pirateGoldHeightDescriptorSet = nullptr;
+  vk::raii::DescriptorSet sphereDummyHeightDescriptorSet = nullptr;
 
   // Light animation accumulator
   float lightAnimTime = 0.f;

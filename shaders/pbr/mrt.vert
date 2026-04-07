@@ -6,10 +6,12 @@ layout (location = 2) in vec4 inColor;
 layout (location = 3) in vec3 inNormal;
 layout (location = 4) in vec3 inTangent;
 
-layout (set = 0, binding = 0) uniform UBO 
+layout (set = 0, binding = 0) uniform UBO
 {
 	mat4 projection;
     mat4 view;
+    vec4 viewPos;
+    float heightScale;
 } ubo;
 
 layout (set = 1, binding = 0) uniform ModelUbo
@@ -25,17 +27,15 @@ layout (location = 2) out vec4 outColor;
 layout (location = 3) out vec4 outWorldPos;
 layout (location = 4) out vec3 outTangent;
 
-void main() 
+void main()
 {
-	// gl_InstanceIndex
-	// discard vertex color
 	outColor = modelUbo.modelColor;
 	outColor.a = clamp(outColor.a, 0.0, 1.0);
 	outUV = inUV;
-	mat4 worldTransform =  modelUbo.modelMatrix;
+	mat4 worldTransform = modelUbo.modelMatrix;
 	outWorldPos = worldTransform * vec4(inPos.xyz, 1.0);
 	gl_Position = ubo.projection * ubo.view * outWorldPos;
-	
+
 	mat3 normalMatrix = inverse(transpose(mat3(worldTransform)));
 	outNormal = normalize(normalMatrix * inNormal);
 	outTangent = normalize(normalMatrix * inTangent);

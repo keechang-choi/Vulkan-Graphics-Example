@@ -6,6 +6,7 @@ layout (set = 0, binding = 2) uniform sampler2D samplerAlbedo;
 layout (set = 0, binding = 3) uniform sampler2D samplerArm;
 layout (set = 0, binding = 4) uniform sampler2D samplerEmissive;
 layout (set = 0, binding = 5) uniform sampler2D samplerDepth;
+layout (set = 0, binding = 7) uniform sampler2D samplerHeight;
 
 layout (location = 0) in vec2 inUV;
 layout (constant_id = 0) const int DISPLAY_TARGET_INDEX = 0;
@@ -113,6 +114,7 @@ void main() {
                 outFragColor.rgb = vec3(1.0 - clamp(ld, 0.0, 1.0));
                 break;
             }
+            case 10: outFragColor.rgb = texture(samplerHeight, inUV).rrr; break;
         }
         outFragColor.a = 1.0;
         return;

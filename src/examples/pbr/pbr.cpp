@@ -78,7 +78,9 @@ void VgeExample::onUpdateUIOverlay() {
       ImGui::Checkbox("Use Spheres", &opts.useSpheres);
       if (opts.useSpheres) {
         ImGui::Checkbox("Use Material", &opts.useMaterial);
-        if (!opts.useMaterial) {
+        if (opts.useMaterial) {
+          ImGui::DragFloat("Height Scale", &opts.heightScale, 0.001f, 0.0f, 0.1f, "%.3f");
+        } else {
           uiOverlay->colorPicker("Sphere Albedo", opts.sphereAlbedo.data());
         }
       }
@@ -225,6 +227,12 @@ void VgeExample::loadAssets() {
   sphereDummyNormal   = createDummyTexture({128, 128, 255, 255});
   sphereDummyMetRough = createDummyTexture({255, 128,   0, 255});  // AO=1, roughness≈0.5, metallic=0
   sphereDummyEmissive = createDummyTexture({0,     0,   0, 255});
+
+  // Height map: pirate-gold uses real texture; others use white (height=1 → no parallax)
+  pirateGoldHeightTexture = std::make_unique<vgeu::Texture2D>(
+      getAssetsPath() + "/models/sphere/pirate-gold/pirate-gold_height.png",
+      device, globalAllocator->getAllocator(), queue, commandPool);
+  sphereDummyHeight = createDummyTexture({255, 255, 255, 255});
 }
 
 void VgeExample::setupDynamicUbo() {
@@ -325,11 +333,13 @@ void VgeExample::prepareOffScreenFrameBuffer() {
         vk::Format::eR16G16B16A16Sfloat, vk::ImageUsageFlagBits::eColorAttachment));
     offScreenFrameBuf.emissive.push_back(createAttachment(
         vk::Format::eR16G16B16A16Sfloat, vk::ImageUsageFlagBits::eColorAttachment));
+    offScreenFrameBuf.heightAttach.push_back(createAttachment(
+        vk::Format::eR8G8B8A8Unorm, vk::ImageUsageFlagBits::eColorAttachment));
     offScreenFrameBuf.depth.push_back(createAttachment(
         depthFormat, vk::ImageUsageFlagBits::eDepthStencilAttachment));
   }
 
-  // Render pass with 5 color attachments + depth
+  // Render pass with 6 color attachments (pos, norm, albedo, arm, emissive, height) + depth
   std::vector<vk::AttachmentDescription> attachmentDescs;
   for (uint32_t i = 0; i < offScreenFrameBuf.numAttachments; i++) {
     attachmentDescs.emplace_back(
@@ -344,12 +354,13 @@ void VgeExample::prepareOffScreenFrameBuffer() {
   attachmentDescs[2].format = offScreenFrameBuf.albedo[0]->getFormat();
   attachmentDescs[3].format = offScreenFrameBuf.arm[0]->getFormat();
   attachmentDescs[4].format = offScreenFrameBuf.emissive[0]->getFormat();
-  attachmentDescs[5].format = offScreenFrameBuf.depth[0]->getFormat();
+  attachmentDescs[5].format = offScreenFrameBuf.heightAttach[0]->getFormat();
+  attachmentDescs[6].format = offScreenFrameBuf.depth[0]->getFormat();
 
   std::vector<vk::AttachmentReference> colorRefs;
-  for (uint32_t i = 0; i < 5; i++)
+  for (uint32_t i = 0; i < 6; i++)
     colorRefs.emplace_back(i, vk::ImageLayout::eColorAttachmentOptimal);
-  vk::AttachmentReference depthRef(5, vk::ImageLayout::eDepthStencilAttachmentOptimal);
+  vk::AttachmentReference depthRef(6, vk::ImageLayout::eDepthStencilAttachmentOptimal);
   vk::SubpassDescription subpass({}, vk::PipelineBindPoint::eGraphics, {}, colorRefs, {}, &depthRef);
 
   std::vector<vk::SubpassDependency> deps;
@@ -377,12 +388,13 @@ void VgeExample::prepareOffScreenFrameBuffer() {
 
   offScreenFrameBuf.frameBuffers.reserve(MAX_CONCURRENT_FRAMES);
   for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
-    std::array<vk::ImageView, 6> attachments{
+    std::array<vk::ImageView, 7> attachments{
         *offScreenFrameBuf.position[i]->getImageView(),
         *offScreenFrameBuf.normal[i]->getImageView(),
         *offScreenFrameBuf.albedo[i]->getImageView(),
         *offScreenFrameBuf.arm[i]->getImageView(),
         *offScreenFrameBuf.emissive[i]->getImageView(),
+        *offScreenFrameBuf.heightAttach[i]->getImageView(),
         *offScreenFrameBuf.depth[i]->getImageView()};
     offScreenFrameBuf.frameBuffers.push_back(vk::raii::Framebuffer(device,
         vk::FramebufferCreateInfo({}, *offScreenFrameBuf.renderPass, attachments,
@@ -445,24 +457,28 @@ void VgeExample::setupDescriptors() {
       MAX_CONCURRENT_FRAMES /*dynamic*/);
   poolSizes.emplace_back(vk::DescriptorType::eCombinedImageSampler,
       static_cast<uint32_t>(MAX_CONCURRENT_FRAMES * offScreenFrameBuf.numAttachments)
-          + 4u /*sphere dummy: 4 combined image samplers*/);
+          + 4u /*sphere dummy: 4 combined image samplers*/
+          + 2u /*height map: pirate-gold + dummy*/);
 
   vk::DescriptorPoolCreateInfo poolCI(
       vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
       MAX_CONCURRENT_FRAMES /*composition*/ +
       MAX_CONCURRENT_FRAMES * 2 /*offscreen + dynamic*/ +
       MAX_CONCURRENT_FRAMES /*sprite*/ +
-      1u /*sphere dummy*/,
+      1u /*sphere dummy*/ +
+      2u /*height map: pirate-gold + dummy*/,
       poolSizes);
   descriptorPool = vk::raii::DescriptorPool(device, poolCI);
 
-  // Composition descriptor set layout: bindings 0-5 = G-buffer samplers, binding 6 = UBO
+  // Composition descriptor set layout: bindings 0-5 = G-buffer samplers, 6 = UBO, 7 = height G-buffer
   {
     std::vector<vk::DescriptorSetLayoutBinding> bindings;
     for (uint32_t b = 0; b < 6; b++)
       bindings.emplace_back(b, vk::DescriptorType::eCombinedImageSampler, 1,
                             vk::ShaderStageFlagBits::eFragment);
     bindings.emplace_back(6, vk::DescriptorType::eUniformBuffer, 1,
+                          vk::ShaderStageFlagBits::eFragment);
+    bindings.emplace_back(7, vk::DescriptorType::eCombinedImageSampler, 1,
                           vk::ShaderStageFlagBits::eFragment);
     compositionDescriptorSetLayout = vk::raii::DescriptorSetLayout(
         device, vk::DescriptorSetLayoutCreateInfo({}, bindings));
@@ -474,7 +490,7 @@ void VgeExample::setupDescriptors() {
   // Offscreen UBO descriptor set layout: binding 0 = UniformDataOffscreen
   {
     vk::DescriptorSetLayoutBinding binding(0, vk::DescriptorType::eUniformBuffer, 1,
-                                           vk::ShaderStageFlagBits::eVertex);
+        vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment);
     offScreenUboDescriptorSetLayout = vk::raii::DescriptorSetLayout(
         device, vk::DescriptorSetLayoutCreateInfo({}, binding));
   }
@@ -499,13 +515,22 @@ void VgeExample::setupDescriptors() {
         device, vk::DescriptorSetLayoutCreateInfo({}, bindings));
   }
 
-  // Offscreen pipeline layout: set0=offscreenUBO, set1=dynamicUBO, set2=modelImage, set3=modelUBO
+  // Height map descriptor set layout: 1 CombinedImageSampler (binding 0, fragment stage)
+  {
+    vk::DescriptorSetLayoutBinding binding(0, vk::DescriptorType::eCombinedImageSampler, 1,
+        vk::ShaderStageFlagBits::eFragment);
+    heightMapDescriptorSetLayout = vk::raii::DescriptorSetLayout(
+        device, vk::DescriptorSetLayoutCreateInfo({}, binding));
+  }
+
+  // Offscreen pipeline layout: set0=offscreenUBO, set1=dynamicUBO, set2=modelImage, set3=modelUBO, set4=heightMap
   {
     std::vector<vk::DescriptorSetLayout> setLayouts = {
         *offScreenUboDescriptorSetLayout,
         *dynamicUboDescriptorSetLayout,
         *sphereImageSetLayout,
-        *modelInstances[0].model->descriptorSetLayoutUbo};
+        *modelInstances[0].model->descriptorSetLayoutUbo,
+        *heightMapDescriptorSetLayout};
     pipelineLayoutOffScreen = vk::raii::PipelineLayout(
         device, vk::PipelineLayoutCreateInfo({}, setLayouts));
   }
@@ -549,24 +574,28 @@ void VgeExample::setupDescriptors() {
           *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
       auto emissInfo = offScreenFrameBuf.emissive[i]->descriptorImageInfo(
           *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
-      auto depthInfo = offScreenFrameBuf.depth[i]->descriptorImageInfo(
+      auto depthInfo  = offScreenFrameBuf.depth[i]->descriptorImageInfo(
+          *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
+      auto heightInfo = offScreenFrameBuf.heightAttach[i]->descriptorImageInfo(
           *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
 
       std::vector<vk::WriteDescriptorSet> writes;
       writes.emplace_back(*descriptorSets.composition[i], 0, 0,
-          vk::DescriptorType::eCombinedImageSampler, posInfo,   nullptr);
+          vk::DescriptorType::eCombinedImageSampler, posInfo,    nullptr);
       writes.emplace_back(*descriptorSets.composition[i], 1, 0,
-          vk::DescriptorType::eCombinedImageSampler, normInfo,  nullptr);
+          vk::DescriptorType::eCombinedImageSampler, normInfo,   nullptr);
       writes.emplace_back(*descriptorSets.composition[i], 2, 0,
-          vk::DescriptorType::eCombinedImageSampler, albInfo,   nullptr);
+          vk::DescriptorType::eCombinedImageSampler, albInfo,    nullptr);
       writes.emplace_back(*descriptorSets.composition[i], 3, 0,
-          vk::DescriptorType::eCombinedImageSampler, armInfo,   nullptr);
+          vk::DescriptorType::eCombinedImageSampler, armInfo,    nullptr);
       writes.emplace_back(*descriptorSets.composition[i], 4, 0,
-          vk::DescriptorType::eCombinedImageSampler, emissInfo, nullptr);
+          vk::DescriptorType::eCombinedImageSampler, emissInfo,  nullptr);
       writes.emplace_back(*descriptorSets.composition[i], 5, 0,
-          vk::DescriptorType::eCombinedImageSampler, depthInfo, nullptr);
+          vk::DescriptorType::eCombinedImageSampler, depthInfo,  nullptr);
       writes.emplace_back(*descriptorSets.composition[i], 6, 0,
           vk::DescriptorType::eUniformBuffer, nullptr, bufInfo);
+      writes.emplace_back(*descriptorSets.composition[i], 7, 0,
+          vk::DescriptorType::eCombinedImageSampler, heightInfo, nullptr);
       device.updateDescriptorSets(writes, nullptr);
     }
   }
@@ -647,6 +676,28 @@ void VgeExample::setupDescriptors() {
     writes.emplace_back(*sphereDummyDescriptorSet, 3, 0,
         vk::DescriptorType::eCombinedImageSampler, emissInfo, nullptr);
     device.updateDescriptorSets(writes, nullptr);
+  }
+
+  // Height map descriptor sets (set 4)
+  {
+    vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool, *heightMapDescriptorSetLayout);
+
+    pirateGoldHeightDescriptorSet = std::move(
+        vk::raii::DescriptorSets(device, allocInfo).front());
+    auto pgHeightInfo = pirateGoldHeightTexture->descriptorInfo;
+    device.updateDescriptorSets(
+        vk::WriteDescriptorSet(*pirateGoldHeightDescriptorSet, 0, 0,
+            vk::DescriptorType::eCombinedImageSampler, pgHeightInfo, nullptr),
+        nullptr);
+
+    sphereDummyHeightDescriptorSet = std::move(
+        vk::raii::DescriptorSets(device, allocInfo).front());
+    auto dummyHeightInfo = sphereDummyHeight->descriptorImageInfo(
+        *colorSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
+    device.updateDescriptorSets(
+        vk::WriteDescriptorSet(*sphereDummyHeightDescriptorSet, 0, 0,
+            vk::DescriptorType::eCombinedImageSampler, dummyHeightInfo, nullptr),
+        nullptr);
   }
 }
 
@@ -739,7 +790,7 @@ void VgeExample::preparePipelines() {
         vgeu::glTF::VertexComponent::kTangent});
     rasterizationSCI.cullMode = vk::CullModeFlagBits::eNone;
 
-    std::array<vk::PipelineColorBlendAttachmentState, 5> blendAttachments;
+    std::array<vk::PipelineColorBlendAttachmentState, 6> blendAttachments;
     blendAttachments.fill(blendAttachment);
     colorBlendSCI.setAttachments(blendAttachments);
 
@@ -834,6 +885,8 @@ void VgeExample::updateUboComposition() {
 void VgeExample::updateUboOffScreen() {
   uniformDataOffscreen.projection = camera.getProjection();
   uniformDataOffscreen.view       = camera.getView();
+  uniformDataOffscreen.viewPos    = glm::vec4(camera.getPosition(), 0.f) * glm::vec4(-1.f, 1.f, -1.f, 1.f);
+  uniformDataOffscreen.heightScale = opts.heightScale;
   std::memcpy(uniformBuffers[currentFrameIndex].offScreen->getMappedData(),
               &uniformDataOffscreen, sizeof(UniformDataOffscreen));
 }
@@ -844,9 +897,9 @@ void VgeExample::buildCommandBuffers() {
 
   // --- Pass 1: G-Buffer offscreen ---
   {
-    std::array<vk::ClearValue, 6> clearValues;
-    for (int i = 0; i < 5; i++) clearValues[i].color = vk::ClearColorValue(0.f, 0.f, 0.f, 0.f);
-    clearValues[5].depthStencil = vk::ClearDepthStencilValue(1.f, 0);
+    std::array<vk::ClearValue, 7> clearValues;
+    for (int i = 0; i < 6; i++) clearValues[i].color = vk::ClearColorValue(0.f, 0.f, 0.f, 0.f);
+    clearValues[6].depthStencil = vk::ClearDepthStencilValue(1.f, 0);
 
     cmd.beginRenderPass(
         vk::RenderPassBeginInfo(
@@ -877,6 +930,16 @@ void VgeExample::buildCommandBuffers() {
       cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayoutOffScreen, 1,
           {*descriptorSets.dynamicUboDescriptorSets[currentFrameIndex]},
           static_cast<uint32_t>(alignedSizeDynamicUboElt * instIdx));
+
+      // Bind height map at set 4: pirate-gold uses real texture, all others use white dummy
+      {
+        vk::DescriptorSet heightSet =
+            (inst.sceneMode == ModelInstance::SceneMode::kSphereWithMaterial)
+                ? *pirateGoldHeightDescriptorSet
+                : *sphereDummyHeightDescriptorSet;
+        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayoutOffScreen, 4,
+            {heightSet}, nullptr);
+      }
 
       if (inst.sceneMode == ModelInstance::SceneMode::kSphereOnly) {
         // Bind dummy textures at set 2; skip kBindImages so model::draw() doesn't override them.
@@ -941,7 +1004,7 @@ void VgeExample::buildCommandBuffers() {
 
     // Display target sub-viewports (debug G-buffer views, top-right corner) - drawn last to stay on top
     if (opts.showDebugViews) {
-      const int kRows = 5;
+      const int kRows = 6;
       const int kCols = (opts.numTargets - 1) / kRows + 1;
       const float scale = 1.f / static_cast<float>(kRows);
       const float vw = w * scale, vh = h * scale;
