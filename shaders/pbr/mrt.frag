@@ -107,10 +107,16 @@ void main()
 	}
 	outNormal = vec4(N, 1.0);
 
-	// ARM: override or from texture
+	// ARM: absolute override, multiplier adjust, or raw from texture
 	vec3 arm = vec3(0.0);
 	if (modelUbo.pbrOverride.z > 0.5) {
+		// Plain sphere: absolute metallic/roughness
 		arm = vec3(1.0, modelUbo.pbrOverride.y, modelUbo.pbrOverride.x);
+	} else if (modelUbo.pbrOverride.w > 0.5) {
+		// Material sphere: multiply texture ARM by grid-based multipliers
+		arm = texture(samplerMetallicRoughnessMap, uv).rgb;
+		arm.g *= modelUbo.pbrOverride.y;  // roughness multiplier
+		arm.b *= modelUbo.pbrOverride.x;  // metallic multiplier
 	} else {
 		arm = texture(samplerMetallicRoughnessMap, uv).rgb;
 	}

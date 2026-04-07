@@ -293,7 +293,11 @@ void VgeExample::setupDynamicUbo() {
       dynamicUbo[idx].modelMatrix = glm::translate(glm::mat4{1.f}, glm::vec3{x, y, z});
       dynamicUbo[idx].modelMatrix = glm::scale(dynamicUbo[idx].modelMatrix,
                                                glm::vec3{pirateGoldScale, pirateGoldScale, pirateGoldScale});
-      dynamicUbo[idx].pbrOverride = glm::vec4(0.f, 0.f, 0.f, 0.f);  // use material textures
+      float metallic  = (opts.modelNumZ <= 1) ? 0.0f
+                      : static_cast<float>(i) / static_cast<float>(opts.modelNumZ - 1);
+      float roughness = (opts.modelNumX <= 1) ? 0.0f
+                      : static_cast<float>(j) / static_cast<float>(opts.modelNumX - 1);
+      dynamicUbo[idx].pbrOverride = glm::vec4(metallic, roughness, 0.0f, 1.0f);  // adjust mode
       dynamicUbo[idx].modelColor  = glm::vec4{0.f, 0.f, 0.f, 0.f};
     }
   }
