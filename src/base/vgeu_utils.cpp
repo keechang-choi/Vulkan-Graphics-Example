@@ -581,6 +581,12 @@ void setImageLayout(const vk::raii::CommandBuffer& commandBuffer,
     case vk::ImageLayout::ePreinitialized:
       srcAccessMask = vk::AccessFlagBits::eHostWrite;
       break;
+    case vk::ImageLayout::eColorAttachmentOptimal:
+      srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+      break;
+    case vk::ImageLayout::eShaderReadOnlyOptimal:
+      srcAccessMask = vk::AccessFlagBits::eShaderRead;
+      break;
     case vk::ImageLayout::eGeneral:  // srcAccessMask is empty
     case vk::ImageLayout::eUndefined:
       break;
@@ -594,6 +600,12 @@ void setImageLayout(const vk::raii::CommandBuffer& commandBuffer,
     case vk::ImageLayout::eGeneral:
     case vk::ImageLayout::ePreinitialized:
       srcStage = vk::PipelineStageFlagBits::eHost;
+      break;
+    case vk::ImageLayout::eColorAttachmentOptimal:
+      srcStage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+      break;
+    case vk::ImageLayout::eShaderReadOnlyOptimal:
+      srcStage = vk::PipelineStageFlagBits::eFragmentShader;
       break;
     case vk::ImageLayout::eTransferSrcOptimal:
     case vk::ImageLayout::eTransferDstOptimal:
