@@ -57,6 +57,7 @@ void VgeExample::prepare() {
   setupDynamicUbo();
   prepareOffScreenFrameBuffer();
   prepareUniformBuffers();
+  prepareIBL();
   setupDescriptors();
   preparePipelines();
   prepared = true;
@@ -111,6 +112,8 @@ void VgeExample::onUpdateUIOverlay() {
                        100.f, "%.1f");
       ImGui::DragFloat("Ambient Strength", &opts.ambientStrength, 0.005f, 0.0f,
                        0.5f, "%.3f");
+      ImGui::Separator();
+      ImGui::Checkbox("Use IBL", &opts.useIBL);
       ImGui::TreePop();
     }
   }
@@ -1426,15 +1429,18 @@ void VgeExample::setupDescriptors() {
       vk::DescriptorType::eCombinedImageSampler,
       static_cast<uint32_t>(MAX_CONCURRENT_FRAMES *
                             offScreenFrameBuf.numAttachments) +
-          4u /*sphere dummy: 4 combined image samplers*/
-          + 2u /*height map: pirate-gold + dummy*/);
+          4u   /*sphere dummy: 4 combined image samplers*/
+          + 2u /*height map: pirate-gold + dummy*/
+          + 3u * MAX_CONCURRENT_FRAMES /*IBL: irradiance, prefilter, brdfLut*/
+          + 1u * MAX_CONCURRENT_FRAMES /*skybox: envCubemap*/);
 
   vk::DescriptorPoolCreateInfo poolCI(
       vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
       MAX_CONCURRENT_FRAMES /*composition*/ +
           MAX_CONCURRENT_FRAMES * 2 /*offscreen + dynamic*/ +
           MAX_CONCURRENT_FRAMES /*sprite*/ + 1u /*sphere dummy*/ +
-          2u /*height map: pirate-gold + dummy*/,
+          2u /*height map: pirate-gold + dummy*/ +
+          MAX_CONCURRENT_FRAMES /*IBL*/ + MAX_CONCURRENT_FRAMES /*skybox*/,
       poolSizes);
   descriptorPool = vk::raii::DescriptorPool(device, poolCI);
 
@@ -1451,10 +1457,28 @@ void VgeExample::setupDescriptors() {
                           vk::ShaderStageFlagBits::eFragment);
     compositionDescriptorSetLayout = vk::raii::DescriptorSetLayout(
         device, vk::DescriptorSetLayoutCreateInfo({}, bindings));
+  }
 
+  // IBL descriptor set layout: set=1 in pbr.frag (irradiance, prefilter,
+  // brdfLut)
+  {
+    std::vector<vk::DescriptorSetLayoutBinding> iblBindings;
+    iblBindings.emplace_back(0, vk::DescriptorType::eCombinedImageSampler, 1,
+                             vk::ShaderStageFlagBits::eFragment);
+    iblBindings.emplace_back(1, vk::DescriptorType::eCombinedImageSampler, 1,
+                             vk::ShaderStageFlagBits::eFragment);
+    iblBindings.emplace_back(2, vk::DescriptorType::eCombinedImageSampler, 1,
+                             vk::ShaderStageFlagBits::eFragment);
+    iblDescriptorSetLayout = vk::raii::DescriptorSetLayout(
+        device, vk::DescriptorSetLayoutCreateInfo({}, iblBindings));
+  }
+
+  // pipelineLayoutComposition: set=0 G-buffer + UBO, set=1 IBL
+  {
+    std::array<vk::DescriptorSetLayout, 2> compLayouts = {
+        *compositionDescriptorSetLayout, *iblDescriptorSetLayout};
     pipelineLayoutComposition = vk::raii::PipelineLayout(
-        device,
-        vk::PipelineLayoutCreateInfo({}, *compositionDescriptorSetLayout));
+        device, vk::PipelineLayoutCreateInfo({}, compLayouts));
   }
 
   // Offscreen UBO descriptor set layout: binding 0 = UniformDataOffscreen
@@ -1699,6 +1723,76 @@ void VgeExample::setupDescriptors() {
                                dummyHeightInfo, nullptr),
         nullptr);
   }
+
+  // IBL descriptor sets (composition set=1): irradiance, prefilter, brdfLut
+  {
+    vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
+                                            *iblDescriptorSetLayout);
+    iblDescriptorSets.reserve(MAX_CONCURRENT_FRAMES);
+    for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++)
+      iblDescriptorSets.push_back(
+          std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
+
+    for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      auto irradInfo = irradianceMap->descriptorImageInfo(
+          *iblSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
+      auto prefInfo = prefilteredMap->descriptorImageInfo(
+          *iblSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
+      auto brdfInfo = brdfLut->descriptorImageInfo(
+          *iblSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
+
+      std::vector<vk::WriteDescriptorSet> writes;
+      writes.emplace_back(*iblDescriptorSets[i], 0, 0,
+                          vk::DescriptorType::eCombinedImageSampler, irradInfo,
+                          nullptr);
+      writes.emplace_back(*iblDescriptorSets[i], 1, 0,
+                          vk::DescriptorType::eCombinedImageSampler, prefInfo,
+                          nullptr);
+      writes.emplace_back(*iblDescriptorSets[i], 2, 0,
+                          vk::DescriptorType::eCombinedImageSampler, brdfInfo,
+                          nullptr);
+      device.updateDescriptorSets(writes, nullptr);
+    }
+  }
+
+  // Skybox descriptor set layout: binding=0 samplerCube envCubemap
+  {
+    vk::DescriptorSetLayoutBinding envBinding(
+        0, vk::DescriptorType::eCombinedImageSampler, 1,
+        vk::ShaderStageFlagBits::eFragment);
+    skyboxDescriptorSetLayout = vk::raii::DescriptorSetLayout(
+        device, vk::DescriptorSetLayoutCreateInfo({}, envBinding));
+  }
+
+  // Skybox pipeline layout: set=0 skyboxDescriptorSetLayout, push constant
+  // view+proj
+  {
+    vk::PushConstantRange pcRange(vk::ShaderStageFlagBits::eVertex, 0,
+                                  sizeof(SkyboxPushConstants));
+    skyboxPipelineLayout = vk::raii::PipelineLayout(
+        device,
+        vk::PipelineLayoutCreateInfo({}, *skyboxDescriptorSetLayout, pcRange));
+  }
+
+  // Skybox descriptor sets
+  {
+    vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
+                                            *skyboxDescriptorSetLayout);
+    skyboxDescriptorSets.reserve(MAX_CONCURRENT_FRAMES);
+    for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++)
+      skyboxDescriptorSets.push_back(
+          std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
+
+    auto envInfo = envCubemap->descriptorImageInfo(
+        *iblSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
+    for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      device.updateDescriptorSets(
+          vk::WriteDescriptorSet(*skyboxDescriptorSets[i], 0, 0,
+                                 vk::DescriptorType::eCombinedImageSampler,
+                                 envInfo, nullptr),
+          nullptr);
+    }
+  }
 }
 
 void VgeExample::preparePipelines() {
@@ -1847,6 +1941,40 @@ void VgeExample::preparePipelines() {
         &dynamicSCI, *pipelineLayoutSprite, *renderPass);
     pipelines.sprite = vk::raii::Pipeline(device, pipelineCache, pipelineCI);
   }
+
+  // --- Skybox pipeline ---
+  {
+    auto vertCode = vgeu::readFile(getShadersPath() + "/pbr/skybox.vert.spv");
+    auto fragCode = vgeu::readFile(getShadersPath() + "/pbr/skybox.frag.spv");
+    auto vertModule = vgeu::createShaderModule(device, vertCode);
+    auto fragModule = vgeu::createShaderModule(device, fragCode);
+
+    std::array<vk::PipelineShaderStageCreateInfo, 2> stages{
+        vk::PipelineShaderStageCreateInfo({}, vk::ShaderStageFlagBits::eVertex,
+                                          *vertModule, "main", nullptr),
+        vk::PipelineShaderStageCreateInfo({},
+                                          vk::ShaderStageFlagBits::eFragment,
+                                          *fragModule, "main", nullptr)};
+
+    vk::PipelineVertexInputStateCreateInfo emptyVertexSCI{};
+    // Front face cull: camera is inside the box
+    rasterizationSCI.cullMode = vk::CullModeFlagBits::eFront;
+
+    // Depth test ON, depth write OFF; depth comparison eLessOrEqual so depth=1
+    // passes
+    vk::PipelineDepthStencilStateCreateInfo skyboxDepthSCI(
+        {}, true /*depthTestEnable*/, false /*depthWriteEnable*/,
+        vk::CompareOp::eLessOrEqual, false, false, stencilOpState,
+        stencilOpState);
+
+    colorBlendSCI.setAttachments(blendAttachment);
+
+    vk::GraphicsPipelineCreateInfo pipelineCI(
+        {}, stages, &emptyVertexSCI, &inputAssemblySCI, nullptr, &viewportSCI,
+        &rasterizationSCI, &multisampleSCI, &skyboxDepthSCI, &colorBlendSCI,
+        &dynamicSCI, *skyboxPipelineLayout, *renderPass);
+    skyboxPipeline = vk::raii::Pipeline(device, pipelineCache, pipelineCI);
+  }
 }
 
 void VgeExample::updateUboComposition() {
@@ -1887,6 +2015,7 @@ void VgeExample::updateUboComposition() {
       glm::vec3(opts.dirLightDir[0], opts.dirLightDir[1], opts.dirLightDir[2]));
   uniformDataComposition.dirLightDir = glm::vec4(dir, 0.f);
   uniformDataComposition.dirLightColor = glm::vec3(1.f) * opts.lightIntensity;
+  uniformDataComposition.useIBL = opts.useIBL ? 1 : 0;
 
   std::memcpy(uniformBuffers[currentFrameIndex].composition->getMappedData(),
               &uniformDataComposition, sizeof(UniformDataComposition));
@@ -2013,7 +2142,25 @@ void VgeExample::buildCommandBuffers() {
     cmd.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics, *pipelineLayoutComposition, 0,
         {*descriptorSets.composition[currentFrameIndex]}, nullptr);
+    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                           *pipelineLayoutComposition, 1,
+                           {*iblDescriptorSets[currentFrameIndex]}, nullptr);
     cmd.draw(3, 1, 0, 0);  // big triangle
+
+    // Skybox (behind everything, only when IBL is enabled)
+    if (opts.useIBL) {
+      cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *skyboxPipeline);
+      cmd.bindDescriptorSets(
+          vk::PipelineBindPoint::eGraphics, *skyboxPipelineLayout, 0,
+          {*skyboxDescriptorSets[currentFrameIndex]}, nullptr);
+      SkyboxPushConstants skyboxPC;
+      // Remove translation from view matrix for skybox
+      skyboxPC.view = glm::mat4(glm::mat3(camera.getView()));
+      skyboxPC.projection = camera.getProjection();
+      cmd.pushConstants<SkyboxPushConstants>(
+          *skyboxPipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, skyboxPC);
+      cmd.draw(36, 1, 0, 0);
+    }
 
     // Sprite forward pass (billboard quads for each point light; skip in
     // directional mode)
@@ -2031,14 +2178,15 @@ void VgeExample::buildCommandBuffers() {
       cmd.draw(6, static_cast<uint32_t>(opts.numLights), 0, 0);
     }
 
-    // Rebind composition descriptor set before displayTargets loop.
-    // After the sprite pass, set 0 is bound with pipelineLayoutSprite.
-    // displayTargets pipelines use pipelineLayoutComposition, which is
-    // incompatible for set 0. Rebinding here prevents
-    // VUID-vkCmdDraw-None-02697.
+    // Rebind composition descriptor sets (set=0 and set=1) before
+    // displayTargets loop. After sprite/skybox passes, bound layouts are
+    // incompatible with pipelineLayoutComposition.
     cmd.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics, *pipelineLayoutComposition, 0,
         {*descriptorSets.composition[currentFrameIndex]}, nullptr);
+    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                           *pipelineLayoutComposition, 1,
+                           {*iblDescriptorSets[currentFrameIndex]}, nullptr);
 
     // Display target sub-viewports (debug G-buffer views, top-right corner) -
     // drawn last to stay on top

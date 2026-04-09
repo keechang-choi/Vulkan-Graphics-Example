@@ -8,6 +8,11 @@ layout (set = 0, binding = 4) uniform sampler2D samplerEmissive;
 layout (set = 0, binding = 5) uniform sampler2D samplerDepth;
 layout (set = 0, binding = 7) uniform sampler2D samplerHeight;
 
+// IBL textures (set=1)
+layout (set = 1, binding = 0) uniform samplerCube irradianceMap;
+layout (set = 1, binding = 1) uniform samplerCube prefilteredMap;
+layout (set = 1, binding = 2) uniform sampler2D   brdfLut;
+
 layout (location = 0) in vec2 inUV;
 layout (constant_id = 0) const int DISPLAY_TARGET_INDEX = 0;
 layout (location = 0) out vec4 outFragColor;
@@ -34,6 +39,8 @@ layout (set = 0, binding = 6) uniform UBO {
     vec4 dirLightDir;    // xyz = direction toward light (normalized)
     vec3 dirLightColor;
     float _pad2;
+    int useIBL;
+    int _pad3[3];
 } ubo;
 
 // Normal Distribution: Trowbridge-Reitz GGX
@@ -62,6 +69,11 @@ float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
 // Fresnel-Schlick
 vec3 FresnelSchlick(float cosTheta, vec3 F0) {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+vec3 FresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness) {
+    return F0 + (max(vec3(1.0 - roughness), F0) - F0)
+           * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
 vec3 PBR(vec3 N, vec3 V, vec3 L, vec3 radiance,
@@ -139,7 +151,24 @@ void main() {
         }
     }
 
-    vec3 ambient = vec3(ubo.ambientStrength) * albedo * ao;
+    vec3 ambient;
+    if (ubo.useIBL != 0) {
+        vec3 kS = FresnelSchlickRoughness(max(dot(N, V), 0.0), F0, roughness);
+        vec3 kD = (1.0 - kS) * (1.0 - metallic);
+        vec3 irradiance = texture(irradianceMap, N).rgb;
+        vec3 diffuse = irradiance * albedo;
+
+        const float MAX_REFLECTION_LOD = 9.0;
+        vec3 R = reflect(-V, N);
+        vec3 prefilteredColor = textureLod(prefilteredMap, R,
+                                           roughness * MAX_REFLECTION_LOD).rgb;
+        vec2 brdf = texture(brdfLut, vec2(max(dot(N, V), 0.0), roughness)).rg;
+        vec3 specular = prefilteredColor * (kS * brdf.x + brdf.y);
+
+        ambient = (kD * diffuse + specular) * ao;
+    } else {
+        ambient = vec3(ubo.ambientStrength) * albedo * ao;
+    }
     vec3 color = ambient + Lo + emissive;
 
     // Reinhard tone mapping
