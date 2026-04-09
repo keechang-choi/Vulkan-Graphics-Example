@@ -566,7 +566,7 @@ vk::raii::ShaderModule createShaderModule(const vk::raii::Device& device,
 }
 
 void setImageLayout(const vk::raii::CommandBuffer& commandBuffer,
-                    vk::Image image,
+                    vk::Image image, vk::Format /*format*/,
                     vk::ImageSubresourceRange imageSubresourceRange,
                     vk::ImageLayout oldImageLayout,
                     vk::ImageLayout newImageLayout) {
@@ -685,8 +685,8 @@ void setImageLayout(const vk::raii::CommandBuffer& commandBuffer,
 
   vk::ImageSubresourceRange imageSubresourceRange(aspectMask, baseMipLevel,
                                                   levelCount, 0, 1);
-  setImageLayout(commandBuffer, image, imageSubresourceRange, oldImageLayout,
-                 newImageLayout);
+  setImageLayout(commandBuffer, image, format, imageSubresourceRange,
+                 oldImageLayout, newImageLayout);
 }
 
 size_t padBufferSize(const vk::raii::PhysicalDevice physicalDevice,
