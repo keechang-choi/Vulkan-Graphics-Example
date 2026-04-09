@@ -35,6 +35,9 @@ struct Options {
   std::array<float, 3> dirLightDir = {
       0.f, -1.f, -1.f};  // world-space direction toward light
   float ambientStrength = 0.03f;
+  bool useIBL = false;
+  float iblExposure = 4.5f;
+  float iblGamma = 2.2f;
 };
 
 struct DynamicUboElt {
@@ -73,6 +76,8 @@ struct alignas(64) UniformDataComposition {
       dirLightDir;  // xyz = direction toward light (normalized), w = unused
   glm::vec3 dirLightColor;  // pre-multiplied with intensity
   float _pad2;
+  int useIBL{0};
+  int _pad3[3];
 };
 
 struct ModelInstance {
@@ -89,6 +94,15 @@ struct ModelInstance {
   ModelInstance& operator=(const ModelInstance& other) = delete;
   ModelInstance(ModelInstance&& other);
   ModelInstance& operator=(ModelInstance&& other);
+};
+
+struct CaptureUbo {
+  glm::mat4 mvp;
+};
+
+struct SkyboxPushConstants {
+  glm::mat4 view;        // translation 제거한 view
+  glm::mat4 projection;  // 총 128바이트
 };
 
 struct SpritePushConstants {
@@ -206,6 +220,35 @@ public:
 
   // Light animation accumulator
   float lightAnimTime = 0.f;
+
+  // IBL 텍스처 (startup 1회 생성)
+  std::unique_ptr<vgeu::VgeuImage> hdrTexture;
+  std::unique_ptr<vgeu::VgeuImage> envCubemap;
+  std::unique_ptr<vgeu::VgeuImage> irradianceMap;
+  std::unique_ptr<vgeu::VgeuImage> prefilteredMap;
+  std::unique_ptr<vgeu::VgeuImage> brdfLut;
+  vk::raii::Sampler iblSampler = nullptr;
+
+  // IBL descriptor (composition set=1)
+  vk::raii::DescriptorSetLayout iblDescriptorSetLayout = nullptr;
+  std::vector<vk::raii::DescriptorSet> iblDescriptorSets;
+
+  // Skybox
+  vk::raii::Pipeline skyboxPipeline = nullptr;
+  vk::raii::PipelineLayout skyboxPipelineLayout = nullptr;
+  vk::raii::DescriptorSetLayout skyboxDescriptorSetLayout = nullptr;
+  std::vector<vk::raii::DescriptorSet> skyboxDescriptorSets;
+  std::unique_ptr<vgeu::VgeuBuffer> skyboxUboBuffer;  // per-frame, view+proj
+
+  // IBL 생성 함수
+  void prepareIBL();
+  void loadHdrTexture();
+  void buildEnvCubemap();
+  void buildIrradianceMap();
+  void buildPrefilteredMap();
+  void buildBrdfLut();
+  void prepareSkyboxPipeline();
+  void prepareSkyboxDescriptors();
 };
 
 }  // namespace vge
