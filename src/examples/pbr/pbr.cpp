@@ -320,7 +320,8 @@ void VgeExample::buildEnvCubemap() {
   envCubemap = std::make_unique<vgeu::VgeuImage>(
       device, globalAllocator->getAllocator(), fmt, vk::Extent2D{dim, dim},
       vk::ImageTiling::eOptimal,
-      vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst,
+      vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst |
+          vk::ImageUsageFlagBits::eTransferSrc,
       vk::ImageLayout::eUndefined, VmaMemoryUsage::VMA_MEMORY_USAGE_AUTO,
       VmaAllocationCreateFlagBits::VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
       vk::ImageAspectFlagBits::eColor, numMips, true /*isCubemap*/);
@@ -530,17 +531,14 @@ void VgeExample::buildEnvCubemap() {
 
   vgeu::oneTimeSubmit(
       device, commandPool, queue, [&](const vk::raii::CommandBuffer& cmd) {
+        // mip[0] is in eTransferSrcOptimal (transitioned at end of first
+        // submit) mips[1..N-1] are in eTransferDstOptimal
         uint32_t mipWidth = dim, mipHeight = dim;
         for (uint32_t m = 1; m < numMips; ++m) {
           uint32_t nextW = mipWidth > 1 ? mipWidth / 2 : 1u;
           uint32_t nextH = mipHeight > 1 ? mipHeight / 2 : 1u;
 
-          vgeu::setImageLayout(cmd, envCubemap->getImage(), fmt,
-                               vk::ImageSubresourceRange{
-                                   vk::ImageAspectFlagBits::eColor, m, 1, 0, 6},
-                               vk::ImageLayout::eTransferDstOptimal,
-                               vk::ImageLayout::eTransferDstOptimal);
-
+          // Blit from mip[m-1] (SRC) to mip[m] (DST)
           vk::ImageBlit blit(
               vk::ImageSubresourceLayers{vk::ImageAspectFlagBits::eColor, m - 1,
                                          0, 6},
@@ -554,13 +552,24 @@ void VgeExample::buildEnvCubemap() {
               envCubemap->getImage(), vk::ImageLayout::eTransferDstOptimal,
               blit, vk::Filter::eLinear);
 
-          vgeu::setImageLayout(cmd, envCubemap->getImage(), fmt,
-                               vk::ImageSubresourceRange{
-                                   vk::ImageAspectFlagBits::eColor, m, 1, 0, 6},
-                               vk::ImageLayout::eTransferDstOptimal,
-                               vk::ImageLayout::eShaderReadOnlyOptimal);
+          // mip[m-1] is done as source — transition to SHADER_READ_ONLY
+          vgeu::setImageLayout(
+              cmd, envCubemap->getImage(), fmt,
+              vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, m - 1,
+                                        1, 0, 6},
+              vk::ImageLayout::eTransferSrcOptimal,
+              vk::ImageLayout::eShaderReadOnlyOptimal);
 
-          if (m == numMips - 1) {
+          if (m < numMips - 1) {
+            // Prepare mip[m] as SRC for the next blit iteration
+            vgeu::setImageLayout(
+                cmd, envCubemap->getImage(), fmt,
+                vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, m, 1,
+                                          0, 6},
+                vk::ImageLayout::eTransferDstOptimal,
+                vk::ImageLayout::eTransferSrcOptimal);
+          } else {
+            // Last mip: DST → SHADER_READ_ONLY
             vgeu::setImageLayout(
                 cmd, envCubemap->getImage(), fmt,
                 vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, m, 1,
@@ -568,14 +577,10 @@ void VgeExample::buildEnvCubemap() {
                 vk::ImageLayout::eTransferDstOptimal,
                 vk::ImageLayout::eShaderReadOnlyOptimal);
           }
+
           mipWidth = nextW;
           mipHeight = nextH;
         }
-        vgeu::setImageLayout(cmd, envCubemap->getImage(), fmt,
-                             vk::ImageSubresourceRange{
-                                 vk::ImageAspectFlagBits::eColor, 0, 1, 0, 6},
-                             vk::ImageLayout::eTransferSrcOptimal,
-                             vk::ImageLayout::eShaderReadOnlyOptimal);
       });
 }
 
@@ -1957,8 +1962,8 @@ void VgeExample::preparePipelines() {
                                           *fragModule, "main", nullptr)};
 
     vk::PipelineVertexInputStateCreateInfo emptyVertexSCI{};
-    // Front face cull: camera is inside the box
-    rasterizationSCI.cullMode = vk::CullModeFlagBits::eFront;
+    // No culling: camera is inside the box, inner faces need to be visible
+    rasterizationSCI.cullMode = vk::CullModeFlagBits::eNone;
 
     // Depth test ON, depth write OFF; depth comparison eLessOrEqual so depth=1
     // passes
