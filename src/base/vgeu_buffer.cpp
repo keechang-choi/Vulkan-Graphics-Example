@@ -116,6 +116,51 @@ VgeuImage::VgeuImage(const vk::raii::Device& device, VmaAllocator allocator,
   assert(static_cast<VkImageView>(*imageView) != VK_NULL_HANDLE);
 }
 
+VgeuImage::VgeuImage(const vk::raii::Device& device, VmaAllocator allocator,
+                     vk::Format format, const vk::Extent2D& extent,
+                     vk::ImageTiling tiling, vk::ImageUsageFlags usage,
+                     vk::ImageLayout initialLayout, VmaMemoryUsage memUsage,
+                     VmaAllocationCreateFlags allocCreateFlags,
+                     vk::ImageAspectFlags aspectMask, uint32_t mipLevels,
+                     bool isCubemap)
+    : allocator(allocator), format(format) {
+  const uint32_t layers = isCubemap ? 6u : 1u;
+
+  VkImageCreateInfo vkImageCI{};
+  vkImageCI.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+  vkImageCI.flags = isCubemap ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0u;
+  vkImageCI.imageType = VK_IMAGE_TYPE_2D;
+  vkImageCI.format = static_cast<VkFormat>(format);
+  vkImageCI.extent.width = extent.width;
+  vkImageCI.extent.height = extent.height;
+  vkImageCI.extent.depth = 1;
+  vkImageCI.mipLevels = mipLevels;
+  vkImageCI.arrayLayers = layers;
+  vkImageCI.samples = VK_SAMPLE_COUNT_1_BIT;
+  vkImageCI.tiling = static_cast<VkImageTiling>(tiling);
+  vkImageCI.usage = static_cast<VkImageUsageFlags>(usage);
+  vkImageCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  vkImageCI.initialLayout = static_cast<VkImageLayout>(initialLayout);
+
+  VmaAllocationCreateInfo allocCI{};
+  allocCI.usage = memUsage;
+  allocCI.flags = allocCreateFlags;
+
+  VkImage vkImage = VK_NULL_HANDLE;
+  VkResult result = vmaCreateImage(allocator, &vkImageCI, &allocCI, &vkImage,
+                                   &alloc, &allocInfo);
+  assert(result == VK_SUCCESS && "VMA ERROR: failed to create cubemap image.");
+  image = vk::Image(vkImage);
+
+  auto viewType = isCubemap ? vk::ImageViewType::eCube : vk::ImageViewType::e2D;
+  imageView = vk::raii::ImageView(
+      device,
+      vk::ImageViewCreateInfo(
+          vk::ImageViewCreateFlags(), image, viewType, format, {},
+          vk::ImageSubresourceRange{aspectMask, 0, mipLevels, 0, layers}));
+  assert(static_cast<VkImageView>(*imageView) != VK_NULL_HANDLE);
+}
+
 VgeuImage::~VgeuImage() {
   // std::cout << "Call: VgeuImage Destructor" << std::endl;
   vmaDestroyImage(allocator, static_cast<VkImage>(image), alloc);

@@ -15,7 +15,7 @@ namespace vgeu {
 
 // custom VMA allcator for RAII paradigm(for destruction order)
 class VgeuAllocator {
- public:
+public:
   VgeuAllocator(VkDevice device, VkPhysicalDevice physicalDevice,
                 VkInstance instance, uint32_t apiVersion);
   ~VgeuAllocator();
@@ -26,7 +26,7 @@ class VgeuAllocator {
   VmaAllocator getAllocator() const { return allocator; };
   VmaAllocator operator*() const { return allocator; };
 
- private:
+private:
   // NOTE: allocator should be free after all members destruction,
   // not first(in Base destructor)
   // Also, should be initialized with nullptr or check not null when destruct.
@@ -34,7 +34,7 @@ class VgeuAllocator {
 };
 
 class VgeuBuffer {
- public:
+public:
   VgeuBuffer(VmaAllocator allocator, vk::DeviceSize instanceSize,
              uint32_t instanceCount, vk::BufferUsageFlags usageFlags,
              VmaMemoryUsage memUsage,
@@ -52,7 +52,7 @@ class VgeuBuffer {
   vk::DeviceSize getBufferSize() const { return bufferSize; }
   uint32_t getInstanceCount() const { return instanceCount; }
 
- private:
+private:
   VmaAllocator allocator = VK_NULL_HANDLE;
   vk::DeviceSize instanceSize;
   uint32_t instanceCount;
@@ -62,7 +62,7 @@ class VgeuBuffer {
   VmaAllocationInfo allocInfo{};
 };
 class VgeuImage {
- public:
+public:
   // TODO: look into reasons for separate image view
   // device, aspectMask, mipLevels for image view
   VgeuImage(const vk::raii::Device& device, VmaAllocator allocator,
@@ -71,6 +71,15 @@ class VgeuImage {
             vk::ImageLayout initialLayout, VmaMemoryUsage memUsage,
             VmaAllocationCreateFlags allocCreateFlags,
             vk::ImageAspectFlags aspectMask, uint32_t mipLevels);
+  // Cubemap variant: arrayLayers=6, VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT,
+  // viewType=eCube
+  VgeuImage(const vk::raii::Device& device, VmaAllocator allocator,
+            vk::Format format, const vk::Extent2D& extent,
+            vk::ImageTiling tiling, vk::ImageUsageFlags usage,
+            vk::ImageLayout initialLayout, VmaMemoryUsage memUsage,
+            VmaAllocationCreateFlags allocCreateFlags,
+            vk::ImageAspectFlags aspectMask, uint32_t mipLevels,
+            bool isCubemap);
   ~VgeuImage();
 
   VgeuImage(const VgeuImage&) = delete;
@@ -82,7 +91,7 @@ class VgeuImage {
   vk::DescriptorImageInfo descriptorImageInfo(vk::Sampler sampler,
                                               vk::ImageLayout imageLayout);
 
- private:
+private:
   VmaAllocator allocator = VK_NULL_HANDLE;
   vk::Format format;
   vk::Image image = nullptr;
