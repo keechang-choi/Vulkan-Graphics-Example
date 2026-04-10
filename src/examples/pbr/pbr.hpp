@@ -228,6 +228,9 @@ public:
   std::unique_ptr<vgeu::VgeuImage> prefilteredMap;
   std::unique_ptr<vgeu::VgeuImage> brdfLut;
   vk::raii::Sampler iblSampler = nullptr;
+  vk::raii::Sampler hdrSampler = nullptr;
+  glm::mat4 captureProj;
+  std::vector<glm::mat4> captureViews;
 
   // IBL descriptor (composition set=1)
   vk::raii::DescriptorSetLayout iblDescriptorSetLayout = nullptr;

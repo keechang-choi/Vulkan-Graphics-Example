@@ -339,7 +339,8 @@ void VgeExample::buildEnvCubemap() {
       globalAllocator->getAllocator(), sizeof(CaptureUbo), 1,
       vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_AUTO,
       VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-          VMA_ALLOCATION_CREATE_MAPPED_BIT);
+          VMA_ALLOCATION_CREATE_MAPPED_BIT |
+          VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
 
   vk::AttachmentDescription attDesc(
       {}, fmt, vk::SampleCountFlagBits::e1, vk::AttachmentLoadOp::eClear,
@@ -405,7 +406,7 @@ void VgeExample::buildEnvCubemap() {
                              uboBufInfo),
       nullptr);
   auto hdrImgInfo = hdrTexture->descriptorImageInfo(
-      *iblSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
+      *hdrSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
   device.updateDescriptorSets(
       vk::WriteDescriptorSet(*hdrDS, 0, 0,
                              vk::DescriptorType::eCombinedImageSampler,
@@ -451,21 +452,6 @@ void VgeExample::buildEnvCubemap() {
           {}, stages, &emptyVI, &iaCI, nullptr, &vpCI, &rasCI, &msCI, &dsCI,
           &cbCI, &dynCI, *capturePipelineLayout, *captureRenderPass));
 
-  std::vector<glm::mat4> rotMatrices = {
-      glm::rotate(
-          glm::rotate(glm::mat4(1.f), glm::radians(90.f), glm::vec3(0, 1, 0)),
-          glm::radians(180.f), glm::vec3(1, 0, 0)),
-      glm::rotate(
-          glm::rotate(glm::mat4(1.f), glm::radians(-90.f), glm::vec3(0, 1, 0)),
-          glm::radians(180.f), glm::vec3(1, 0, 0)),
-      glm::rotate(glm::mat4(1.f), glm::radians(-90.f), glm::vec3(1, 0, 0)),
-      glm::rotate(glm::mat4(1.f), glm::radians(90.f), glm::vec3(1, 0, 0)),
-      glm::rotate(glm::mat4(1.f), glm::radians(180.f), glm::vec3(1, 0, 0)),
-      glm::rotate(glm::mat4(1.f), glm::radians(180.f), glm::vec3(0, 0, 1)),
-  };
-  glm::mat4 captureProj =
-      glm::perspective(glm::radians(90.f), 1.f, 0.1f, 512.f);
-
   vgeu::oneTimeSubmit(
       device, commandPool, queue, [&](const vk::raii::CommandBuffer& cmd) {
         vgeu::setImageLayout(
@@ -482,7 +468,7 @@ void VgeExample::buildEnvCubemap() {
 
         for (uint32_t f = 0; f < 6; ++f) {
           CaptureUbo uboData;
-          uboData.mvp = captureProj * rotMatrices[f];
+          uboData.mvp = captureProj * captureViews[f];
           std::memcpy(captureUboBuf->getMappedData(), &uboData,
                       sizeof(CaptureUbo));
 
@@ -720,21 +706,6 @@ void VgeExample::buildIrradianceMap() {
           {}, stages, &emptyVI, &iaCI, nullptr, &vpCI, &rasCI, &msCI, &dsCI,
           &cbCI, &dynCI, *capturePipelineLayout, *captureRenderPass));
 
-  std::vector<glm::mat4> rotMatrices = {
-      glm::rotate(
-          glm::rotate(glm::mat4(1.f), glm::radians(90.f), glm::vec3(0, 1, 0)),
-          glm::radians(180.f), glm::vec3(1, 0, 0)),
-      glm::rotate(
-          glm::rotate(glm::mat4(1.f), glm::radians(-90.f), glm::vec3(0, 1, 0)),
-          glm::radians(180.f), glm::vec3(1, 0, 0)),
-      glm::rotate(glm::mat4(1.f), glm::radians(-90.f), glm::vec3(1, 0, 0)),
-      glm::rotate(glm::mat4(1.f), glm::radians(90.f), glm::vec3(1, 0, 0)),
-      glm::rotate(glm::mat4(1.f), glm::radians(180.f), glm::vec3(1, 0, 0)),
-      glm::rotate(glm::mat4(1.f), glm::radians(180.f), glm::vec3(0, 0, 1)),
-  };
-  glm::mat4 captureProj =
-      glm::perspective(glm::radians(90.f), 1.f, 0.1f, 512.f);
-
   struct IrradiancePush {
     float deltaPhi;
     float deltaTheta;
@@ -758,7 +729,7 @@ void VgeExample::buildIrradianceMap() {
 
         for (uint32_t f = 0; f < 6; ++f) {
           CaptureUbo uboData;
-          uboData.mvp = captureProj * rotMatrices[f];
+          uboData.mvp = captureProj * captureViews[f];
           std::memcpy(captureUboBuf->getMappedData(), &uboData,
                       sizeof(CaptureUbo));
 
@@ -944,21 +915,6 @@ void VgeExample::buildPrefilteredMap() {
           {}, stages, &emptyVI, &iaCI, nullptr, &vpCI, &rasCI, &msCI, &dsCI,
           &cbCI, &dynCI, *capturePipelineLayout, *captureRenderPass));
 
-  std::vector<glm::mat4> rotMatrices = {
-      glm::rotate(
-          glm::rotate(glm::mat4(1.f), glm::radians(90.f), glm::vec3(0, 1, 0)),
-          glm::radians(180.f), glm::vec3(1, 0, 0)),
-      glm::rotate(
-          glm::rotate(glm::mat4(1.f), glm::radians(-90.f), glm::vec3(0, 1, 0)),
-          glm::radians(180.f), glm::vec3(1, 0, 0)),
-      glm::rotate(glm::mat4(1.f), glm::radians(-90.f), glm::vec3(1, 0, 0)),
-      glm::rotate(glm::mat4(1.f), glm::radians(90.f), glm::vec3(1, 0, 0)),
-      glm::rotate(glm::mat4(1.f), glm::radians(180.f), glm::vec3(1, 0, 0)),
-      glm::rotate(glm::mat4(1.f), glm::radians(180.f), glm::vec3(0, 0, 1)),
-  };
-  glm::mat4 captureProj =
-      glm::perspective(glm::radians(90.f), 1.f, 0.1f, 512.f);
-
   struct PrefilterPush {
     float roughness;
     uint32_t numSamples;
@@ -985,7 +941,7 @@ void VgeExample::buildPrefilteredMap() {
 
           for (uint32_t f = 0; f < 6; ++f) {
             CaptureUbo uboData;
-            uboData.mvp = captureProj * rotMatrices[f];
+            uboData.mvp = captureProj * captureViews[f];
             std::memcpy(captureUboBuf->getMappedData(), &uboData,
                         sizeof(CaptureUbo));
 
@@ -1144,6 +1100,31 @@ void VgeExample::prepareIBL() {
       static_cast<float>(static_cast<uint32_t>(std::floor(std::log2(512))) + 1),
       vk::BorderColor::eFloatOpaqueWhite);
   iblSampler = vk::raii::Sampler(device, samplerCI);
+  vk::SamplerCreateInfo hdrSamplerCI(
+      {}, vk::Filter::eLinear, vk::Filter::eLinear,
+      vk::SamplerMipmapMode::eLinear, vk::SamplerAddressMode::eRepeat,
+      vk::SamplerAddressMode::eClampToEdge,
+      vk::SamplerAddressMode::eClampToEdge, 0.f, false, 1.f, false,
+      vk::CompareOp::eNever, 0.f,
+      static_cast<float>(static_cast<uint32_t>(std::floor(std::log2(512))) + 1),
+      vk::BorderColor::eFloatOpaqueWhite);
+  hdrSampler = vk::raii::Sampler(device, hdrSamplerCI);
+
+  captureProj = glm::perspective(glm::radians(90.f), 1.f, 0.1f, 512.f);
+  captureViews = std::vector<glm::mat4>{
+      // +X
+      glm::lookAt(glm::vec3(0), glm::vec3(1, 0, 0), glm::vec3(0, -1, 0)),
+      // -X
+      glm::lookAt(glm::vec3(0), glm::vec3(-1, 0, 0), glm::vec3(0, -1, 0)),
+      // +Y
+      glm::lookAt(glm::vec3(0), glm::vec3(0, 1, 0), glm::vec3(0, 0, 1)),
+      // -Y
+      glm::lookAt(glm::vec3(0), glm::vec3(0, -1, 0), glm::vec3(0, 0, -1)),
+      // +Z
+      glm::lookAt(glm::vec3(0), glm::vec3(0, 0, 1), glm::vec3(0, -1, 0)),
+      // -Z
+      glm::lookAt(glm::vec3(0), glm::vec3(0, 0, -1), glm::vec3(0, -1, 0)),
+  };
 
   loadHdrTexture();
   buildEnvCubemap();
