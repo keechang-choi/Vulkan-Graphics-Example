@@ -92,6 +92,16 @@ vec3 PBR(vec3 N, vec3 V, vec3 L, vec3 radiance,
 }
 
 void main() {
+    // Write G-buffer depth so the skybox (depth=1.0) only renders in background.
+    float gDepth = texture(samplerDepth, inUV).r;
+    gl_FragDepth = gDepth;
+
+    // Background pixels have no geometry — skip PBR, skybox will cover them.
+    if (gDepth >= 1.0) {
+        outFragColor = vec4(0.0, 0.0, 0.0, 1.0);
+        return;
+    }
+
     vec3 fragPos = texture(samplerPosition, inUV).rgb;
     vec3 N       = normalize(texture(samplerNormal, inUV).rgb);
     vec4 albedoSample = texture(samplerAlbedo, inUV);
