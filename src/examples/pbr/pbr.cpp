@@ -1792,6 +1792,11 @@ void VgeExample::preparePipelines() {
         vk::raii::Pipeline(device, pipelineCache, pipelineCI);
 
     // Derivative pipelines for debug display targets
+    // Disable depth test/write so debug views always render on top of the scene
+    vk::PipelineDepthStencilStateCreateInfo noDepthSCI(
+        {}, false, false, vk::CompareOp::eAlways, false, false, stencilOpState,
+        stencilOpState);
+    pipelineCI.pDepthStencilState = &noDepthSCI;
     pipelineCI.flags = vk::PipelineCreateFlagBits::eDerivative;
     pipelineCI.basePipelineHandle = *pipelines.composition;
     pipelineCI.basePipelineIndex = -1;
@@ -1804,6 +1809,7 @@ void VgeExample::preparePipelines() {
           {}, vk::ShaderStageFlagBits::eFragment, *fragModule, "main", &si);
       pipelines.displayTargets.emplace_back(device, pipelineCache, pipelineCI);
     }
+    pipelineCI.pDepthStencilState = &depthStencilSCI;
   }
 
   // --- G-Buffer (offscreen MRT) pipeline ---
