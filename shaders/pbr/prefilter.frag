@@ -1,11 +1,11 @@
 // shaders/pbr/prefilter.frag
 #version 450
 
-layout(set = 1, binding = 0) uniform samplerCube envMap;
+layout(set = 0, binding = 0) uniform samplerCube envMap;
 
 layout(push_constant) uniform PushBlock {
-    float roughness;
-    uint  numSamples;
+    layout(offset = 64) float roughness;
+    layout(offset = 68) uint  numSamples;
 } push;
 
 layout(location = 0) in  vec3 inLocalPos;

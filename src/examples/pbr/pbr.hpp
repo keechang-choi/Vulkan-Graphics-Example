@@ -96,7 +96,7 @@ struct ModelInstance {
   ModelInstance& operator=(ModelInstance&& other);
 };
 
-struct CaptureUbo {
+struct CapturePushConstants {
   glm::mat4 mvp;
 };
 

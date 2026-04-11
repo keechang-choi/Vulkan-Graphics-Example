@@ -335,13 +335,6 @@ void VgeExample::buildEnvCubemap() {
       VmaAllocationCreateFlagBits::VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
       vk::ImageAspectFlagBits::eColor, 1);
 
-  auto captureUboBuf = std::make_unique<vgeu::VgeuBuffer>(
-      globalAllocator->getAllocator(), sizeof(CaptureUbo), 1,
-      vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_AUTO,
-      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-          VMA_ALLOCATION_CREATE_MAPPED_BIT |
-          VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
-
   vk::AttachmentDescription attDesc(
       {}, fmt, vk::SampleCountFlagBits::e1, vk::AttachmentLoadOp::eClear,
       vk::AttachmentStoreOp::eStore, vk::AttachmentLoadOp::eDontCare,
@@ -371,11 +364,6 @@ void VgeExample::buildEnvCubemap() {
       device, vk::FramebufferCreateInfo({}, *captureRenderPass, offscreenView,
                                         dim, dim, 1));
 
-  vk::DescriptorSetLayoutBinding uboBinding(
-      0, vk::DescriptorType::eUniformBuffer, 1,
-      vk::ShaderStageFlagBits::eVertex);
-  auto captureDSL = vk::raii::DescriptorSetLayout(
-      device, vk::DescriptorSetLayoutCreateInfo({}, uboBinding));
   vk::DescriptorSetLayoutBinding hdrBinding(
       0, vk::DescriptorType::eCombinedImageSampler, 1,
       vk::ShaderStageFlagBits::eFragment);
@@ -383,28 +371,17 @@ void VgeExample::buildEnvCubemap() {
       device, vk::DescriptorSetLayoutCreateInfo({}, hdrBinding));
 
   std::vector<vk::DescriptorPoolSize> poolSizes{
-      {vk::DescriptorType::eUniformBuffer, 1},
       {vk::DescriptorType::eCombinedImageSampler, 1}};
   auto capturePool = vk::raii::DescriptorPool(
       device,
       vk::DescriptorPoolCreateInfo(
-          vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, 2, poolSizes));
+          vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, 1, poolSizes));
 
-  auto captureUboDS =
-      std::move(vk::raii::DescriptorSets(device, vk::DescriptorSetAllocateInfo(
-                                                     *capturePool, *captureDSL))
-                    .front());
   auto hdrDS =
       std::move(vk::raii::DescriptorSets(device, vk::DescriptorSetAllocateInfo(
                                                      *capturePool, *hdrDSL))
                     .front());
 
-  auto uboBufInfo = captureUboBuf->descriptorInfo();
-  device.updateDescriptorSets(
-      vk::WriteDescriptorSet(*captureUboDS, 0, 0,
-                             vk::DescriptorType::eUniformBuffer, nullptr,
-                             uboBufInfo),
-      nullptr);
   auto hdrImgInfo = hdrTexture->descriptorImageInfo(
       *hdrSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
   device.updateDescriptorSets(
@@ -413,9 +390,11 @@ void VgeExample::buildEnvCubemap() {
                              hdrImgInfo, nullptr),
       nullptr);
 
-  std::vector<vk::DescriptorSetLayout> setLayouts{*captureDSL, *hdrDSL};
+  vk::PushConstantRange pcRange(vk::ShaderStageFlagBits::eVertex, 0,
+                                sizeof(CapturePushConstants));
+  std::vector<vk::DescriptorSetLayout> setLayouts{*hdrDSL};
   auto capturePipelineLayout = vk::raii::PipelineLayout(
-      device, vk::PipelineLayoutCreateInfo({}, setLayouts));
+      device, vk::PipelineLayoutCreateInfo({}, setLayouts, pcRange));
 
   auto vertCode = vgeu::readFile(getShadersPath() + "/pbr/equirect.vert.spv");
   auto fragCode = vgeu::readFile(getShadersPath() + "/pbr/equirect.frag.spv");
@@ -467,10 +446,8 @@ void VgeExample::buildEnvCubemap() {
         clearVal.color = vk::ClearColorValue(0.f, 0.f, 0.f, 1.f);
 
         for (uint32_t f = 0; f < 6; ++f) {
-          CaptureUbo uboData;
-          uboData.mvp = captureProj * captureViews[f];
-          std::memcpy(captureUboBuf->getMappedData(), &uboData,
-                      sizeof(CaptureUbo));
+          CapturePushConstants pc;
+          pc.mvp = captureProj * captureViews[f];
 
           cmd.beginRenderPass(
               vk::RenderPassBeginInfo(*captureRenderPass, *captureFBO,
@@ -482,8 +459,9 @@ void VgeExample::buildEnvCubemap() {
           cmd.setScissor(0, vk::Rect2D({}, vk::Extent2D{dim, dim}));
           cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *capturePipeline);
           cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                                 *capturePipelineLayout, 0,
-                                 {*captureUboDS, *hdrDS}, nullptr);
+                                 *capturePipelineLayout, 0, {*hdrDS}, nullptr);
+          cmd.pushConstants<CapturePushConstants>(
+              *capturePipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, pc);
           cmd.draw(36, 1, 0, 0);
           cmd.endRenderPass();
 
@@ -593,12 +571,6 @@ void VgeExample::buildIrradianceMap() {
       VmaAllocationCreateFlagBits::VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
       vk::ImageAspectFlagBits::eColor, 1);
 
-  auto captureUboBuf = std::make_unique<vgeu::VgeuBuffer>(
-      globalAllocator->getAllocator(), sizeof(CaptureUbo), 1,
-      vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_AUTO,
-      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-          VMA_ALLOCATION_CREATE_MAPPED_BIT);
-
   vk::AttachmentDescription attDesc(
       {}, fmt, vk::SampleCountFlagBits::e1, vk::AttachmentLoadOp::eClear,
       vk::AttachmentStoreOp::eStore, vk::AttachmentLoadOp::eDontCare,
@@ -627,11 +599,6 @@ void VgeExample::buildIrradianceMap() {
       device, vk::FramebufferCreateInfo({}, *captureRenderPass, offscreenView,
                                         dim, dim, 1));
 
-  vk::DescriptorSetLayoutBinding uboBinding(
-      0, vk::DescriptorType::eUniformBuffer, 1,
-      vk::ShaderStageFlagBits::eVertex);
-  auto captureDSL = vk::raii::DescriptorSetLayout(
-      device, vk::DescriptorSetLayoutCreateInfo({}, uboBinding));
   vk::DescriptorSetLayoutBinding envBinding(
       0, vk::DescriptorType::eCombinedImageSampler, 1,
       vk::ShaderStageFlagBits::eFragment);
@@ -639,27 +606,16 @@ void VgeExample::buildIrradianceMap() {
       device, vk::DescriptorSetLayoutCreateInfo({}, envBinding));
 
   std::vector<vk::DescriptorPoolSize> poolSizes{
-      {vk::DescriptorType::eUniformBuffer, 1},
       {vk::DescriptorType::eCombinedImageSampler, 1}};
   auto capturePool = vk::raii::DescriptorPool(
       device,
       vk::DescriptorPoolCreateInfo(
-          vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, 2, poolSizes));
-  auto captureUboDS =
-      std::move(vk::raii::DescriptorSets(device, vk::DescriptorSetAllocateInfo(
-                                                     *capturePool, *captureDSL))
-                    .front());
+          vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, 1, poolSizes));
   auto envDS =
       std::move(vk::raii::DescriptorSets(device, vk::DescriptorSetAllocateInfo(
                                                      *capturePool, *envDSL))
                     .front());
 
-  auto uboBufInfo = captureUboBuf->descriptorInfo();
-  device.updateDescriptorSets(
-      vk::WriteDescriptorSet(*captureUboDS, 0, 0,
-                             vk::DescriptorType::eUniformBuffer, nullptr,
-                             uboBufInfo),
-      nullptr);
   auto envImgInfo = envCubemap->descriptorImageInfo(
       *iblSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
   device.updateDescriptorSets(
@@ -668,10 +624,16 @@ void VgeExample::buildIrradianceMap() {
                              envImgInfo, nullptr),
       nullptr);
 
-  vk::PushConstantRange pcRange(vk::ShaderStageFlagBits::eFragment, 0, 8u);
-  std::vector<vk::DescriptorSetLayout> setLayouts{*captureDSL, *envDSL};
+  // vertex: mat4 mvp at offset 0 (64 bytes)
+  // fragment: IrradiancePush at offset 64 (8 bytes)
+  std::array<vk::PushConstantRange, 2> pcRanges{
+      vk::PushConstantRange(vk::ShaderStageFlagBits::eVertex, 0,
+                            sizeof(CapturePushConstants)),
+      vk::PushConstantRange(vk::ShaderStageFlagBits::eFragment,
+                            sizeof(CapturePushConstants), 8u)};
+  std::vector<vk::DescriptorSetLayout> setLayouts{*envDSL};
   auto capturePipelineLayout = vk::raii::PipelineLayout(
-      device, vk::PipelineLayoutCreateInfo({}, setLayouts, pcRange));
+      device, vk::PipelineLayoutCreateInfo({}, setLayouts, pcRanges));
 
   auto vertCode = vgeu::readFile(getShadersPath() + "/pbr/equirect.vert.spv");
   auto fragCode = vgeu::readFile(getShadersPath() + "/pbr/irradiance.frag.spv");
@@ -727,11 +689,14 @@ void VgeExample::buildIrradianceMap() {
         vk::ClearValue clearVal;
         clearVal.color = vk::ClearColorValue(0.f, 0.f, 0.f, 1.f);
 
+        // fragment push constants are the same for all faces
+        cmd.pushConstants<IrradiancePush>(
+            *capturePipelineLayout, vk::ShaderStageFlagBits::eFragment,
+            sizeof(CapturePushConstants), push);
+
         for (uint32_t f = 0; f < 6; ++f) {
-          CaptureUbo uboData;
-          uboData.mvp = captureProj * captureViews[f];
-          std::memcpy(captureUboBuf->getMappedData(), &uboData,
-                      sizeof(CaptureUbo));
+          CapturePushConstants pc;
+          pc.mvp = captureProj * captureViews[f];
 
           cmd.beginRenderPass(
               vk::RenderPassBeginInfo(*captureRenderPass, *captureFBO,
@@ -743,11 +708,9 @@ void VgeExample::buildIrradianceMap() {
           cmd.setScissor(0, vk::Rect2D({}, vk::Extent2D{dim, dim}));
           cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *capturePipeline);
           cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                                 *capturePipelineLayout, 0,
-                                 {*captureUboDS, *envDS}, nullptr);
-          cmd.pushConstants<IrradiancePush>(*capturePipelineLayout,
-                                            vk::ShaderStageFlagBits::eFragment,
-                                            0, push);
+                                 *capturePipelineLayout, 0, {*envDS}, nullptr);
+          cmd.pushConstants<CapturePushConstants>(
+              *capturePipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, pc);
           cmd.draw(36, 1, 0, 0);
           cmd.endRenderPass();
 
@@ -802,12 +765,6 @@ void VgeExample::buildPrefilteredMap() {
       VmaAllocationCreateFlagBits::VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
       vk::ImageAspectFlagBits::eColor, 1);
 
-  auto captureUboBuf = std::make_unique<vgeu::VgeuBuffer>(
-      globalAllocator->getAllocator(), sizeof(CaptureUbo), 1,
-      vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_AUTO,
-      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-          VMA_ALLOCATION_CREATE_MAPPED_BIT);
-
   vk::AttachmentDescription attDesc(
       {}, fmt, vk::SampleCountFlagBits::e1, vk::AttachmentLoadOp::eClear,
       vk::AttachmentStoreOp::eStore, vk::AttachmentLoadOp::eDontCare,
@@ -836,11 +793,6 @@ void VgeExample::buildPrefilteredMap() {
       device, vk::FramebufferCreateInfo({}, *captureRenderPass, offscreenView,
                                         dim, dim, 1));
 
-  vk::DescriptorSetLayoutBinding uboBinding(
-      0, vk::DescriptorType::eUniformBuffer, 1,
-      vk::ShaderStageFlagBits::eVertex);
-  auto captureDSL = vk::raii::DescriptorSetLayout(
-      device, vk::DescriptorSetLayoutCreateInfo({}, uboBinding));
   vk::DescriptorSetLayoutBinding envBinding(
       0, vk::DescriptorType::eCombinedImageSampler, 1,
       vk::ShaderStageFlagBits::eFragment);
@@ -848,27 +800,16 @@ void VgeExample::buildPrefilteredMap() {
       device, vk::DescriptorSetLayoutCreateInfo({}, envBinding));
 
   std::vector<vk::DescriptorPoolSize> poolSizes{
-      {vk::DescriptorType::eUniformBuffer, 1},
       {vk::DescriptorType::eCombinedImageSampler, 1}};
   auto capturePool = vk::raii::DescriptorPool(
       device,
       vk::DescriptorPoolCreateInfo(
-          vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, 2, poolSizes));
-  auto captureUboDS =
-      std::move(vk::raii::DescriptorSets(device, vk::DescriptorSetAllocateInfo(
-                                                     *capturePool, *captureDSL))
-                    .front());
+          vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, 1, poolSizes));
   auto envDS =
       std::move(vk::raii::DescriptorSets(device, vk::DescriptorSetAllocateInfo(
                                                      *capturePool, *envDSL))
                     .front());
 
-  auto uboBufInfo = captureUboBuf->descriptorInfo();
-  device.updateDescriptorSets(
-      vk::WriteDescriptorSet(*captureUboDS, 0, 0,
-                             vk::DescriptorType::eUniformBuffer, nullptr,
-                             uboBufInfo),
-      nullptr);
   auto envImgInfo = envCubemap->descriptorImageInfo(
       *iblSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
   device.updateDescriptorSets(
@@ -877,10 +818,16 @@ void VgeExample::buildPrefilteredMap() {
                              envImgInfo, nullptr),
       nullptr);
 
-  vk::PushConstantRange pcRange(vk::ShaderStageFlagBits::eFragment, 0, 8u);
-  std::vector<vk::DescriptorSetLayout> setLayouts{*captureDSL, *envDSL};
+  // vertex: mat4 mvp at offset 0 (64 bytes)
+  // fragment: PrefilterPush at offset 64 (8 bytes)
+  std::array<vk::PushConstantRange, 2> pcRanges{
+      vk::PushConstantRange(vk::ShaderStageFlagBits::eVertex, 0,
+                            sizeof(CapturePushConstants)),
+      vk::PushConstantRange(vk::ShaderStageFlagBits::eFragment,
+                            sizeof(CapturePushConstants), 8u)};
+  std::vector<vk::DescriptorSetLayout> setLayouts{*envDSL};
   auto capturePipelineLayout = vk::raii::PipelineLayout(
-      device, vk::PipelineLayoutCreateInfo({}, setLayouts, pcRange));
+      device, vk::PipelineLayoutCreateInfo({}, setLayouts, pcRanges));
 
   auto vertCode = vgeu::readFile(getShadersPath() + "/pbr/equirect.vert.spv");
   auto fragCode = vgeu::readFile(getShadersPath() + "/pbr/prefilter.frag.spv");
@@ -939,11 +886,14 @@ void VgeExample::buildPrefilteredMap() {
           PrefilterPush push{
               static_cast<float>(m) / static_cast<float>(numMips - 1), 32u};
 
+          // fragment push constants are the same for all faces in this mip
+          cmd.pushConstants<PrefilterPush>(
+              *capturePipelineLayout, vk::ShaderStageFlagBits::eFragment,
+              sizeof(CapturePushConstants), push);
+
           for (uint32_t f = 0; f < 6; ++f) {
-            CaptureUbo uboData;
-            uboData.mvp = captureProj * captureViews[f];
-            std::memcpy(captureUboBuf->getMappedData(), &uboData,
-                        sizeof(CaptureUbo));
+            CapturePushConstants pc;
+            pc.mvp = captureProj * captureViews[f];
 
             cmd.beginRenderPass(
                 vk::RenderPassBeginInfo(*captureRenderPass, *captureFBO,
@@ -956,11 +906,10 @@ void VgeExample::buildPrefilteredMap() {
             cmd.bindPipeline(vk::PipelineBindPoint::eGraphics,
                              *capturePipeline);
             cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                                   *capturePipelineLayout, 0,
-                                   {*captureUboDS, *envDS}, nullptr);
-            cmd.pushConstants<PrefilterPush>(*capturePipelineLayout,
-                                             vk::ShaderStageFlagBits::eFragment,
-                                             0, push);
+                                   *capturePipelineLayout, 0, {*envDS}, nullptr);
+            cmd.pushConstants<CapturePushConstants>(
+                *capturePipelineLayout, vk::ShaderStageFlagBits::eVertex, 0,
+                pc);
             cmd.draw(36, 1, 0, 0);
             cmd.endRenderPass();
 

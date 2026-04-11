@@ -1,10 +1,10 @@
 // shaders/pbr/irradiance.frag
 #version 450
 
-layout(set = 1, binding = 0) uniform samplerCube envMap;
+layout(set = 0, binding = 0) uniform samplerCube envMap;
 
 layout(push_constant) uniform PushBlock {
-    float deltaPhi;
+    layout(offset = 64) float deltaPhi;
     float deltaTheta;
 } push;
 

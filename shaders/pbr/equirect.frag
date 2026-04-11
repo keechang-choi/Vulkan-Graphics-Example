@@ -1,7 +1,7 @@
 // shaders/pbr/equirect.frag
 #version 450
 
-layout(set = 1, binding = 0) uniform sampler2D hdrMap;
+layout(set = 0, binding = 0) uniform sampler2D hdrMap;
 
 layout(location = 0) in  vec3 inLocalPos;
 layout(location = 0) out vec4 outColor;
