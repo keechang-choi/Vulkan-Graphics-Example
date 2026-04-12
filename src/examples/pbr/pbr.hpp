@@ -14,8 +14,8 @@ struct Options {
   int32_t debugDisplayTarget = 0;
   int32_t numTargets = 11;
   float farClamp = 50.f;
-  int32_t modelNumX = 4;
-  int32_t modelNumZ = 4;
+  int32_t modelNumX = 8;
+  int32_t modelNumZ = 8;
   float spacingX = 4.f;
   float spacingZ = 4.f;
   // light animation
