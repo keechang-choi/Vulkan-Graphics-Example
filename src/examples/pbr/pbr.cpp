@@ -198,8 +198,8 @@ void VgeExample::loadAssets() {
   damagedHelmet->loadFromFile(
       getAssetsPath() + "/models/DamagedHelmet/glTF/DamagedHelmet.gltf",
       glTFLoadingFlags);
-  for (int i = 0; i < opts.modelNumZ; i++) {
-    for (int j = 0; j < opts.modelNumX; j++) {
+  for (int i = 0; i < kMaxGridSize; i++) {
+    for (int j = 0; j < kMaxGridSize; j++) {
       ModelInstance inst{};
       inst.model = damagedHelmet;
       inst.name =
@@ -223,8 +223,8 @@ void VgeExample::loadAssets() {
       vgeu::DescriptorBindingFlagBits::kImageEmissive;
   sphere->loadFromFile(getAssetsPath() + "/models/sphere/smooth_sphere.gltf",
                        glTFLoadingFlags);
-  for (int i = 0; i < opts.modelNumZ; i++) {
-    for (int j = 0; j < opts.modelNumX; j++) {
+  for (int i = 0; i < kMaxGridSize; i++) {
+    for (int j = 0; j < kMaxGridSize; j++) {
       ModelInstance inst{};
       inst.model = sphere;
       inst.name = "sphere_" + std::to_string(i) + "-" + std::to_string(j);
@@ -248,8 +248,8 @@ void VgeExample::loadAssets() {
   pirateGold->loadFromFile(
       getAssetsPath() + "/models/sphere/pirate-gold/pirate-gold-pbr.gltf",
       glTFLoadingFlags);
-  for (int i = 0; i < opts.modelNumZ; i++) {
-    for (int j = 0; j < opts.modelNumX; j++) {
+  for (int i = 0; i < kMaxGridSize; i++) {
+    for (int j = 0; j < kMaxGridSize; j++) {
       ModelInstance inst{};
       inst.model = pirateGold;
       inst.name = "pirateGold_" + std::to_string(i) + "-" + std::to_string(j);
@@ -1106,8 +1106,8 @@ void VgeExample::setupDynamicUbo() {
     dynamicUbo[idx].modelColor = glm::vec4{0.f, 0.f, 0.f, 0.f};
   }
   const float helmetScale = 1.0f;
-  for (int i = 0; i < opts.modelNumZ; i++) {
-    for (int j = 0; j < opts.modelNumX; j++) {
+  for (int i = 0; i < kMaxGridSize; i++) {
+    for (int j = 0; j < kMaxGridSize; j++) {
       size_t idx = findInstances("damagedHelmet_" + std::to_string(i) + "-" +
                                  std::to_string(j))[0];
       const float x =
@@ -1139,8 +1139,8 @@ void VgeExample::setupDynamicUbo() {
   // Sphere instances: row i (Z axis) = metallic 0→1, col j (X axis) = roughness
   // 0→1
   const float sphereScale = 1.5f;
-  for (int i = 0; i < opts.modelNumZ; i++) {
-    for (int j = 0; j < opts.modelNumX; j++) {
+  for (int i = 0; i < kMaxGridSize; i++) {
+    for (int j = 0; j < kMaxGridSize; j++) {
       size_t idx = findInstances("sphere_" + std::to_string(i) + "-" +
                                  std::to_string(j))[0];
       const float x =
@@ -1170,8 +1170,8 @@ void VgeExample::setupDynamicUbo() {
   // Pirate-gold sphere instances: same grid positions, use gltf material (no
   // pbrOverride)
   const float pirateGoldScale = 1.5f;
-  for (int i = 0; i < opts.modelNumZ; i++) {
-    for (int j = 0; j < opts.modelNumX; j++) {
+  for (int i = 0; i < kMaxGridSize; i++) {
+    for (int j = 0; j < kMaxGridSize; j++) {
       size_t idx = findInstances("pirateGold_" + std::to_string(i) + "-" +
                                  std::to_string(j))[0];
       const float x =

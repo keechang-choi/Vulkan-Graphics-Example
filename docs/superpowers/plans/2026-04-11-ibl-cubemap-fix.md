@@ -14,6 +14,14 @@ debug display viewport를 render할때는 depth가 항상 맨 앞에 오도록 �
 **[수정 완료 - 2026-04-11]** `displayTargets` derivative 파이프라인 생성 시 `noDepthSCI(depthTest=false, depthWrite=false)`를
 별도로 적용하여 debug view quad가 항상 scene 위에 렌더링되도록 수정. (commit: fc2934a)
 
+## 헬멧 개수와 grid 옵션 조절
+1x1 ~ 8x8 변경할때도 모두 중앙에 위치되어야 해
+그리고 그에따른 metallic과 roughness 조절도 grid 현재 수에 맞게 0~1 사이 interpolation해야함.
+
 ## ibl 관련
 ibl 계산하는 과정에서 pbr이 자연스럽지 않고 중간중간 격자형태 등으로 끊어지는 현상이 보임. 
 이건 cubemap을 먼저 고친 후 점검 필요.
+더 확인해보니 모델의 종류 sphere, helmet 무관하게 항상  나타나고 무아레 무늬 같은 현상이 IBL을 키면 보임.
+metallic이 1일때는 안보이고 0에 가까워질수록 이현상이 크게 나타남
+
+

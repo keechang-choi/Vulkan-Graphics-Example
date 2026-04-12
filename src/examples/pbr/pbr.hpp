@@ -8,14 +8,16 @@ namespace vge {
 
 #define MAX_LIGHTS 10
 
+constexpr int kMaxGridSize = 8;  // max metallic/roughness grid dimension
+
 struct Options {
   float moveSpeed = 10.f;
   glm::mat4 cameraView{1.f};
   int32_t debugDisplayTarget = 0;
   int32_t numTargets = 11;
   float farClamp = 50.f;
-  int32_t modelNumX = 8;
-  int32_t modelNumZ = 8;
+  int32_t modelNumX = 4;
+  int32_t modelNumZ = 4;
   float spacingX = 4.f;
   float spacingZ = 4.f;
   // light animation
@@ -155,6 +157,9 @@ public:
   const std::vector<size_t>& findInstances(const std::string& name);
 
   Options opts{};
+  int prevModelNumX = -1;
+  int prevModelNumZ = -1;
+  int gridRebuildCountdown = 0;
 
   std::vector<ModelInstance> modelInstances;
   std::unordered_map<std::string, std::vector<size_t>> instanceMap;
