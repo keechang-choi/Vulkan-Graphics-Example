@@ -89,6 +89,9 @@ struct ModelInstance {
   vgeu::TransformComponent transform;
   enum class SceneMode { kModelOnly, kSphereOnly, kSphereWithMaterial };
   SceneMode sceneMode = SceneMode::kModelOnly;
+  int gridI =
+      -1;  // row index in metallic/roughness grid (-1 = not a grid instance)
+  int gridJ = -1;  // col index in metallic/roughness grid
   ModelInstance() {};
   ModelInstance(const ModelInstance& o) = delete;
   ModelInstance& operator=(const ModelInstance& other) = delete;

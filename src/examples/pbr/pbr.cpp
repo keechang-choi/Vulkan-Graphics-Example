@@ -81,6 +81,9 @@ void VgeExample::onUpdateUIOverlay() {
                        camera.getNearPlane(), camera.getFarPlane(), "%.1f");
       ImGui::Separator();
       ImGui::Checkbox("Show Debug Views", &opts.showDebugViews);
+      ImGui::SliderInt("Grid Cols (roughness)", &opts.modelNumX, 1, 8);
+      ImGui::SliderInt("Grid Rows (metallic)", &opts.modelNumZ, 1, 8);
+      ImGui::Separator();
       ImGui::Checkbox("Use Spheres", &opts.useSpheres);
       if (opts.useSpheres) {
         ImGui::Checkbox("Use Material", &opts.useMaterial);
@@ -198,6 +201,8 @@ void VgeExample::loadAssets() {
       inst.model = damagedHelmet;
       inst.name =
           "damagedHelmet_" + std::to_string(i) + "-" + std::to_string(j);
+      inst.gridI = i;
+      inst.gridJ = j;
       addModelInstance(std::move(inst));
     }
   }
@@ -221,6 +226,8 @@ void VgeExample::loadAssets() {
       inst.model = sphere;
       inst.name = "sphere_" + std::to_string(i) + "-" + std::to_string(j);
       inst.sceneMode = ModelInstance::SceneMode::kSphereOnly;
+      inst.gridI = i;
+      inst.gridJ = j;
       addModelInstance(std::move(inst));
     }
   }
@@ -244,6 +251,8 @@ void VgeExample::loadAssets() {
       inst.model = pirateGold;
       inst.name = "pirateGold_" + std::to_string(i) + "-" + std::to_string(j);
       inst.sceneMode = ModelInstance::SceneMode::kSphereWithMaterial;
+      inst.gridI = i;
+      inst.gridJ = j;
       addModelInstance(std::move(inst));
     }
   }
@@ -2022,6 +2031,10 @@ void VgeExample::buildCommandBuffers() {
       if (inst.sceneMode == ModelInstance::SceneMode::kSphereWithMaterial &&
           !opts.useMaterial)
         continue;
+      // Skip grid instances outside the current active grid size
+      if (inst.gridI >= 0 &&
+          (inst.gridI >= opts.modelNumZ || inst.gridJ >= opts.modelNumX))
+        continue;
 
       cmd.bindDescriptorSets(
           vk::PipelineBindPoint::eGraphics, *pipelineLayoutOffScreen, 1,
@@ -2215,6 +2228,8 @@ ModelInstance::ModelInstance(ModelInstance&& other) {
   animationTime = other.animationTime;
   transform = other.transform;
   sceneMode = other.sceneMode;
+  gridI = other.gridI;
+  gridJ = other.gridJ;
 }
 
 ModelInstance& ModelInstance::operator=(ModelInstance&& other) {
@@ -2225,6 +2240,8 @@ ModelInstance& ModelInstance::operator=(ModelInstance&& other) {
   animationTime = other.animationTime;
   transform = other.transform;
   sceneMode = other.sceneMode;
+  gridI = other.gridI;
+  gridJ = other.gridJ;
   return *this;
 }
 
