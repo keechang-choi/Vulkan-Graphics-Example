@@ -85,6 +85,9 @@ void VgeExample::onUpdateUIOverlay() {
       ImGui::SliderInt("Grid Rows (metallic)", &opts.modelNumZ, 1, 8);
       ImGui::Separator();
       ImGui::Checkbox("Use Spheres", &opts.useSpheres);
+      if (!opts.useSpheres) {
+        ImGui::Checkbox("Helmet PBR Override (grid)", &opts.helmetPbrOverride);
+      }
       if (opts.useSpheres) {
         ImGui::Checkbox("Use Material", &opts.useMaterial);
         if (opts.useMaterial) {
@@ -2172,11 +2175,18 @@ void VgeExample::updateDynamicUbo() {
   // Sync sphere albedo color from opts to GPU for the current frame.
   // Called every frame so that UI color picker changes take effect immediately.
   for (size_t instIdx = 0; instIdx < modelInstances.size(); instIdx++) {
-    if (modelInstances[instIdx].sceneMode !=
-        ModelInstance::SceneMode::kSphereOnly)
+    const auto& inst = modelInstances[instIdx];
+    if (inst.sceneMode == ModelInstance::SceneMode::kSphereOnly) {
+      dynamicUbo[instIdx].modelColor =
+          glm::vec4(opts.sphereAlbedo[0], opts.sphereAlbedo[1],
+                    opts.sphereAlbedo[2], 1.0f);
+    } else if (inst.sceneMode == ModelInstance::SceneMode::kModelOnly &&
+               inst.gridI >= 0) {
+      // Helmet: toggle between grid pbrOverride and model's own texture
+      dynamicUbo[instIdx].pbrOverride.z = opts.helmetPbrOverride ? 1.0f : 0.0f;
+    } else {
       continue;
-    dynamicUbo[instIdx].modelColor = glm::vec4(
-        opts.sphereAlbedo[0], opts.sphereAlbedo[1], opts.sphereAlbedo[2], 1.0f);
+    }
     std::memcpy(
         static_cast<char*>(
             uniformBuffers[currentFrameIndex].dynamic->getMappedData()) +

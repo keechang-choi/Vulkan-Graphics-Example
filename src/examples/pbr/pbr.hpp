@@ -28,6 +28,8 @@ struct Options {
   float lightIntensity = 1.0f;
   bool showDebugViews = true;
   bool useSpheres = false;
+  bool helmetPbrOverride =
+      true;  // true = grid metallic/roughness, false = model texture
   bool useMaterial = false;
   float heightScale = 0.03f;
   std::array<float, 4> sphereAlbedo = {1.0f, 1.0f, 1.0f, 1.0f};
