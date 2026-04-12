@@ -200,6 +200,76 @@ alignas(16) glm::vec4 dirLightDir;
 
 ---
 
+## 11. IBL 구에 반사가 뒤집히거나 불연속으로 보이는 문제
+
+**Commit:** (이 수정)
+
+**증상:**
+- 스카이박스는 좌표계 축 방향이 정상으로 보임
+- 구(sphere)에 IBL 반사(specular)가 위/아래 뒤집혀 보이거나 면 경계에서 불연속
+- direct lighting specular도 실질적으로 꺼져 있음
+
+**원인:**
+
+`updateUboComposition()`과 `updateUboOffScreen()`에서 `viewPos`를 넘길 때 X, Z를 부호 반전:
+
+```cpp
+// 버그 있는 코드
+uniformDataComposition.viewPos =
+    glm::vec4(camera.getPosition(), 0.f) * glm::vec4(-1.f, 1.f, -1.f, 1.f);
+```
+
+`pbr.frag`에서 V는 다음으로 계산:
+```glsl
+vec3 V = normalize(ubo.viewPos.xyz - fragPos);
+vec3 R = reflect(-V, N);
+```
+
+카메라 위치 `(0, -10, -20)`, 구 front-face 노말 `N ≈ (0, -0.45, -0.89)` 기준:
+
+| 상태 | viewPos | V | dot(N, V) | 결과 |
+|------|---------|---|-----------|------|
+| 변환 있음 (버그) | `(0,-10,+20)` | `(0,-0.45,+0.89)` | **-0.59** | specular=0, R 방향 잘못됨 |
+| 변환 없음 (정상) | `(0,-10,-20)` | `(0,-0.45,-0.89)` | **+0.99** | 정상 |
+
+변환이 적용된 V_wrong을 쓰면:
+- `max(dot(N, V), 0)` = 0 → PBR specular 분기에서 GeometrySmith = 0 → **direct specular 없음**
+- IBL: `R = reflect(-V_wrong, N)`이 +Y 방향 ≈ `(0, +0.98, +0.16)` 을 가리킴 → 천장 방향을 샘플링하는 엉뚱한 결과
+
+**스카이박스가 정상으로 보이는 이유:**
+스카이박스는 vertex position을 UVW로 직접 사용하므로 `viewPos`에 의존하지 않음. 따라서 cubemap 베이킹 ↔ world-space 방향 매핑이 정상이어도 구의 반사만 틀리게 보임.
+
+**이 변환이 처음 생긴 경위 (deferred 예제에서 복사):**
+- deferred 예제의 Blinn-Phong 셰이더는 `NdotV`를 직접 사용하지 않고 `H = normalize(L + V)`, `NdotH`를 사용
+- V가 틀린 방향이어도 L 기여가 있으면 `NdotH > 0`이 유지되어 **시각적으로 허용 가능한 결과**가 나옴 → 버그 발각 안 됨
+- deferred에서 IBL은 사용하지 않으므로 `R = reflect(-V, N)` 자체가 없어 반사 방향 오류도 표면화되지 않음
+- pbr 예제에 동일 패턴을 복사할 때 PBR은 `NdotV` 명시 사용 + IBL 반사 벡터 계산이 추가되어 버그가 가시화
+
+**수정:**
+
+```cpp
+// updateUboComposition()
+// Before
+uniformDataComposition.viewPos =
+    glm::vec4(camera.getPosition(), 0.f) * glm::vec4(-1.f, 1.f, -1.f, 1.f);
+// After
+uniformDataComposition.viewPos = glm::vec4(camera.getPosition(), 0.f);
+
+// updateUboOffScreen()
+// Before
+uniformDataOffscreen.viewPos =
+    glm::vec4(camera.getPosition(), 0.f) * glm::vec4(-1.f, 1.f, -1.f, 1.f);
+// After
+uniformDataOffscreen.viewPos = glm::vec4(camera.getPosition(), 0.f);
+```
+
+**교훈:**
+- `viewPos`는 world-space 카메라 위치 그대로 전달해야 함. 좌표계 변환이 필요하다면 world-space 자체를 일관되게 정의해야지 viewPos만 바꾸면 안 됨
+- Blinn-Phong은 V 방향 오류에 관대(NdotH 기반)하여 버그를 마스킹할 수 있음. PBR Cook-Torrance는 NdotV를 직접 사용하므로 방향 오류가 즉시 가시화됨
+- IBL 반사 벡터 R = reflect(-V, N)은 V 오류에 가장 민감. 스카이박스가 정상이어도 IBL이 틀릴 경우 viewPos를 의심할 것
+
+---
+
 ## 미해결 문제 — Sphere terminator 경계선
 
 **현상:** Sphere에서 직접광을 받는 면과 받지 않는 면 사이의 색 차이가 뚜렷하게 경계처럼 보임. 빛 방향과 무관하게 항상 보임 (terminator가 항상 어딘가에 존재하기 때문).

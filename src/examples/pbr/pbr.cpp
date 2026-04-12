@@ -690,9 +690,9 @@ void VgeExample::buildIrradianceMap() {
         clearVal.color = vk::ClearColorValue(0.f, 0.f, 0.f, 1.f);
 
         // fragment push constants are the same for all faces
-        cmd.pushConstants<IrradiancePush>(
-            *capturePipelineLayout, vk::ShaderStageFlagBits::eFragment,
-            sizeof(CapturePushConstants), push);
+        cmd.pushConstants<IrradiancePush>(*capturePipelineLayout,
+                                          vk::ShaderStageFlagBits::eFragment,
+                                          sizeof(CapturePushConstants), push);
 
         for (uint32_t f = 0; f < 6; ++f) {
           CapturePushConstants pc;
@@ -887,9 +887,9 @@ void VgeExample::buildPrefilteredMap() {
               static_cast<float>(m) / static_cast<float>(numMips - 1), 32u};
 
           // fragment push constants are the same for all faces in this mip
-          cmd.pushConstants<PrefilterPush>(
-              *capturePipelineLayout, vk::ShaderStageFlagBits::eFragment,
-              sizeof(CapturePushConstants), push);
+          cmd.pushConstants<PrefilterPush>(*capturePipelineLayout,
+                                           vk::ShaderStageFlagBits::eFragment,
+                                           sizeof(CapturePushConstants), push);
 
           for (uint32_t f = 0; f < 6; ++f) {
             CapturePushConstants pc;
@@ -906,7 +906,8 @@ void VgeExample::buildPrefilteredMap() {
             cmd.bindPipeline(vk::PipelineBindPoint::eGraphics,
                              *capturePipeline);
             cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                                   *capturePipelineLayout, 0, {*envDS}, nullptr);
+                                   *capturePipelineLayout, 0, {*envDS},
+                                   nullptr);
             cmd.pushConstants<CapturePushConstants>(
                 *capturePipelineLayout, vk::ShaderStageFlagBits::eVertex, 0,
                 pc);
@@ -1943,8 +1944,7 @@ void VgeExample::updateUboComposition() {
     uniformDataComposition.lights[i].radius = 15.0f;
   }
 
-  uniformDataComposition.viewPos =
-      glm::vec4(camera.getPosition(), 0.f) * glm::vec4(-1.f, 1.f, -1.f, 1.f);
+  uniformDataComposition.viewPos = glm::vec4(camera.getPosition(), 0.f);
   uniformDataComposition.debugDisplayTarget = opts.debugDisplayTarget;
   uniformDataComposition.nearPlane = camera.getNearPlane();
   uniformDataComposition.farPlane = camera.getFarPlane();
@@ -1965,8 +1965,7 @@ void VgeExample::updateUboComposition() {
 void VgeExample::updateUboOffScreen() {
   uniformDataOffscreen.projection = camera.getProjection();
   uniformDataOffscreen.view = camera.getView();
-  uniformDataOffscreen.viewPos =
-      glm::vec4(camera.getPosition(), 0.f) * glm::vec4(-1.f, 1.f, -1.f, 1.f);
+  uniformDataOffscreen.viewPos = glm::vec4(camera.getPosition(), 0.f);
   uniformDataOffscreen.heightScale = opts.heightScale;
   std::memcpy(uniformBuffers[currentFrameIndex].offScreen->getMappedData(),
               &uniformDataOffscreen, sizeof(UniformDataOffscreen));
