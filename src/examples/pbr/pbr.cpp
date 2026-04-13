@@ -2172,21 +2172,68 @@ void VgeExample::buildCommandBuffers() {
 }
 
 void VgeExample::updateDynamicUbo() {
-  // Sync sphere albedo color from opts to GPU for the current frame.
-  // Called every frame so that UI color picker changes take effect immediately.
+  // Recompute grid positions and PBR values every frame so that slider changes
+  // (modelNumX/Z) take effect immediately with correct centering.
+  glm::vec3 up{0.f, -1.f, 0.f};
+  glm::vec3 right{1.f, 0.f, 0.f};
+  const float helmetScale = 1.0f;
+  const float sphereScale = 1.5f;
+  const float pirateGoldScale = 1.5f;
+
   for (size_t instIdx = 0; instIdx < modelInstances.size(); instIdx++) {
     const auto& inst = modelInstances[instIdx];
-    if (inst.sceneMode == ModelInstance::SceneMode::kSphereOnly) {
+    if (inst.gridI < 0) continue;
+
+    const int i = inst.gridI;
+    const int j = inst.gridJ;
+    const float x =
+        -((opts.modelNumX - 1) * opts.spacingX * 0.5f) + j * opts.spacingX;
+    const float z =
+        -((opts.modelNumZ - 1) * opts.spacingZ * 0.5f) + i * opts.spacingZ;
+    const float y = -4.f;
+    const float metallic =
+        (opts.modelNumZ <= 1)
+            ? 0.0f
+            : static_cast<float>(i) / static_cast<float>(opts.modelNumZ - 1);
+    const float roughness =
+        (opts.modelNumX <= 1)
+            ? 0.0f
+            : static_cast<float>(j) / static_cast<float>(opts.modelNumX - 1);
+
+    if (inst.sceneMode == ModelInstance::SceneMode::kModelOnly) {
+      dynamicUbo[instIdx].modelMatrix =
+          glm::translate(glm::mat4{1.f}, glm::vec3{x, y, z});
+      dynamicUbo[instIdx].modelMatrix =
+          glm::rotate(dynamicUbo[instIdx].modelMatrix, glm::radians(90.f), up);
+      dynamicUbo[instIdx].modelMatrix = glm::rotate(
+          dynamicUbo[instIdx].modelMatrix, glm::radians(-90.f), right);
+      dynamicUbo[instIdx].modelMatrix =
+          glm::scale(dynamicUbo[instIdx].modelMatrix,
+                     glm::vec3{helmetScale, helmetScale, helmetScale});
+      dynamicUbo[instIdx].pbrOverride = glm::vec4(
+          metallic, roughness, opts.helmetPbrOverride ? 1.0f : 0.0f, 0.0f);
+    } else if (inst.sceneMode == ModelInstance::SceneMode::kSphereOnly) {
+      dynamicUbo[instIdx].modelMatrix =
+          glm::translate(glm::mat4{1.f}, glm::vec3{x, y, z});
+      dynamicUbo[instIdx].modelMatrix =
+          glm::scale(dynamicUbo[instIdx].modelMatrix,
+                     glm::vec3{sphereScale, sphereScale, sphereScale});
+      dynamicUbo[instIdx].pbrOverride =
+          glm::vec4(metallic, roughness, 1.0f, 0.0f);
       dynamicUbo[instIdx].modelColor =
           glm::vec4(opts.sphereAlbedo[0], opts.sphereAlbedo[1],
                     opts.sphereAlbedo[2], 1.0f);
-    } else if (inst.sceneMode == ModelInstance::SceneMode::kModelOnly &&
-               inst.gridI >= 0) {
-      // Helmet: toggle between grid pbrOverride and model's own texture
-      dynamicUbo[instIdx].pbrOverride.z = opts.helmetPbrOverride ? 1.0f : 0.0f;
-    } else {
-      continue;
+    } else if (inst.sceneMode ==
+               ModelInstance::SceneMode::kSphereWithMaterial) {
+      dynamicUbo[instIdx].modelMatrix =
+          glm::translate(glm::mat4{1.f}, glm::vec3{x, y, z});
+      dynamicUbo[instIdx].modelMatrix = glm::scale(
+          dynamicUbo[instIdx].modelMatrix,
+          glm::vec3{pirateGoldScale, pirateGoldScale, pirateGoldScale});
+      dynamicUbo[instIdx].pbrOverride =
+          glm::vec4(metallic, roughness, 0.0f, 1.0f);
     }
+
     std::memcpy(
         static_cast<char*>(
             uniformBuffers[currentFrameIndex].dynamic->getMappedData()) +
