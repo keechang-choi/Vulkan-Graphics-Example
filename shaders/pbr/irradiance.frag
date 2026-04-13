@@ -31,7 +31,8 @@ void main() {
             vec3 sampleVec = tangentSample.x * right
                            + tangentSample.y * up
                            + tangentSample.z * N;
-            irradiance += texture(envMap, sampleVec).rgb
+            // debugging: mip 0 only for test
+            irradiance += textureLod(envMap, sampleVec, 0.0).rgb
                         * cos(theta) * sin(theta);
             nrSamples++;
         }

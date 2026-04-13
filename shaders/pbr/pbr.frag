@@ -159,6 +159,10 @@ void main() {
       case 10:
         outFragColor.rgb = texture(samplerHeight, inUV).rrr;
         break;
+      case 11:
+        // Irradiance map lookup: shows the raw irradiance on each surface point
+        outFragColor.rgb = texture(irradianceMap, N).rgb;
+        break;
     }
     outFragColor.a = 1.0;
     return;
