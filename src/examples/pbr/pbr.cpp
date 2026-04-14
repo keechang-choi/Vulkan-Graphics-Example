@@ -120,6 +120,9 @@ void VgeExample::onUpdateUIOverlay() {
                        0.5f, "%.3f");
       ImGui::Separator();
       ImGui::Checkbox("Use IBL", &opts.useIBL);
+      if (opts.useIBL) {
+        ImGui::SliderFloat("Skybox LOD", &opts.skyboxLod, 0.0f, 9.0f, "%.1f");
+      }
       ImGui::TreePop();
     }
   }
@@ -1714,8 +1717,9 @@ void VgeExample::setupDescriptors() {
   // Skybox pipeline layout: set=0 skyboxDescriptorSetLayout, push constant
   // view+proj
   {
-    vk::PushConstantRange pcRange(vk::ShaderStageFlagBits::eVertex, 0,
-                                  sizeof(SkyboxPushConstants));
+    vk::PushConstantRange pcRange(
+        vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+        0, sizeof(SkyboxPushConstants));
     skyboxPipelineLayout = vk::raii::PipelineLayout(
         device,
         vk::PipelineLayoutCreateInfo({}, *skyboxDescriptorSetLayout, pcRange));
@@ -2112,8 +2116,11 @@ void VgeExample::buildCommandBuffers() {
       // Remove translation from view matrix for skybox
       skyboxPC.view = glm::mat4(glm::mat3(camera.getView()));
       skyboxPC.projection = camera.getProjection();
+      skyboxPC.lod = opts.skyboxLod;
       cmd.pushConstants<SkyboxPushConstants>(
-          *skyboxPipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, skyboxPC);
+          *skyboxPipelineLayout,
+          vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+          0, skyboxPC);
       cmd.draw(36, 1, 0, 0);
     }
 

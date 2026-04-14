@@ -37,3 +37,55 @@ metallic이 1일때는 안보이고 0에 가까워질수록 이현상이 크게 
 
   지금의 Riemann sum 방식을 Hammersley quasi-random + cosine-weighted 중요도 샘플링으로 교체합니다.
 
+**[수정 완료 - 2026-04-15]** Hammersley + cosine-weighted importance sampling으로 교체.
+mip level 선택(saSample/saTexel)으로 firefly 제거. irradiance map numMips=1로
+uninitialized mip read 버그 수정. (commits: fix(pbr): replace irradiance Riemann sum..., fix(pbr): eliminate irradiance fireflies..., fix(pbr): set irradiance map numMips=1...)
+
+남은 현상: 구(sphere)에서 규칙적인 격자형 aliasing이 미세하게 보임.
+원인: cubemap 6개 face 경계가 구 표면에 투영되어 격자 패턴을 형성.
+해상도 증가(64→128)나 샘플수 증가로는 해결 불가 — cubemap 표현 자체의 한계.
+
+TODO: ibl 관련 hdr의 밝은 부분이 이런 점 생성하는 aliasing artifact를 만드는 것 같다. 
+추가 파악 후 수정해야함.
+https://chetanjags.wordpress.com/2015/08/26/image-based-lighting/
+
+---
+
+## TODO: irradiance를 Spherical Harmonics(SH)로 교체
+
+**목적**: cubemap face seam으로 인한 구 표면 격자 aliasing 완전 제거
+
+**배경**:
+- 현재: 64×64 cubemap irradiance map → 6 face 경계가 구에서 격자로 보임
+- SH L0~L2 (9계수 × RGB = 27 float): 수학적으로 연속, face seam 없음
+- Unreal, Unity, Filament 등 모든 상용 엔진이 diffuse IBL에 SH 사용
+
+**구현 범위 (~250줄)**:
+
+1. **C++ SH 계수 계산** (`prepareIBL()` 안에 추가, ~60줄)
+   - env cubemap 전체 texel을 순회하며 SH projection
+   - 결과: `glm::vec3 shCoeffs[9]` (27 floats = 108 bytes)
+   - `buildIrradianceMap()` 함수 제거
+
+2. **UBO 구조체 수정** (`pbr.hpp`, ~10줄)
+   - `UniformDataComposition`에 `glm::vec4 shCoeffs[9]` 추가
+   - (vec3 대신 vec4로 alignment 맞춤)
+
+3. **pbr.frag 수정** (~25줄)
+   - `layout(set=1, binding=0) samplerCube irradianceMap` 제거
+   - UBO에 `vec4 shCoeffs[9]` 추가
+   - `texture(irradianceMap, N).rgb` →
+     Ramamoorthi & Hanrahan (2001) 공식으로 SH 다항식 평가:
+     ```glsl
+     vec3 shIrradiance(vec3 N) {
+         // L0~L2 9계수 polynomial evaluation
+         // 상수: c1=0.429043, c2=0.511664, c3=0.743125, c4=0.886227, c5=0.247708
+     }
+     ```
+
+4. **descriptor set 정리**
+   - IBL set=1에서 binding=0 (irradianceMap) 제거
+   - iblDescriptorSetLayout 업데이트
+
+**참고**: Ramamoorthi & Hanrahan (2001) "An Efficient Representation for Irradiance Environment Maps"
+

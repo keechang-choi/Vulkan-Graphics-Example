@@ -42,6 +42,7 @@ struct Options {
   bool useIBL = false;
   float iblExposure = 4.5f;
   float iblGamma = 2.2f;
+  float skyboxLod = 0.0f;
 };
 
 struct DynamicUboElt {
@@ -109,7 +110,8 @@ struct CapturePushConstants {
 
 struct SkyboxPushConstants {
   glm::mat4 view;        // translation 제거한 view
-  glm::mat4 projection;  // 총 128바이트
+  glm::mat4 projection;  // 128바이트
+  float lod = 0.0f;      // env cubemap LOD (0 = full res, 9 = most blurred)
 };
 
 struct SpritePushConstants {

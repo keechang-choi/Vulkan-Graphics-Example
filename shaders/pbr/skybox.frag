@@ -4,8 +4,9 @@
 layout(set = 0, binding = 0) uniform samplerCube envMap;
 
 layout(push_constant) uniform PushBlock {
-    mat4 view;
-    mat4 projection;
+    mat4  view;
+    mat4  projection;
+    float lod;
 } push;
 
 layout(location = 0) in  vec3 inUVW;
@@ -18,7 +19,7 @@ vec3 Uncharted2Tonemap(vec3 x) {
 }
 
 void main() {
-    vec3 color = texture(envMap, inUVW).rgb;
+    vec3 color = textureLod(envMap, inUVW, push.lod).rgb;
     // Tone-map + gamma
     float exposure = 4.5;
     color = Uncharted2Tonemap(color * exposure);
