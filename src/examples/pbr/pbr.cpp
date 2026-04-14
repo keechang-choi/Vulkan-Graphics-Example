@@ -681,8 +681,7 @@ void VgeExample::buildIrradianceMap() {
           &cbCI, &dynCI, *capturePipelineLayout, *captureRenderPass));
 
   struct IrradiancePush {
-    float deltaPhi;
-    float deltaTheta;
+    uint32_t numSamples;
   };
 
   vgeu::oneTimeSubmit(
@@ -696,8 +695,7 @@ void VgeExample::buildIrradianceMap() {
                              vk::ImageLayout::eUndefined,
                              vk::ImageLayout::eColorAttachmentOptimal);
 
-        IrradiancePush push{(2.f * glm::pi<float>()) / 180.f,
-                            (0.5f * glm::pi<float>()) / 64.f};
+        IrradiancePush push{2048u};
         vk::ClearValue clearVal;
         clearVal.color = vk::ClearColorValue(0.f, 0.f, 0.f, 1.f);
 
