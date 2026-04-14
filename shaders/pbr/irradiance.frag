@@ -47,11 +47,21 @@ vec3 importanceSampleCosine(vec2 xi, vec3 N) {
 void main() {
     vec3 N = normalize(inLocalPos);
 
-    vec3 irradiance = vec3(0.0);
+    vec3  irradiance    = vec3(0.0);
+    float envResolution = 512.0;
+    float saTexel       = 4.0 * PI / (6.0 * envResolution * envResolution);
+
     for (uint i = 0u; i < push.numSamples; ++i) {
         vec2 xi = hammersley(i, push.numSamples);
         vec3 L  = importanceSampleCosine(xi, N);
-        irradiance += textureLod(envMap, L, 0.0).rgb;
+
+        // cosTheta = sqrt(1 - xi.y) from cosine sampling; PDF = NdotL / PI
+        float NdotL   = sqrt(1.0 - xi.y);
+        float pdf     = NdotL / PI + 0.0001;
+        float saSample = 1.0 / (float(push.numSamples) * pdf + 0.0001);
+        float mipLevel = max(0.5 * log2(saSample / saTexel), 0.0);
+
+        irradiance += textureLod(envMap, L, mipLevel).rgb;
     }
 
     // Cosine-weighted PDF cancels NdotL: irradiance = PI * (1/N) * sum(L(L_i))
