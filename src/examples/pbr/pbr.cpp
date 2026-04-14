@@ -563,8 +563,9 @@ void VgeExample::buildEnvCubemap() {
 void VgeExample::buildIrradianceMap() {
   const vk::Format fmt = vk::Format::eR32G32B32A32Sfloat;
   const uint32_t dim = 64;
-  const uint32_t numMips =
-      static_cast<uint32_t>(std::floor(std::log2(dim))) + 1;
+  // Irradiance is already a smooth low-frequency signal; only mip 0 is baked.
+  // Using numMips>1 would leave higher mips uninitialized → garbage reads.
+  const uint32_t numMips = 1;
 
   irradianceMap = std::make_unique<vgeu::VgeuImage>(
       device, globalAllocator->getAllocator(), fmt, vk::Extent2D{dim, dim},
@@ -637,12 +638,12 @@ void VgeExample::buildIrradianceMap() {
       nullptr);
 
   // vertex: mat4 mvp at offset 0 (64 bytes)
-  // fragment: IrradiancePush at offset 64 (8 bytes)
+  // fragment: IrradiancePush (numSamples uint32) at offset 64 (4 bytes)
   std::array<vk::PushConstantRange, 2> pcRanges{
       vk::PushConstantRange(vk::ShaderStageFlagBits::eVertex, 0,
                             sizeof(CapturePushConstants)),
       vk::PushConstantRange(vk::ShaderStageFlagBits::eFragment,
-                            sizeof(CapturePushConstants), 8u)};
+                            sizeof(CapturePushConstants), sizeof(uint32_t))};
   std::vector<vk::DescriptorSetLayout> setLayouts{*envDSL};
   auto capturePipelineLayout = vk::raii::PipelineLayout(
       device, vk::PipelineLayoutCreateInfo({}, setLayouts, pcRanges));
