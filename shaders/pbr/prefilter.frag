@@ -26,9 +26,18 @@ vec2 Hammersley(uint i, uint N) {
     return vec2(float(i) / float(N), RadicalInverse_VdC(i));
 }
 
-vec3 ImportanceSampleGGX(vec2 Xi, vec3 N, float roughness) {
+// Per-texel hash → random phi offset (Chetan Jags 2015). Jitters the fixed
+// Hammersley grid per output texel so structured dot-aliasing from bright HDR
+// pixels is replaced by high-frequency noise.
+float hash31(vec3 p) {
+    p = fract(p * vec3(443.8975, 397.2973, 491.1871));
+    p += dot(p, p.yzx + 19.19);
+    return fract((p.x + p.y) * p.z);
+}
+
+vec3 ImportanceSampleGGX(vec2 Xi, vec3 N, float roughness, float phiJitter) {
     float a = roughness * roughness;
-    float phi = 2.0 * PI * Xi.x;
+    float phi = 2.0 * PI * Xi.x + phiJitter;
     float cosTheta = sqrt((1.0 - Xi.y) / (1.0 + (a * a - 1.0) * Xi.y));
     float sinTheta = sqrt(1.0 - cosTheta * cosTheta);
     vec3 H = vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
@@ -53,10 +62,11 @@ void main() {
     vec3  prefilteredColor = vec3(0.0);
     float totalWeight = 0.0;
     float envResolution = 512.0;
+    float phiJitter = hash31(N) * 2.0 * PI;
 
     for (uint i = 0u; i < push.numSamples; ++i) {
         vec2 Xi = Hammersley(i, push.numSamples);
-        vec3 H  = ImportanceSampleGGX(Xi, N, push.roughness);
+        vec3 H  = ImportanceSampleGGX(Xi, N, push.roughness, phiJitter);
         vec3 L  = normalize(2.0 * dot(V, H) * H - V);
 
         float NdotL = max(dot(N, L), 0.0);

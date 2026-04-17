@@ -897,8 +897,11 @@ void VgeExample::buildPrefilteredMap() {
 
         for (uint32_t m = 0; m < numMips; ++m) {
           uint32_t mipDim = static_cast<uint32_t>(dim * std::pow(0.5f, m));
+          // 1024 samples matches LearnOpenGL / Epic prefilter reference.
+          // 32 was too few: GGX PDF is peaked, so residual MC variance showed
+          // up as dot-aliasing on spheres at low-to-mid roughness.
           PrefilterPush push{
-              static_cast<float>(m) / static_cast<float>(numMips - 1), 32u};
+              static_cast<float>(m) / static_cast<float>(numMips - 1), 1024u};
 
           // fragment push constants are the same for all faces in this mip
           cmd.pushConstants<PrefilterPush>(*capturePipelineLayout,

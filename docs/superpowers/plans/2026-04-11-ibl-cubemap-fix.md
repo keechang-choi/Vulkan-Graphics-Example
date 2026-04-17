@@ -49,8 +49,31 @@ TODO: ibl 관련 hdr의 밝은 부분이 이런 점 생성하는 aliasing artifa
 추가 파악 후 수정해야함.
 https://chetanjags.wordpress.com/2015/08/26/image-based-lighting/
 
----
+**[수정 완료 - 2026-04-17]** HDR 밝은 픽셀로 인한 dot/grid aliasing 잔여 현상 분석 및 수정.
 
+분석(LearnOpenGL Specular IBL + Chetan Jags IBL 참고):
+- 두 shader 모두 `0.5 * log2(saSample/saTexel)` mip LOD 공식은 이미 적용되어 있음.
+- 그러나 (1) `prefilter.frag`의 numSamples가 32 → GGX peaked PDF에 대해 MC variance 과다 →
+  구 표면에 textureLod로 샘플될 때 dot 패턴으로 가시화.
+- (2) 모든 output texel이 동일한 Hammersley 수열을 사용 → TBN 회전만 다름 →
+  HDR 밝은 픽셀에 샘플이 coherent하게 걸리면 인접 texel이 같은 구조적 artifact를 공유.
+  Chetan Jags가 명시: "Introduce randomness to sample positions, replacing
+  structured artifacts with less perceptible noise".
+- metallic=0에서 더 두드러진 이유: kS≈0.04지만 HDR 값(>100)과 곱해지면
+  `specular = prefilteredColor * 0.04 * brdf`가 유효하게 남아 dot으로 보임.
+  metallic=1 + 고 roughness는 상위 mip(blur)에서 샘플되므로 noise가 희석.
+
+수정 내용:
+1. `irradiance.frag`, `prefilter.frag`: hash31(N) 기반 per-texel phi jitter 추가
+   (azimuthal 랜덤 회전으로 구조적 패턴을 noise로 전환).
+2. `prefilter.frag` 호출부(buildPrefilteredMap) numSamples 32 → 1024
+   (LearnOpenGL/Epic 표준값).
+
+TBN `up = abs(N.z) < 0.999 ? Z : X` 의 극점 discontinuity는 jitter 적용 후
+구조적 패턴이 noise로 변환되면서 가려지므로 유지.
+
+---
+# 이건 위에 먼저 달성하고 할 목록임
 ## TODO: irradiance를 Spherical Harmonics(SH)로 교체
 
 **목적**: cubemap face seam으로 인한 구 표면 격자 aliasing 완전 제거
