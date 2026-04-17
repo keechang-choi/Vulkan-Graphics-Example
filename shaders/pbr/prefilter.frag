@@ -6,6 +6,7 @@ layout(set = 0, binding = 0) uniform samplerCube envMap;
 layout(push_constant) uniform PushBlock {
     layout(offset = 64) float roughness;
     layout(offset = 68) uint  numSamples;
+    layout(offset = 72) uint  useJitter;
 } push;
 
 layout(location = 0) in  vec3 inLocalPos;
@@ -62,7 +63,7 @@ void main() {
     vec3  prefilteredColor = vec3(0.0);
     float totalWeight = 0.0;
     float envResolution = 512.0;
-    float phiJitter = hash31(N) * 2.0 * PI;
+    float phiJitter = push.useJitter != 0u ? hash31(N) * 2.0 * PI : 0.0;
 
     for (uint i = 0u; i < push.numSamples; ++i) {
         vec2 Xi = Hammersley(i, push.numSamples);

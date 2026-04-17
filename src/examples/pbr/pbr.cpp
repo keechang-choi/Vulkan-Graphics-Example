@@ -122,6 +122,9 @@ void VgeExample::onUpdateUIOverlay() {
       ImGui::Checkbox("Use IBL", &opts.useIBL);
       if (opts.useIBL) {
         ImGui::SliderFloat("Skybox LOD", &opts.skyboxLod, 0.0f, 9.0f, "%.1f");
+        if (ImGui::Checkbox("IBL Jitter (rebuilds)", &opts.useJitter)) {
+          rebuildIBLFiltering();
+        }
       }
       ImGui::TreePop();
     }
@@ -641,12 +644,13 @@ void VgeExample::buildIrradianceMap() {
       nullptr);
 
   // vertex: mat4 mvp at offset 0 (64 bytes)
-  // fragment: IrradiancePush (numSamples uint32) at offset 64 (4 bytes)
+  // fragment: IrradiancePush (numSamples, useJitter) at offset 64 (8 bytes)
   std::array<vk::PushConstantRange, 2> pcRanges{
       vk::PushConstantRange(vk::ShaderStageFlagBits::eVertex, 0,
                             sizeof(CapturePushConstants)),
       vk::PushConstantRange(vk::ShaderStageFlagBits::eFragment,
-                            sizeof(CapturePushConstants), sizeof(uint32_t))};
+                            sizeof(CapturePushConstants),
+                            2u * sizeof(uint32_t))};
   std::vector<vk::DescriptorSetLayout> setLayouts{*envDSL};
   auto capturePipelineLayout = vk::raii::PipelineLayout(
       device, vk::PipelineLayoutCreateInfo({}, setLayouts, pcRanges));
@@ -686,6 +690,7 @@ void VgeExample::buildIrradianceMap() {
 
   struct IrradiancePush {
     uint32_t numSamples;
+    uint32_t useJitter;
   };
 
   vgeu::oneTimeSubmit(
@@ -699,7 +704,7 @@ void VgeExample::buildIrradianceMap() {
                              vk::ImageLayout::eUndefined,
                              vk::ImageLayout::eColorAttachmentOptimal);
 
-        IrradiancePush push{2048u};
+        IrradiancePush push{2048u, opts.useJitter ? 1u : 0u};
         vk::ClearValue clearVal;
         clearVal.color = vk::ClearColorValue(0.f, 0.f, 0.f, 1.f);
 
@@ -833,12 +838,12 @@ void VgeExample::buildPrefilteredMap() {
       nullptr);
 
   // vertex: mat4 mvp at offset 0 (64 bytes)
-  // fragment: PrefilterPush at offset 64 (8 bytes)
+  // fragment: PrefilterPush at offset 64 (12 bytes)
   std::array<vk::PushConstantRange, 2> pcRanges{
       vk::PushConstantRange(vk::ShaderStageFlagBits::eVertex, 0,
                             sizeof(CapturePushConstants)),
       vk::PushConstantRange(vk::ShaderStageFlagBits::eFragment,
-                            sizeof(CapturePushConstants), 8u)};
+                            sizeof(CapturePushConstants), 12u)};
   std::vector<vk::DescriptorSetLayout> setLayouts{*envDSL};
   auto capturePipelineLayout = vk::raii::PipelineLayout(
       device, vk::PipelineLayoutCreateInfo({}, setLayouts, pcRanges));
@@ -879,6 +884,7 @@ void VgeExample::buildPrefilteredMap() {
   struct PrefilterPush {
     float roughness;
     uint32_t numSamples;
+    uint32_t useJitter;
   };
 
   vgeu::oneTimeSubmit(
@@ -901,7 +907,8 @@ void VgeExample::buildPrefilteredMap() {
           // 32 was too few: GGX PDF is peaked, so residual MC variance showed
           // up as dot-aliasing on spheres at low-to-mid roughness.
           PrefilterPush push{
-              static_cast<float>(m) / static_cast<float>(numMips - 1), 1024u};
+              static_cast<float>(m) / static_cast<float>(numMips - 1), 1024u,
+              opts.useJitter ? 1u : 0u};
 
           // fragment push constants are the same for all faces in this mip
           cmd.pushConstants<PrefilterPush>(*capturePipelineLayout,
@@ -958,6 +965,26 @@ void VgeExample::buildPrefilteredMap() {
             vk::ImageLayout::eTransferDstOptimal,
             vk::ImageLayout::eShaderReadOnlyOptimal);
       });
+}
+
+void VgeExample::rebuildIBLFiltering() {
+  device.waitIdle();
+  buildIrradianceMap();
+  buildPrefilteredMap();
+  for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    auto irradInfo = irradianceMap->descriptorImageInfo(
+        *iblSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
+    auto prefInfo = prefilteredMap->descriptorImageInfo(
+        *iblSampler, vk::ImageLayout::eShaderReadOnlyOptimal);
+    std::vector<vk::WriteDescriptorSet> writes;
+    writes.emplace_back(*iblDescriptorSets[i], 0, 0,
+                        vk::DescriptorType::eCombinedImageSampler, irradInfo,
+                        nullptr);
+    writes.emplace_back(*iblDescriptorSets[i], 1, 0,
+                        vk::DescriptorType::eCombinedImageSampler, prefInfo,
+                        nullptr);
+    device.updateDescriptorSets(writes, nullptr);
+  }
 }
 
 void VgeExample::buildBrdfLut() {

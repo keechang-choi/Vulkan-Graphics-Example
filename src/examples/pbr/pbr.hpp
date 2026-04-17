@@ -43,6 +43,8 @@ struct Options {
   float iblExposure = 4.5f;
   float iblGamma = 2.2f;
   float skyboxLod = 0.0f;
+  // per-texel phi jitter in IBL filtering; toggled via ImGui (re-bakes IBL)
+  bool useJitter = true;
 };
 
 struct DynamicUboElt {
@@ -261,6 +263,9 @@ public:
   void buildEnvCubemap();
   void buildIrradianceMap();
   void buildPrefilteredMap();
+  // Waits idle, re-runs buildIrradianceMap + buildPrefilteredMap (both pick up
+  // opts.useJitter), and rewrites IBL descriptor sets.
+  void rebuildIBLFiltering();
   void buildBrdfLut();
   void prepareSkyboxPipeline();
   void prepareSkyboxDescriptors();

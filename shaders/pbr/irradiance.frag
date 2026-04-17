@@ -5,6 +5,7 @@ layout(set = 0, binding = 0) uniform samplerCube envMap;
 
 layout(push_constant) uniform PushBlock {
     layout(offset = 64) uint numSamples;
+    layout(offset = 68) uint useJitter;
 } push;
 
 layout(location = 0) in  vec3 inLocalPos;
@@ -59,7 +60,7 @@ void main() {
     vec3  irradiance    = vec3(0.0);
     float envResolution = 512.0;
     float saTexel       = 4.0 * PI / (6.0 * envResolution * envResolution);
-    float phiJitter     = hash31(N) * 2.0 * PI;
+    float phiJitter     = push.useJitter != 0u ? hash31(N) * 2.0 * PI : 0.0;
 
     for (uint i = 0u; i < push.numSamples; ++i) {
         vec2 xi = hammersley(i, push.numSamples);
