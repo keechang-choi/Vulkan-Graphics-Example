@@ -77,8 +77,9 @@ void main() {
             float pdf = (D * NdotH / (4.0 * HdotV)) + 0.0001;
             float saTexel  = 4.0 * PI / (6.0 * envResolution * envResolution);
             float saSample = 1.0 / (float(push.numSamples) * pdf + 0.0001);
+            // +1 LOD bias per GPU Gems 3 Ch.20 for smoother, sample-overlapping filtering
             float mipLevel = push.roughness == 0.0
-                ? 0.0 : 0.5 * log2(saSample / saTexel);
+                ? 0.0 : 0.5 * log2(saSample / saTexel) + 1.0;
             prefilteredColor +=
                 textureLod(envMap, L, mipLevel).rgb * NdotL;
             totalWeight += NdotL;

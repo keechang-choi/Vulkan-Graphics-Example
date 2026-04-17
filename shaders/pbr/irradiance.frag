@@ -69,7 +69,8 @@ void main() {
         float NdotL   = sqrt(1.0 - xi.y);
         float pdf     = NdotL / PI + 0.0001;
         float saSample = 1.0 / (float(push.numSamples) * pdf + 0.0001);
-        float mipLevel = max(0.5 * log2(saSample / saTexel), 0.0);
+        // +1 LOD bias per GPU Gems 3 Ch.20 for smoother, sample-overlapping filtering
+        float mipLevel = max(0.5 * log2(saSample / saTexel) + 1.0, 0.0);
 
         irradiance += textureLod(envMap, L, mipLevel).rgb;
     }
