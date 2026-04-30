@@ -414,8 +414,10 @@ void VgeExample::buildEnvCubemap() {
   auto capturePipelineLayout = vk::raii::PipelineLayout(
       device, vk::PipelineLayoutCreateInfo({}, setLayouts, pcRange));
 
-  auto vertCode = vgeu::readFile(getShadersPath() + "/pbr/equirect.vert.spv");
-  auto fragCode = vgeu::readFile(getShadersPath() + "/pbr/equirect.frag.spv");
+  auto vertCode =
+      vgeu::readFile(getShadersPath() + "/common/equirect.vert.spv");
+  auto fragCode =
+      vgeu::readFile(getShadersPath() + "/common/equirect.frag.spv");
   auto vertMod = vgeu::createShaderModule(device, vertCode);
   auto fragMod = vgeu::createShaderModule(device, fragCode);
 
@@ -655,8 +657,10 @@ void VgeExample::buildIrradianceMap() {
   auto capturePipelineLayout = vk::raii::PipelineLayout(
       device, vk::PipelineLayoutCreateInfo({}, setLayouts, pcRanges));
 
-  auto vertCode = vgeu::readFile(getShadersPath() + "/pbr/equirect.vert.spv");
-  auto fragCode = vgeu::readFile(getShadersPath() + "/pbr/irradiance.frag.spv");
+  auto vertCode =
+      vgeu::readFile(getShadersPath() + "/common/equirect.vert.spv");
+  auto fragCode =
+      vgeu::readFile(getShadersPath() + "/common/irradiance.frag.spv");
   auto vertMod = vgeu::createShaderModule(device, vertCode);
   auto fragMod = vgeu::createShaderModule(device, fragCode);
   std::array<vk::PipelineShaderStageCreateInfo, 2> stages{
@@ -848,8 +852,10 @@ void VgeExample::buildPrefilteredMap() {
   auto capturePipelineLayout = vk::raii::PipelineLayout(
       device, vk::PipelineLayoutCreateInfo({}, setLayouts, pcRanges));
 
-  auto vertCode = vgeu::readFile(getShadersPath() + "/pbr/equirect.vert.spv");
-  auto fragCode = vgeu::readFile(getShadersPath() + "/pbr/prefilter.frag.spv");
+  auto vertCode =
+      vgeu::readFile(getShadersPath() + "/common/equirect.vert.spv");
+  auto fragCode =
+      vgeu::readFile(getShadersPath() + "/common/prefilter.frag.spv");
   auto vertMod = vgeu::createShaderModule(device, vertCode);
   auto fragMod = vgeu::createShaderModule(device, fragCode);
   std::array<vk::PipelineShaderStageCreateInfo, 2> stages{
@@ -1034,8 +1040,10 @@ void VgeExample::buildBrdfLut() {
   auto brdfPipelineLayout = vk::raii::PipelineLayout(
       device, vk::PipelineLayoutCreateInfo({}, *emptyDSL));
 
-  auto vertCode = vgeu::readFile(getShadersPath() + "/pbr/brdf_lut.vert.spv");
-  auto fragCode = vgeu::readFile(getShadersPath() + "/pbr/brdf_lut.frag.spv");
+  auto vertCode =
+      vgeu::readFile(getShadersPath() + "/common/brdf_lut.vert.spv");
+  auto fragCode =
+      vgeu::readFile(getShadersPath() + "/common/brdf_lut.frag.spv");
   auto vertMod = vgeu::createShaderModule(device, vertCode);
   auto fragMod = vgeu::createShaderModule(device, fragCode);
   std::array<vk::PipelineShaderStageCreateInfo, 2> stages{
@@ -1931,8 +1939,10 @@ void VgeExample::preparePipelines() {
 
   // --- Skybox pipeline ---
   {
-    auto vertCode = vgeu::readFile(getShadersPath() + "/pbr/skybox.vert.spv");
-    auto fragCode = vgeu::readFile(getShadersPath() + "/pbr/skybox.frag.spv");
+    auto vertCode =
+        vgeu::readFile(getShadersPath() + "/common/skybox.vert.spv");
+    auto fragCode =
+        vgeu::readFile(getShadersPath() + "/common/skybox.frag.spv");
     auto vertModule = vgeu::createShaderModule(device, vertCode);
     auto fragModule = vgeu::createShaderModule(device, fragCode);
 

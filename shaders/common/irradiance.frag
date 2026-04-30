@@ -1,4 +1,4 @@
-// shaders/pbr/irradiance.frag
+// shaders/common/irradiance.frag
 #version 450
 
 layout(set = 0, binding = 0) uniform samplerCube envMap;

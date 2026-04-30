@@ -1,4 +1,4 @@
-// shaders/pbr/equirect.vert
+// shaders/common/equirect.vert
 #version 450
 
 layout(push_constant) uniform CapturePush {

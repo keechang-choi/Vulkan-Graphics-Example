@@ -1,4 +1,4 @@
-// shaders/pbr/skybox.vert
+// shaders/common/skybox.vert
 #version 450
 
 layout(push_constant) uniform PushBlock {

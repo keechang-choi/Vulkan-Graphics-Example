@@ -1,4 +1,4 @@
-// shaders/pbr/brdf_lut.frag
+// shaders/common/brdf_lut.frag
 #version 450
 
 layout(location = 0) in  vec2 inUV;

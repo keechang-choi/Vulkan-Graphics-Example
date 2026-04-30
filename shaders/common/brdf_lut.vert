@@ -1,4 +1,4 @@
-// shaders/pbr/brdf_lut.vert
+// shaders/common/brdf_lut.vert
 #version 450
 
 layout(location = 0) out vec2 outUV;
