@@ -159,6 +159,24 @@ void main() {
 
   float d = thicknessAt(inUV, inWorldPos, N);
 
+  // Debug: thickness heatmap (viridis-like ramp)
+  if (params.showThicknessHeatmap != 0) {
+    float t = clamp((d - params.thicknessMin) /
+                        max(params.thicknessMax - params.thicknessMin, 1.0),
+                    0.0, 1.0);
+    vec3 c = vec3(0.267 + 0.5 * t, 0.005 + 0.9 * t,
+                  0.329 + 0.4 * sin(t * PI));
+    outColor = vec4(c, 1.0);
+    return;
+  }
+
+  // Debug: Fresnel grayscale
+  if (params.showFresnelOnly != 0) {
+    float f = fresnelSchlick(cosTheta1, params.n1, params.n2);
+    outColor = vec4(f, f, f, 1.0);
+    return;
+  }
+
   vec3 thinFilm = thinFilmReflectance(d, cosTheta1);
 
   // roughness -> LOD on prefiltered cubemap
@@ -167,6 +185,9 @@ void main() {
   vec3 envColor = textureLod(prefilteredCubemap, R, lod).rgb;
 
   vec3 color = thinFilm * envColor * params.iblExposure;
+
+  // Optional gamma (linear -> display)
+  color = pow(max(color, vec3(0.0)), vec3(1.0 / params.iblGamma));
 
   // Fresnel-driven alpha at the outer boundary
   float fresnel = fresnelSchlick(cosTheta1, params.n1, params.n2);
