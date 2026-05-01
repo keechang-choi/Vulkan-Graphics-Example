@@ -109,10 +109,16 @@ void main() {
 
   vec3 thinFilm = thinFilmReflectance(d, cosTheta1);
 
-  // env reflection (LOD 0 — roughness wired in Task 21)
-  vec3 envColor = textureLod(prefilteredCubemap, R, 0.0).rgb;
+  // roughness -> LOD on prefiltered cubemap
+  float maxLod = float(textureQueryLevels(prefilteredCubemap) - 1);
+  float lod = clamp(params.roughness, 0.0, 1.0) * maxLod;
+  vec3 envColor = textureLod(prefilteredCubemap, R, lod).rgb;
 
   vec3 color = thinFilm * envColor * params.iblExposure;
 
-  outColor = vec4(color, 1.0);
+  // Fresnel-driven alpha at the outer boundary
+  float fresnel = fresnelSchlick(cosTheta1, params.n1, params.n2);
+  float alpha = clamp(fresnel * params.alphaScale, 0.0, 1.0);
+
+  outColor = vec4(color, alpha);
 }
