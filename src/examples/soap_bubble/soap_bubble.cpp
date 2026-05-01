@@ -325,7 +325,76 @@ void VgeExample::render() {
 
 void VgeExample::viewChanged() {}
 
-void VgeExample::onUpdateUIOverlay() {}
+void VgeExample::onUpdateUIOverlay() {
+  if (ImGui::CollapsingHeader("Thin Film", ImGuiTreeNodeFlags_DefaultOpen)) {
+    ImGui::SliderFloat("thicknessMin (nm)", &opts.thicknessMin, 0.f, 2000.f);
+    ImGui::SliderFloat("thicknessMax (nm)", &opts.thicknessMax, 0.f, 2000.f);
+    ImGui::SliderFloat("n1 (outside)", &opts.n1, 1.0f, 2.5f);
+    ImGui::SliderFloat("n2 (film)", &opts.n2, 1.0f, 2.5f);
+    ImGui::SliderFloat("n3 (inside)", &opts.n3, 1.0f, 2.5f);
+
+    static int32_t sampleIdx = 1;
+    const char* sampleOpts[] = {"8", "16", "32", "64"};
+    if (ImGui::Combo("spectralSamples", &sampleIdx, sampleOpts,
+                     IM_ARRAYSIZE(sampleOpts))) {
+      const int32_t values[] = {8, 16, 32, 64};
+      opts.spectralSamples = values[sampleIdx];
+    }
+  }
+
+  if (ImGui::CollapsingHeader("Thickness Source",
+                              ImGuiTreeNodeFlags_DefaultOpen)) {
+    ImGui::RadioButton("Texture", &opts.thicknessMode, 0);
+    ImGui::SameLine();
+    ImGui::RadioButton("Procedural", &opts.thicknessMode, 1);
+    if (opts.thicknessMode == 1) {
+      ImGui::SliderFloat("gravityStrength", &opts.gravityStrength, 0.f, 5.f);
+      ImGui::SliderFloat("noiseScale", &opts.noiseScale, 0.1f, 10.f);
+    }
+  }
+
+  if (ImGui::CollapsingHeader("Animation")) {
+    ImGui::Checkbox("useAnimation", &opts.useAnimation);
+    if (opts.useAnimation) {
+      ImGui::SliderFloat("driftSpeed", &opts.driftSpeed, 0.f, 2.f);
+    }
+  }
+
+  if (ImGui::CollapsingHeader("Surface & Blending",
+                              ImGuiTreeNodeFlags_DefaultOpen)) {
+    ImGui::SliderFloat("roughness", &opts.roughness, 0.f, 1.f);
+    ImGui::SliderFloat("alphaScale", &opts.alphaScale, 0.f, 3.f);
+  }
+
+  if (ImGui::CollapsingHeader("IBL / Env")) {
+    ImGui::SliderFloat("iblExposure", &opts.iblExposure, 0.f, 10.f);
+    ImGui::SliderFloat("iblGamma", &opts.iblGamma, 1.f, 3.f);
+    ImGui::SliderFloat("skyboxLod", &opts.skyboxLod, 0.f, 9.f);
+    if (ImGui::Checkbox("useJitter (rebakes)", &opts.useJitter)) {
+      device.waitIdle();
+      iblConfig.useJitter = opts.useJitter;
+      iblBaker->rebakeFiltering(iblConfig);
+      // Re-bind env descriptor (prefilteredMap was rebuilt)
+      for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; ++i) {
+        vk::DescriptorImageInfo envInfo(
+            *iblBaker->iblSampler(), *iblBaker->prefilteredMap().getImageView(),
+            vk::ImageLayout::eShaderReadOnlyOptimal);
+        device.updateDescriptorSets(
+            vk::WriteDescriptorSet(*envDescSets[i], 0, 0,
+                                   vk::DescriptorType::eCombinedImageSampler,
+                                   envInfo),
+            nullptr);
+      }
+    }
+  }
+
+  if (ImGui::CollapsingHeader("Debug")) {
+    glm::vec3 cp = camera.getPosition();
+    ImGui::Text("camera: %.2f, %.2f, %.2f", cp.x, cp.y, cp.z);
+    ImGui::Checkbox("showThicknessHeatmap", &opts.showThicknessHeatmap);
+    ImGui::Checkbox("showFresnelOnly", &opts.showFresnelOnly);
+  }
+}
 
 void VgeExample::updateGlobalsUbo() {
   globalsUbo.view = camera.getView();
