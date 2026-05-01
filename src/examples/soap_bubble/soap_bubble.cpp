@@ -7,7 +7,30 @@ namespace vge {
 VgeExample::VgeExample() : VgeBase() { title = "soap_bubble"; }
 VgeExample::~VgeExample() {}
 
-void VgeExample::setupCommandLineParser(CLI::App& app) {}
+void VgeExample::setupCommandLineParser(CLI::App& app) {
+  VgeBase::setupCommandLineParser(app);
+  app.add_option("--thicknessMin", opts.thicknessMin,
+                 "film min thickness (nm)");
+  app.add_option("--thicknessMax", opts.thicknessMax,
+                 "film max thickness (nm)");
+  app.add_option("--n1", opts.n1, "outside refractive index");
+  app.add_option("--n2", opts.n2, "film refractive index");
+  app.add_option("--n3", opts.n3, "inside refractive index");
+  app.add_option("--spectralSamples", opts.spectralSamples,
+                 "samples in [380,780]nm");
+  app.add_option("--thicknessMode", opts.thicknessMode,
+                 "0=Texture, 1=Procedural");
+  app.add_option("--gravityStrength", opts.gravityStrength);
+  app.add_option("--noiseScale", opts.noiseScale);
+  app.add_option("--useAnimation", opts.useAnimation);
+  app.add_option("--driftSpeed", opts.driftSpeed);
+  app.add_option("--roughness", opts.roughness);
+  app.add_option("--alphaScale", opts.alphaScale);
+  app.add_option("--iblExposure", opts.iblExposure);
+  app.add_option("--iblGamma", opts.iblGamma);
+  app.add_option("--useJitter", opts.useJitter);
+  app.add_option("--skyboxLod", opts.skyboxLod);
+}
 
 void VgeExample::setOptions(const std::optional<Options>& o) {
   if (o) opts = *o;
