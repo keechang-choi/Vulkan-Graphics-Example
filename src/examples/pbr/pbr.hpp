@@ -2,6 +2,7 @@
 
 #include "vge_base.hpp"
 #include "vgeu_gltf.hpp"
+#include "vgeu_ibl.hpp"
 #include "vgeu_texture.hpp"
 
 namespace vge {
@@ -235,40 +236,16 @@ public:
   // Light animation accumulator
   float lightAnimTime = 0.f;
 
-  // IBL 텍스처 (startup 1회 생성)
-  std::unique_ptr<vgeu::VgeuImage> hdrTexture;
-  std::unique_ptr<vgeu::VgeuImage> envCubemap;
-  std::unique_ptr<vgeu::VgeuImage> irradianceMap;
-  std::unique_ptr<vgeu::VgeuImage> prefilteredMap;
-  std::unique_ptr<vgeu::VgeuImage> brdfLut;
-  vk::raii::Sampler iblSampler = nullptr;
-  vk::raii::Sampler hdrSampler = nullptr;
-  glm::mat4 captureProj;
-  std::vector<glm::mat4> captureViews;
+  // IBL baker + skybox (startup 1회 생성)
+  std::unique_ptr<vgeu::IBLBaker> iblBaker;
+  std::unique_ptr<vgeu::Skybox> skybox;
+  vgeu::IBLBakeConfig iblConfig;
 
   // IBL descriptor (composition set=1)
   vk::raii::DescriptorSetLayout iblDescriptorSetLayout = nullptr;
   std::vector<vk::raii::DescriptorSet> iblDescriptorSets;
 
-  // Skybox
-  vk::raii::Pipeline skyboxPipeline = nullptr;
-  vk::raii::PipelineLayout skyboxPipelineLayout = nullptr;
-  vk::raii::DescriptorSetLayout skyboxDescriptorSetLayout = nullptr;
-  std::vector<vk::raii::DescriptorSet> skyboxDescriptorSets;
-  std::unique_ptr<vgeu::VgeuBuffer> skyboxUboBuffer;  // per-frame, view+proj
-
-  // IBL 생성 함수
-  void prepareIBL();
-  void loadHdrTexture();
-  void buildEnvCubemap();
-  void buildIrradianceMap();
-  void buildPrefilteredMap();
-  // Waits idle, re-runs buildIrradianceMap + buildPrefilteredMap (both pick up
-  // opts.useJitter), and rewrites IBL descriptor sets.
-  void rebuildIBLFiltering();
-  void buildBrdfLut();
-  void prepareSkyboxPipeline();
-  void prepareSkyboxDescriptors();
+  void updateIBLDescriptors();
 };
 
 }  // namespace vge
