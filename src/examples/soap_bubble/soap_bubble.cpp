@@ -35,7 +35,18 @@ void VgeExample::prepare() {
   prepared = true;
 }
 
-void VgeExample::loadAssets() {}
+void VgeExample::loadAssets() {
+  bubbleModel = std::make_shared<vgeu::glTF::Model>(
+      device, globalAllocator->getAllocator(), queue, commandPool,
+      MAX_CONCURRENT_FRAMES);
+  vgeu::FileLoadingFlags loadFlags =
+      vgeu::FileLoadingFlagBits::kPreMultiplyVertexColors |
+      vgeu::FileLoadingFlagBits::kPreTransformVertices |
+      vgeu::FileLoadingFlagBits::kFlipY;
+  bubbleModel->loadFromFile(
+      getAssetsPath() + "/models/sphere/pirate-gold/pirate-gold-pbr.gltf",
+      loadFlags);
+}
 
 void VgeExample::prepareIBL() {
   iblConfig.hdrPath =
@@ -55,10 +66,9 @@ void VgeExample::setupDescriptors() {
       {vk::DescriptorType::eCombinedImageSampler,
        1u * MAX_CONCURRENT_FRAMES /*skybox*/}};
   descriptorPool = vk::raii::DescriptorPool(
-      device,
-      vk::DescriptorPoolCreateInfo(
-          vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-          MAX_CONCURRENT_FRAMES /*skybox*/, poolSizes));
+      device, vk::DescriptorPoolCreateInfo(
+                  vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+                  MAX_CONCURRENT_FRAMES /*skybox*/, poolSizes));
 
   skybox = std::make_unique<vgeu::Skybox>(
       device, pipelineCache, descriptorPool, renderPass,
@@ -83,8 +93,8 @@ void VgeExample::buildCommandBuffers() {
       0, vk::Viewport(0.f, 0.f, (float)width, (float)height, 0.f, 1.f));
   cmd.setScissor(0, vk::Rect2D({0, 0}, {width, height}));
 
-  skybox->draw(cmd, currentFrameIndex, camera.getView(),
-               camera.getProjection(), opts.skyboxLod);
+  skybox->draw(cmd, currentFrameIndex, camera.getView(), camera.getProjection(),
+               opts.skyboxLod);
 
   drawUI(cmd);
   cmd.endRenderPass();
