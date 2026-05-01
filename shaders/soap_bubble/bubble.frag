@@ -66,12 +66,53 @@ vec3 xyzToSrgb(vec3 xyz) {
   return max(M * xyz, vec3(0.0));
 }
 
+// Per-pixel thin-film reflectance integrated over visible spectrum,
+// returned as linear sRGB. d = thickness in nm, cosTheta1 = view-N dot.
+vec3 thinFilmReflectance(float d, float cosTheta1) {
+  float sinTheta1Sq = 1.0 - cosTheta1 * cosTheta1;
+  float sinTheta2 = (params.n1 / params.n2) * sqrt(max(sinTheta1Sq, 0.0));
+  if (sinTheta2 >= 1.0) return vec3(1.0);  // total internal reflection
+  float cosTheta2 = sqrt(1.0 - sinTheta2 * sinTheta2);
+
+  float r1 = fresnelSchlick(cosTheta1, params.n1, params.n2);
+  float r2 = fresnelSchlick(cosTheta2, params.n2, params.n3);
+
+  float phi1 = (params.n1 < params.n2) ? PI : 0.0;
+  float phi2 = (params.n2 < params.n3) ? PI : 0.0;
+  float deltaPhi = phi1 - phi2;
+
+  vec3 XYZ = vec3(0.0);
+  float yWeight = 0.0;
+  int N = clamp(params.spectralSamples, 4, 64);
+  for (int i = 0; i < N; ++i) {
+    float t = (float(i) + 0.5) / float(N);
+    float lambda = mix(380.0, 780.0, t);  // nm
+    float opdPhase = (4.0 * PI * params.n2 * d * cosTheta2) / lambda;
+    float R = r1 * r1 + r2 * r2 +
+              2.0 * r1 * r2 * cos(opdPhase + deltaPhi);
+    vec3 cmf = wymanCMF(lambda);
+    XYZ += R * cmf;
+    yWeight += cmf.y;
+  }
+  XYZ /= max(yWeight, 1e-6);
+  return xyzToSrgb(XYZ);
+}
+
 void main() {
   vec3 N = normalize(inWorldNormal);
   vec3 V = normalize(globals.viewPos.xyz - inWorldPos);
+  float cosTheta1 = max(dot(N, V), 0.001);
   vec3 R = reflect(-V, N);
 
+  // Uniform thickness for now (Task 22 swaps in thicknessAt())
+  float d = params.thicknessMax;
+
+  vec3 thinFilm = thinFilmReflectance(d, cosTheta1);
+
+  // env reflection (LOD 0 — roughness wired in Task 21)
   vec3 envColor = textureLod(prefilteredCubemap, R, 0.0).rgb;
 
-  outColor = vec4(envColor * params.iblExposure, 1.0);
+  vec3 color = thinFilm * envColor * params.iblExposure;
+
+  outColor = vec4(color, 1.0);
 }
