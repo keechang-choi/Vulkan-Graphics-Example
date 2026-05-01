@@ -1,12 +1,12 @@
 #pragma once
 
+#include <memory>
+#include <optional>
+
 #include "vge_base.hpp"
 #include "vgeu_gltf.hpp"
 #include "vgeu_ibl.hpp"
 #include "vgeu_texture.hpp"
-
-#include <memory>
-#include <optional>
 
 namespace vge {
 
@@ -72,7 +72,7 @@ struct BubbleParamsUbo {
 };
 
 class VgeExample : public VgeBase {
- public:
+public:
   VgeExample();
   ~VgeExample();
   void setupCommandLineParser(CLI::App& app) override;
@@ -106,6 +106,9 @@ class VgeExample : public VgeBase {
 
   // Bubble model
   std::shared_ptr<vgeu::glTF::Model> bubbleModel;
+
+  // Height texture (separate Texture2D, used for thickness modulation)
+  std::unique_ptr<vgeu::Texture2D> heightTexture;
 
   // Uniform buffers (per-frame)
   struct UniformBuffers {

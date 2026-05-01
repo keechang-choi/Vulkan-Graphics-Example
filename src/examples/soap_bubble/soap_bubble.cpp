@@ -46,6 +46,10 @@ void VgeExample::loadAssets() {
   bubbleModel->loadFromFile(
       getAssetsPath() + "/models/sphere/pirate-gold/pirate-gold-pbr.gltf",
       loadFlags);
+
+  heightTexture = std::make_unique<vgeu::Texture2D>(
+      getAssetsPath() + "/models/sphere/pirate-gold/pirate-gold_height.png",
+      device, globalAllocator->getAllocator(), queue, commandPool, true);
 }
 
 void VgeExample::prepareIBL() {
@@ -58,24 +62,205 @@ void VgeExample::prepareIBL() {
   iblBaker->bake(iblConfig);
 }
 
-void VgeExample::prepareUniformBuffers() {}
+void VgeExample::prepareUniformBuffers() {
+  uniformBuffers.resize(MAX_CONCURRENT_FRAMES);
+  for (auto& ub : uniformBuffers) {
+    ub.globals = std::make_unique<vgeu::VgeuBuffer>(
+        globalAllocator->getAllocator(), sizeof(GlobalsUbo), 1,
+        vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT);
+    ub.bubbleParams = std::make_unique<vgeu::VgeuBuffer>(
+        globalAllocator->getAllocator(), sizeof(BubbleParamsUbo), 1,
+        vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT);
+  }
+}
 
 void VgeExample::setupDescriptors() {
-  // Minimal pool: only skybox for now (MAX_CONCURRENT_FRAMES CIS descriptors)
+  // Pool sizes:
+  //   UBOs: 2 (globals, bubbleParams) * MAX_CONCURRENT_FRAMES
+  //         + skybox UBO (1 * MAX_CONCURRENT_FRAMES)
+  //   CIS:  height texture (1) + env (MAX_CONCURRENT_FRAMES)
+  //         + skybox cubemap (MAX_CONCURRENT_FRAMES)
   std::vector<vk::DescriptorPoolSize> poolSizes{
+      {vk::DescriptorType::eUniformBuffer,
+       3u * MAX_CONCURRENT_FRAMES /*globals + params + skybox*/},
       {vk::DescriptorType::eCombinedImageSampler,
-       1u * MAX_CONCURRENT_FRAMES /*skybox*/}};
+       1u + 2u * MAX_CONCURRENT_FRAMES /*height + env + skybox*/}};
+  // Set count: globals + params + env (per-frame) + height(1) +
+  // skybox(per-frame)
+  uint32_t maxSets = 3u * MAX_CONCURRENT_FRAMES + 1u + MAX_CONCURRENT_FRAMES;
   descriptorPool = vk::raii::DescriptorPool(
       device, vk::DescriptorPoolCreateInfo(
-                  vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-                  MAX_CONCURRENT_FRAMES /*skybox*/, poolSizes));
+                  vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, maxSets,
+                  poolSizes));
+
+  // set=0 Globals UBO (vert + frag)
+  {
+    vk::DescriptorSetLayoutBinding b(
+        0, vk::DescriptorType::eUniformBuffer, 1,
+        vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment);
+    globalsSetLayout = vk::raii::DescriptorSetLayout(
+        device, vk::DescriptorSetLayoutCreateInfo({}, b));
+  }
+  // set=1 BubbleParams UBO (frag)
+  {
+    vk::DescriptorSetLayoutBinding b(0, vk::DescriptorType::eUniformBuffer, 1,
+                                     vk::ShaderStageFlagBits::eFragment);
+    bubbleParamsSetLayout = vk::raii::DescriptorSetLayout(
+        device, vk::DescriptorSetLayoutCreateInfo({}, b));
+  }
+  // set=2 Height texture (frag)
+  {
+    vk::DescriptorSetLayoutBinding b(0,
+                                     vk::DescriptorType::eCombinedImageSampler,
+                                     1, vk::ShaderStageFlagBits::eFragment);
+    heightTexSetLayout = vk::raii::DescriptorSetLayout(
+        device, vk::DescriptorSetLayoutCreateInfo({}, b));
+  }
+  // set=3 prefiltered cubemap (frag)
+  {
+    vk::DescriptorSetLayoutBinding b(0,
+                                     vk::DescriptorType::eCombinedImageSampler,
+                                     1, vk::ShaderStageFlagBits::eFragment);
+    envSetLayout = vk::raii::DescriptorSetLayout(
+        device, vk::DescriptorSetLayoutCreateInfo({}, b));
+  }
+
+  globalsDescSets.reserve(MAX_CONCURRENT_FRAMES);
+  bubbleParamsDescSets.reserve(MAX_CONCURRENT_FRAMES);
+  envDescSets.reserve(MAX_CONCURRENT_FRAMES);
+  for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; ++i) {
+    // globals
+    globalsDescSets.push_back(
+        std::move(vk::raii::DescriptorSets(
+                      device, vk::DescriptorSetAllocateInfo(*descriptorPool,
+                                                            *globalsSetLayout))
+                      .front()));
+    vk::DescriptorBufferInfo globalsBI(uniformBuffers[i].globals->getBuffer(),
+                                       0, sizeof(GlobalsUbo));
+    device.updateDescriptorSets(
+        vk::WriteDescriptorSet(*globalsDescSets[i], 0, 0,
+                               vk::DescriptorType::eUniformBuffer, {},
+                               globalsBI),
+        nullptr);
+
+    // bubbleParams
+    bubbleParamsDescSets.push_back(
+        std::move(vk::raii::DescriptorSets(
+                      device, vk::DescriptorSetAllocateInfo(
+                                  *descriptorPool, *bubbleParamsSetLayout))
+                      .front()));
+    vk::DescriptorBufferInfo paramsBI(
+        uniformBuffers[i].bubbleParams->getBuffer(), 0,
+        sizeof(BubbleParamsUbo));
+    device.updateDescriptorSets(
+        vk::WriteDescriptorSet(*bubbleParamsDescSets[i], 0, 0,
+                               vk::DescriptorType::eUniformBuffer, {},
+                               paramsBI),
+        nullptr);
+
+    // env (prefiltered cubemap)
+    envDescSets.push_back(std::move(
+        vk::raii::DescriptorSets(device, vk::DescriptorSetAllocateInfo(
+                                             *descriptorPool, *envSetLayout))
+            .front()));
+    vk::DescriptorImageInfo envInfo(*iblBaker->iblSampler(),
+                                    *iblBaker->prefilteredMap().getImageView(),
+                                    vk::ImageLayout::eShaderReadOnlyOptimal);
+    device.updateDescriptorSets(
+        vk::WriteDescriptorSet(*envDescSets[i], 0, 0,
+                               vk::DescriptorType::eCombinedImageSampler,
+                               envInfo),
+        nullptr);
+  }
+
+  // Height texture (single set; texture is per-application, not per-frame)
+  heightTexDescSet =
+      std::move(vk::raii::DescriptorSets(
+                    device, vk::DescriptorSetAllocateInfo(*descriptorPool,
+                                                          *heightTexSetLayout))
+                    .front());
+  {
+    vk::DescriptorImageInfo heightInfo(*heightTexture->sampler,
+                                       heightTexture->descriptorInfo.imageView,
+                                       vk::ImageLayout::eShaderReadOnlyOptimal);
+    device.updateDescriptorSets(
+        vk::WriteDescriptorSet(*heightTexDescSet, 0, 0,
+                               vk::DescriptorType::eCombinedImageSampler,
+                               heightInfo),
+        nullptr);
+  }
 
   skybox = std::make_unique<vgeu::Skybox>(
       device, pipelineCache, descriptorPool, renderPass,
       iblConfig.commonShadersPath, *iblBaker, MAX_CONCURRENT_FRAMES);
 }
 
-void VgeExample::preparePipelines() {}
+void VgeExample::preparePipelines() {
+  std::array<vk::DescriptorSetLayout, 4> setLayouts{
+      *globalsSetLayout, *bubbleParamsSetLayout, *heightTexSetLayout,
+      *envSetLayout};
+  bubblePipelineLayout = vk::raii::PipelineLayout(
+      device, vk::PipelineLayoutCreateInfo({}, setLayouts));
+
+  auto vertCode =
+      vgeu::readFile(getShadersPath() + "/soap_bubble/bubble.vert.spv");
+  auto fragCode =
+      vgeu::readFile(getShadersPath() + "/soap_bubble/bubble.frag.spv");
+  auto vertSM = vgeu::createShaderModule(device, vertCode);
+  auto fragSM = vgeu::createShaderModule(device, fragCode);
+
+  std::array<vk::PipelineShaderStageCreateInfo, 2> stages{
+      vk::PipelineShaderStageCreateInfo({}, vk::ShaderStageFlagBits::eVertex,
+                                        *vertSM, "main"),
+      vk::PipelineShaderStageCreateInfo({}, vk::ShaderStageFlagBits::eFragment,
+                                        *fragSM, "main"),
+  };
+
+  auto vertexInputSCI = vgeu::glTF::Vertex::getPipelineVertexInputState(
+      {vgeu::glTF::VertexComponent::kPosition, vgeu::glTF::VertexComponent::kUV,
+       vgeu::glTF::VertexComponent::kColor,
+       vgeu::glTF::VertexComponent::kNormal,
+       vgeu::glTF::VertexComponent::kTangent});
+
+  vk::PipelineInputAssemblyStateCreateInfo iaCI(
+      {}, vk::PrimitiveTopology::eTriangleList);
+
+  vk::PipelineViewportStateCreateInfo vpCI({}, 1, nullptr, 1, nullptr);
+
+  vk::PipelineRasterizationStateCreateInfo rsCI(
+      {}, false, false, vk::PolygonMode::eFill, vk::CullModeFlagBits::eBack,
+      vk::FrontFace::eCounterClockwise, false, 0.f, 0.f, 0.f, 1.f);
+
+  vk::PipelineMultisampleStateCreateInfo msCI({}, vk::SampleCountFlagBits::e1);
+
+  // Depth test on, depth write OFF (transparent surfaces in Task 21+)
+  vk::PipelineDepthStencilStateCreateInfo dsCI({}, true /*depthTest*/,
+                                               false /*depthWrite*/,
+                                               vk::CompareOp::eLessOrEqual);
+
+  // Alpha blend (uses src.a; for Task 17 placeholder fragment outputs a=1.0)
+  vk::PipelineColorBlendAttachmentState cbAtt(
+      true, vk::BlendFactor::eSrcAlpha, vk::BlendFactor::eOneMinusSrcAlpha,
+      vk::BlendOp::eAdd, vk::BlendFactor::eOne, vk::BlendFactor::eZero,
+      vk::BlendOp::eAdd,
+      vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+          vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA);
+  vk::PipelineColorBlendStateCreateInfo cbCI({}, false, vk::LogicOp::eClear,
+                                             cbAtt);
+
+  std::array<vk::DynamicState, 2> dynStates{vk::DynamicState::eViewport,
+                                            vk::DynamicState::eScissor};
+  vk::PipelineDynamicStateCreateInfo dynCI({}, dynStates);
+
+  vk::GraphicsPipelineCreateInfo pipelineCI(
+      {}, stages, &vertexInputSCI, &iaCI, nullptr, &vpCI, &rsCI, &msCI, &dsCI,
+      &cbCI, &dynCI, *bubblePipelineLayout, *renderPass);
+  bubblePipeline = vk::raii::Pipeline(device, pipelineCache, pipelineCI);
+}
 
 void VgeExample::buildCommandBuffers() {
   const auto& cmd = drawCmdBuffers[currentFrameIndex];
@@ -95,6 +280,16 @@ void VgeExample::buildCommandBuffers() {
 
   skybox->draw(cmd, currentFrameIndex, camera.getView(), camera.getProjection(),
                opts.skyboxLod);
+
+  // bubble pass
+  cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *bubblePipeline);
+  std::array<vk::DescriptorSet, 4> descSets{
+      *globalsDescSets[currentFrameIndex],
+      *bubbleParamsDescSets[currentFrameIndex], *heightTexDescSet,
+      *envDescSets[currentFrameIndex]};
+  cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                         *bubblePipelineLayout, 0, descSets, nullptr);
+  bubbleModel->draw(currentFrameIndex, cmd);
 
   drawUI(cmd);
   cmd.endRenderPass();
@@ -123,6 +318,8 @@ void VgeExample::draw() {
 
 void VgeExample::render() {
   if (!prepared) return;
+  updateGlobalsUbo();
+  updateBubbleParamsUbo();
   draw();
 }
 
@@ -130,8 +327,36 @@ void VgeExample::viewChanged() {}
 
 void VgeExample::onUpdateUIOverlay() {}
 
-void VgeExample::updateGlobalsUbo() {}
-void VgeExample::updateBubbleParamsUbo() {}
+void VgeExample::updateGlobalsUbo() {
+  globalsUbo.view = camera.getView();
+  globalsUbo.projection = camera.getProjection();
+  globalsUbo.viewPos = glm::vec4(camera.getPosition(), 1.0f);
+  std::memcpy(uniformBuffers[currentFrameIndex].globals->getMappedData(),
+              &globalsUbo, sizeof(GlobalsUbo));
+}
+
+void VgeExample::updateBubbleParamsUbo() {
+  bubbleParamsUbo.thicknessMin = opts.thicknessMin;
+  bubbleParamsUbo.thicknessMax = opts.thicknessMax;
+  bubbleParamsUbo.n1 = opts.n1;
+  bubbleParamsUbo.n2 = opts.n2;
+  bubbleParamsUbo.n3 = opts.n3;
+  bubbleParamsUbo.spectralSamples = opts.spectralSamples;
+  bubbleParamsUbo.thicknessMode = opts.thicknessMode;
+  bubbleParamsUbo.gravityStrength = opts.gravityStrength;
+  bubbleParamsUbo.noiseScale = opts.noiseScale;
+  bubbleParamsUbo.useAnimation = opts.useAnimation ? 1 : 0;
+  bubbleParamsUbo.driftSpeed = opts.driftSpeed;
+  bubbleParamsUbo.roughness = opts.roughness;
+  bubbleParamsUbo.alphaScale = opts.alphaScale;
+  bubbleParamsUbo.iblExposure = opts.iblExposure;
+  bubbleParamsUbo.iblGamma = opts.iblGamma;
+  bubbleParamsUbo.time = static_cast<float>(timer);
+  bubbleParamsUbo.showThicknessHeatmap = opts.showThicknessHeatmap ? 1 : 0;
+  bubbleParamsUbo.showFresnelOnly = opts.showFresnelOnly ? 1 : 0;
+  std::memcpy(uniformBuffers[currentFrameIndex].bubbleParams->getMappedData(),
+              &bubbleParamsUbo, sizeof(BubbleParamsUbo));
+}
 
 }  // namespace vge
 
