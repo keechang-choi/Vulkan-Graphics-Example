@@ -728,9 +728,11 @@ void IBLBaker::buildPrefilteredMap(const IBLBakeConfig& config) {
             cmd.setViewport(
                 0, vk::Viewport(0, 0, (float)mipDim, (float)mipDim, 0.f, 1.f));
             cmd.setScissor(0, vk::Rect2D({}, vk::Extent2D{mipDim, mipDim}));
-            cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *capturePipeline);
+            cmd.bindPipeline(vk::PipelineBindPoint::eGraphics,
+                             *capturePipeline);
             cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                                   *capturePipelineLayout, 0, {*envDS}, nullptr);
+                                   *capturePipelineLayout, 0, {*envDS},
+                                   nullptr);
             cmd.pushConstants<CapturePushConstants>(
                 *capturePipelineLayout, vk::ShaderStageFlagBits::eVertex, 0,
                 pc);
@@ -898,8 +900,7 @@ Skybox::Skybox(const vk::raii::Device& device,
       vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0,
       sizeof(SkyboxPushConstants));
   pipelineLayout_ = vk::raii::PipelineLayout(
-      device_,
-      vk::PipelineLayoutCreateInfo({}, *descSetLayout_, pushRange));
+      device_, vk::PipelineLayoutCreateInfo({}, *descSetLayout_, pushRange));
 
   vk::DescriptorSetAllocateInfo allocInfo(*descPool, *descSetLayout_);
   descriptorSets_.reserve(maxFramesInFlight);
@@ -929,7 +930,7 @@ Skybox::Skybox(const vk::raii::Device& device,
   vk::PipelineInputAssemblyStateCreateInfo iaCI(
       {}, vk::PrimitiveTopology::eTriangleList);
   vk::PipelineRasterizationStateCreateInfo rasCI(
-      {}, false, false, vk::PolygonMode::eFill, vk::CullModeFlagBits::eNone,
+      {}, false, false, vk::PolygonMode::eFill, vk::CullModeFlagBits::eBack,
       vk::FrontFace::eCounterClockwise, false, 0, 0, 0, 1.f);
   vk::PipelineColorBlendAttachmentState blendAtt(
       false, {}, {}, {}, {}, {}, {},
@@ -937,7 +938,7 @@ Skybox::Skybox(const vk::raii::Device& device,
           vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA);
   vk::PipelineColorBlendStateCreateInfo cbCI({}, false, {}, blendAtt);
   vk::StencilOpState stencilOp(vk::StencilOp::eKeep, vk::StencilOp::eKeep,
-                                vk::StencilOp::eKeep, vk::CompareOp::eAlways);
+                               vk::StencilOp::eKeep, vk::CompareOp::eAlways);
   vk::PipelineDepthStencilStateCreateInfo dsCI(
       {}, true, false, vk::CompareOp::eLessOrEqual, false, false, stencilOp,
       stencilOp);

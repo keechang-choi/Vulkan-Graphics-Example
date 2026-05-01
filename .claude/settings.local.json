@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(./mingwBuild.bat Debug)"
+      "Bash(./mingwBuild.bat Debug)",
+      "Bash(clang-format -i src/base/vgeu_ibl.hpp src/base/vgeu_ibl.cpp)"
     ]
   }
 }

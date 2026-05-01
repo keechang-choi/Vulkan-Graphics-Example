@@ -1,0 +1,134 @@
+#pragma once
+
+#include "vge_base.hpp"
+#include "vgeu_gltf.hpp"
+#include "vgeu_ibl.hpp"
+#include "vgeu_texture.hpp"
+
+#include <memory>
+#include <optional>
+
+namespace vge {
+
+struct Options {
+  // Thin Film
+  float thicknessMin = 200.f;  // nm
+  float thicknessMax = 800.f;
+  float n1 = 1.0f;
+  float n2 = 1.33f;
+  float n3 = 1.0f;
+  int32_t spectralSamples = 16;
+  // Thickness Source
+  int32_t thicknessMode = 0;  // 0=Texture, 1=Procedural
+  float gravityStrength = 1.0f;
+  float noiseScale = 2.0f;
+  // Animation
+  bool useAnimation = false;
+  float driftSpeed = 0.2f;
+  // Surface & Blending
+  float roughness = 0.0f;
+  float alphaScale = 1.0f;
+  // IBL / Env
+  float iblExposure = 4.5f;
+  float iblGamma = 2.2f;
+  bool useJitter = true;
+  float skyboxLod = 0.0f;
+  // Debug
+  bool showThicknessHeatmap = false;
+  bool showFresnelOnly = false;
+};
+
+struct GlobalsUbo {
+  glm::mat4 view{1.f};
+  glm::mat4 projection{1.f};
+  glm::vec4 viewPos{0.f};
+};
+
+struct BubbleParamsUbo {
+  float thicknessMin;
+  float thicknessMax;
+  float n1;
+  float n2;
+  // -- 16 byte boundary --
+  float n3;
+  int32_t spectralSamples;
+  int32_t thicknessMode;
+  float gravityStrength;
+  // -- 16 --
+  float noiseScale;
+  int32_t useAnimation;
+  float driftSpeed;
+  float roughness;
+  // -- 16 --
+  float alphaScale;
+  float iblExposure;
+  float iblGamma;
+  float time;
+  // -- 16 --
+  int32_t showThicknessHeatmap;
+  int32_t showFresnelOnly;
+  float _pad0;
+  float _pad1;
+};
+
+class VgeExample : public VgeBase {
+ public:
+  VgeExample();
+  ~VgeExample();
+  void setupCommandLineParser(CLI::App& app) override;
+  void setOptions(const std::optional<Options>& opts);
+
+  void initVulkan() override;
+  void getEnabledExtensions() override;
+  void getEnabledFeatures() override;
+  void prepare() override;
+  void render() override;
+  void viewChanged() override;
+  void onUpdateUIOverlay() override;
+
+  void loadAssets();
+  void prepareIBL();
+  void prepareUniformBuffers();
+  void setupDescriptors();
+  void preparePipelines();
+  void buildCommandBuffers() override;
+  void draw();
+
+  void updateGlobalsUbo();
+  void updateBubbleParamsUbo();
+
+  Options opts{};
+
+  // IBL
+  std::unique_ptr<vgeu::IBLBaker> iblBaker;
+  std::unique_ptr<vgeu::Skybox> skybox;
+  vgeu::IBLBakeConfig iblConfig;
+
+  // Bubble model
+  std::shared_ptr<vgeu::glTF::Model> bubbleModel;
+
+  // Uniform buffers (per-frame)
+  struct UniformBuffers {
+    std::unique_ptr<vgeu::VgeuBuffer> globals;
+    std::unique_ptr<vgeu::VgeuBuffer> bubbleParams;
+  };
+  std::vector<UniformBuffers> uniformBuffers;
+
+  GlobalsUbo globalsUbo;
+  BubbleParamsUbo bubbleParamsUbo;
+
+  // Pipeline
+  vk::raii::DescriptorSetLayout globalsSetLayout = nullptr;
+  vk::raii::DescriptorSetLayout bubbleParamsSetLayout = nullptr;
+  vk::raii::DescriptorSetLayout heightTexSetLayout = nullptr;
+  vk::raii::DescriptorSetLayout envSetLayout = nullptr;
+  vk::raii::PipelineLayout bubblePipelineLayout = nullptr;
+  vk::raii::Pipeline bubblePipeline = nullptr;
+
+  std::vector<vk::raii::DescriptorSet> globalsDescSets;
+  std::vector<vk::raii::DescriptorSet> bubbleParamsDescSets;
+  vk::raii::DescriptorSet heightTexDescSet = nullptr;
+  std::vector<vk::raii::DescriptorSet> envDescSets;
+};
+
+}  // namespace vge
