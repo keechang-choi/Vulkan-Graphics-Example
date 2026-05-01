@@ -66,6 +66,22 @@ vec3 xyzToSrgb(vec3 xyz) {
   return max(M * xyz, vec3(0.0));
 }
 
+// Sample thickness at a surface point. Texture mode (0): heightTex .r in [0,1]
+// Procedural mode (1) added in Task 23.
+float thicknessAt(vec2 uv, vec3 worldPos, vec3 normal) {
+  float h;
+  if (params.thicknessMode == 0) {
+    vec2 sampleUV = uv;
+    if (params.useAnimation != 0) {
+      sampleUV += vec2(params.driftSpeed * params.time, 0.0);
+    }
+    h = texture(heightTex, sampleUV).r;
+  } else {
+    h = 0.5;  // Procedural — Task 23 fills this in
+  }
+  return mix(params.thicknessMin, params.thicknessMax, h);
+}
+
 // Per-pixel thin-film reflectance integrated over visible spectrum,
 // returned as linear sRGB. d = thickness in nm, cosTheta1 = view-N dot.
 vec3 thinFilmReflectance(float d, float cosTheta1) {
@@ -104,8 +120,7 @@ void main() {
   float cosTheta1 = max(dot(N, V), 0.001);
   vec3 R = reflect(-V, N);
 
-  // Uniform thickness for now (Task 22 swaps in thicknessAt())
-  float d = params.thicknessMax;
+  float d = thicknessAt(inUV, inWorldPos, N);
 
   vec3 thinFilm = thinFilmReflectance(d, cosTheta1);
 
