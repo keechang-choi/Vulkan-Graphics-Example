@@ -66,8 +66,39 @@ vec3 xyzToSrgb(vec3 xyz) {
   return max(M * xyz, vec3(0.0));
 }
 
-// Sample thickness at a surface point. Texture mode (0): heightTex .r in [0,1]
-// Procedural mode (1) added in Task 23.
+// Smooth 3D value noise via interleaved gradient hashing.
+float hash3(vec3 p) {
+  p = fract(p * vec3(443.8975, 397.2973, 491.1871));
+  p += dot(p, p.yzx + 19.19);
+  return fract((p.x + p.y) * p.z);
+}
+
+float valueNoise3D(vec3 p) {
+  vec3 i = floor(p);
+  vec3 f = fract(p);
+  vec3 u = f * f * (3.0 - 2.0 * f);  // smoothstep
+
+  float n000 = hash3(i + vec3(0, 0, 0));
+  float n100 = hash3(i + vec3(1, 0, 0));
+  float n010 = hash3(i + vec3(0, 1, 0));
+  float n110 = hash3(i + vec3(1, 1, 0));
+  float n001 = hash3(i + vec3(0, 0, 1));
+  float n101 = hash3(i + vec3(1, 0, 1));
+  float n011 = hash3(i + vec3(0, 1, 1));
+  float n111 = hash3(i + vec3(1, 1, 1));
+
+  float nx00 = mix(n000, n100, u.x);
+  float nx10 = mix(n010, n110, u.x);
+  float nx01 = mix(n001, n101, u.x);
+  float nx11 = mix(n011, n111, u.x);
+  float nxy0 = mix(nx00, nx10, u.y);
+  float nxy1 = mix(nx01, nx11, u.y);
+  return mix(nxy0, nxy1, u.z);
+}
+
+// Sample thickness at a surface point.
+//   mode 0: heightTex .r in [0,1] (UV scrolls with time when animated)
+//   mode 1: gravity gradient + 3D value noise (worldPos drives both)
 float thicknessAt(vec2 uv, vec3 worldPos, vec3 normal) {
   float h;
   if (params.thicknessMode == 0) {
@@ -77,7 +108,13 @@ float thicknessAt(vec2 uv, vec3 worldPos, vec3 normal) {
     }
     h = texture(heightTex, sampleUV).r;
   } else {
-    h = 0.5;  // Procedural — Task 23 fills this in
+    float gravity = clamp(0.5 + worldPos.y * params.gravityStrength, 0.0, 1.0);
+    vec3 noisePos = worldPos * params.noiseScale;
+    if (params.useAnimation != 0) {
+      noisePos += vec3(0.0, 0.0, params.time * params.driftSpeed);
+    }
+    float n = valueNoise3D(noisePos);
+    h = mix(gravity, n, 0.5);
   }
   return mix(params.thicknessMin, params.thicknessMax, h);
 }
