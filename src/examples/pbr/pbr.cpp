@@ -294,7 +294,6 @@ void VgeExample::loadAssets() {
   sphereDummyHeight = createDummyTexture({255, 255, 255, 255});
 }
 
-
 void VgeExample::setupDynamicUbo() {
   glm::vec3 up{0.f, -1.f, 0.f};
   glm::vec3 right{1.f, 0.f, 0.f};
@@ -566,18 +565,15 @@ void VgeExample::prepareUniformBuffers() {
 
 void VgeExample::updateIBLDescriptors() {
   for (int i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
-    vk::DescriptorImageInfo irradInfo(
-        *iblBaker->iblSampler(),
-        *iblBaker->irradianceMap().getImageView(),
-        vk::ImageLayout::eShaderReadOnlyOptimal);
-    vk::DescriptorImageInfo prefInfo(
-        *iblBaker->iblSampler(),
-        *iblBaker->prefilteredMap().getImageView(),
-        vk::ImageLayout::eShaderReadOnlyOptimal);
-    vk::DescriptorImageInfo brdfInfo(
-        *iblBaker->iblSampler(),
-        *iblBaker->brdfLut().getImageView(),
-        vk::ImageLayout::eShaderReadOnlyOptimal);
+    vk::DescriptorImageInfo irradInfo(*iblBaker->iblSampler(),
+                                      *iblBaker->irradianceMap().getImageView(),
+                                      vk::ImageLayout::eShaderReadOnlyOptimal);
+    vk::DescriptorImageInfo prefInfo(*iblBaker->iblSampler(),
+                                     *iblBaker->prefilteredMap().getImageView(),
+                                     vk::ImageLayout::eShaderReadOnlyOptimal);
+    vk::DescriptorImageInfo brdfInfo(*iblBaker->iblSampler(),
+                                     *iblBaker->brdfLut().getImageView(),
+                                     vk::ImageLayout::eShaderReadOnlyOptimal);
     std::vector<vk::WriteDescriptorSet> writes;
     writes.emplace_back(*iblDescriptorSets[i], 0, 0,
                         vk::DescriptorType::eCombinedImageSampler, irradInfo,
@@ -912,9 +908,9 @@ void VgeExample::setupDescriptors() {
     updateIBLDescriptors();
   }
 
-  skybox = std::make_unique<vgeu::Skybox>(device, pipelineCache, descriptorPool,
-                                          renderPass, iblConfig.commonShadersPath,
-                                          *iblBaker, MAX_CONCURRENT_FRAMES);
+  skybox = std::make_unique<vgeu::Skybox>(
+      device, pipelineCache, descriptorPool, renderPass,
+      iblConfig.commonShadersPath, *iblBaker, MAX_CONCURRENT_FRAMES);
 }
 
 void VgeExample::preparePipelines() {
@@ -1069,7 +1065,6 @@ void VgeExample::preparePipelines() {
         &dynamicSCI, *pipelineLayoutSprite, *renderPass);
     pipelines.sprite = vk::raii::Pipeline(device, pipelineCache, pipelineCI);
   }
-
 }
 
 void VgeExample::updateUboComposition() {
