@@ -31,6 +31,9 @@ VgeBase::~VgeBase() {
 void VgeBase::initVulkan() {
   // NOTE: shoud be created before instance for getting required extensions;
   vgeuWindow = std::make_unique<vgeu::VgeuWindow>(width, height, title);
+  if (winX.has_value() && winY.has_value()) {
+    vgeuWindow->setPosition(*winX, *winY);
+  }
   // NOTE: all vk::raii class have no copy assignment operator.
   // -> omit std::move
   context = std::make_unique<vk::raii::Context>();
@@ -84,8 +87,8 @@ void VgeBase::initVulkan() {
       static_cast<VkInstance>(*instance), apiVersion);
 }
 
-void VgeBase::getEnabledExtensions(){};
-void VgeBase::getEnabledFeatures(){};
+void VgeBase::getEnabledExtensions() {};
+void VgeBase::getEnabledFeatures() {};
 
 void VgeBase::prepare() {
   std::cout << "Call: prepare" << std::endl;
@@ -389,6 +392,8 @@ void VgeBase::setupCommandLineParser(CLI::App& app) {
       ->capture_default_str();
   app.add_option("--width", width, "Window Width")->capture_default_str();
   app.add_option("--height", height, "Window Height")->capture_default_str();
+  app.add_option("--win-x", winX, "Window X position (visible top-left)");
+  app.add_option("--win-y", winY, "Window Y position (visible top-left)");
   app.add_option("-f, --frame", MAX_CONCURRENT_FRAMES, "Max frames in-flight")
       ->capture_default_str();
 }

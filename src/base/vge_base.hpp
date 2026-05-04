@@ -20,7 +20,7 @@
 
 namespace vge {
 class VgeBase {
- public:
+public:
   // TODO: make it const, temporarily non-const to check FPS.
   uint32_t MAX_CONCURRENT_FRAMES = 2;
 
@@ -59,6 +59,8 @@ class VgeBase {
 
   uint32_t width = 1280;
   uint32_t height = 1080;
+  std::optional<int> winX;
+  std::optional<int> winY;
   std::string title = "Vulkan Example KC";
   std::string name = "vulkanExample";
   uint32_t apiVersion = VK_API_VERSION_1_3;
@@ -83,7 +85,7 @@ class VgeBase {
     bool overlay = true;
   } settings;
 
- protected:
+protected:
   std::unique_ptr<vk::raii::Context> context;
   vk::raii::Instance instance = nullptr;
   vk::raii::DebugUtilsMessengerEXT debugUtilsMessenger = nullptr;
@@ -133,7 +135,7 @@ class VgeBase {
   uint32_t currentFrameIndex = 0;
   uint32_t currentImageIndex;
 
- private:
+private:
   void windowResize();
   void updateUIOverlay();
   // TODO: check it necessary

@@ -77,4 +77,11 @@ void VgeuWindow::waitMinimized() {
   }
 }
 
+void VgeuWindow::setPosition(int x, int y) {
+  int frameLeft, frameTop, frameRight, frameBottom;
+  glfwGetWindowFrameSize(window, &frameLeft, &frameTop, &frameRight,
+                         &frameBottom);
+  glfwSetWindowPos(window, x + frameLeft, y + frameTop);
+}
+
 }  // namespace vgeu

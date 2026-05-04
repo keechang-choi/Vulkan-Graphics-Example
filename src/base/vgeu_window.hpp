@@ -22,7 +22,7 @@ struct MouseData {
 };
 
 class VgeuWindow {
- public:
+public:
   VgeuWindow(int w, int h, std::string name);
   ~VgeuWindow();
 
@@ -39,8 +39,10 @@ class VgeuWindow {
   void createWindowSurface(VkInstance instance, VkSurfaceKHR* surface);
   GLFWwindow* getGLFWwindow() const { return window; };
   void waitMinimized();
+  // (x, y) places the visible top-left, not GLFW's content area origin.
+  void setPosition(int x, int y);
 
- private:
+private:
   static void framebufferResizeCallback(GLFWwindow* window, int width,
                                         int height);
   static void keyCallback(GLFWwindow* window, int key, int scancode, int action,
