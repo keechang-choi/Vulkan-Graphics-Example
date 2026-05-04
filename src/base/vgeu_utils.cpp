@@ -306,17 +306,20 @@ SwapChainData::SwapChainData(const vk::raii::PhysicalDevice& physicalDevice,
        vk::SurfaceTransformFlagBitsKHR::eIdentity)
           ? vk::SurfaceTransformFlagBitsKHR::eIdentity
           : surfaceCapabilities.currentTransform;
+  // Prefer eOpaque so the framebuffer alpha is ignored by the desktop
+  // compositor; otherwise low-alpha clear values produce a transparent
+  // window on platforms that report ePre/PostMultiplied as supported.
   vk::CompositeAlphaFlagBitsKHR compositeAlpha =
       (surfaceCapabilities.supportedCompositeAlpha &
-       vk::CompositeAlphaFlagBitsKHR::ePreMultiplied)
-          ? vk::CompositeAlphaFlagBitsKHR::ePreMultiplied
-      : (surfaceCapabilities.supportedCompositeAlpha &
-         vk::CompositeAlphaFlagBitsKHR::ePostMultiplied)
-          ? vk::CompositeAlphaFlagBitsKHR::ePostMultiplied
+       vk::CompositeAlphaFlagBitsKHR::eOpaque)
+          ? vk::CompositeAlphaFlagBitsKHR::eOpaque
       : (surfaceCapabilities.supportedCompositeAlpha &
          vk::CompositeAlphaFlagBitsKHR::eInherit)
           ? vk::CompositeAlphaFlagBitsKHR::eInherit
-          : vk::CompositeAlphaFlagBitsKHR::eOpaque;
+      : (surfaceCapabilities.supportedCompositeAlpha &
+         vk::CompositeAlphaFlagBitsKHR::ePostMultiplied)
+          ? vk::CompositeAlphaFlagBitsKHR::ePostMultiplied
+          : vk::CompositeAlphaFlagBitsKHR::ePreMultiplied;
   vk::PresentModeKHR presentMode =
       pickPresentMode(physicalDevice.getSurfacePresentModesKHR(*surface));
   // NOTE: min image count
