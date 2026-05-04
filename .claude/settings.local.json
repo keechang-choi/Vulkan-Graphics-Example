@@ -1,8 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(./mingwBuild.bat Debug)",
-      "Bash(clang-format -i src/base/vgeu_ibl.hpp src/base/vgeu_ibl.cpp)"
+      "Bash(clang-format -i src/base/vgeu_ibl.hpp src/base/vgeu_ibl.cpp)",
+      "PowerShell",
+      "mcp__claude_ai_Google_Drive__search_files",
+      "mcp__claude_ai_Google_Drive__create_file",
+      "Bash"
     ]
   }
 }

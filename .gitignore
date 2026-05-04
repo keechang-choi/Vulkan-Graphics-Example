@@ -37,3 +37,5 @@ scripts/output.txt
 scripts/error.txt
 bash.exe.stackdump
 *.spv
+screenshots/*
+.config
