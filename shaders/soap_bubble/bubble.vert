@@ -3,6 +3,7 @@
 layout(set = 0, binding = 0) uniform Globals {
   mat4 view;
   mat4 projection;
+  mat4 model;
   vec4 viewPos;
 } globals;
 
@@ -17,8 +18,9 @@ layout(location = 1) out vec3 outWorldNormal;
 layout(location = 2) out vec2 outUV;
 
 void main() {
-  outWorldPos = inPos.xyz;
-  outWorldNormal = inNormal;
+  vec4 worldPos = globals.model * vec4(inPos.xyz, 1.0);
+  outWorldPos = worldPos.xyz;
+  outWorldNormal = mat3(globals.model) * inNormal;
   outUV = inUV;
-  gl_Position = globals.projection * globals.view * vec4(inPos.xyz, 1.0);
+  gl_Position = globals.projection * globals.view * worldPos;
 }

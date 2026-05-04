@@ -30,6 +30,9 @@ void VgeExample::setupCommandLineParser(CLI::App& app) {
   app.add_option("--iblGamma", opts.iblGamma);
   app.add_option("--useJitter", opts.useJitter);
   app.add_option("--skyboxLod", opts.skyboxLod);
+  app.add_option("--model", opts.model, "model: helmet | sphere")
+      ->check(CLI::IsMember({"helmet", "sphere"}))
+      ->capture_default_str();
 }
 
 void VgeExample::setOptions(const std::optional<Options>& o) {
@@ -66,9 +69,10 @@ void VgeExample::loadAssets() {
       vgeu::FileLoadingFlagBits::kPreMultiplyVertexColors |
       vgeu::FileLoadingFlagBits::kPreTransformVertices |
       vgeu::FileLoadingFlagBits::kFlipY;
-  bubbleModel->loadFromFile(
-      getAssetsPath() + "/models/sphere/pirate-gold/pirate-gold-pbr.gltf",
-      loadFlags);
+  std::string modelPath = (opts.model == "sphere")
+                              ? "/models/sphere/smooth_sphere.gltf"
+                              : "/models/DamagedHelmet/glTF/DamagedHelmet.gltf";
+  bubbleModel->loadFromFile(getAssetsPath() + modelPath, loadFlags);
 
   heightTexture = std::make_unique<vgeu::Texture2D>(
       getAssetsPath() + "/models/sphere/pirate-gold/pirate-gold_height.png",
@@ -349,6 +353,14 @@ void VgeExample::render() {
 void VgeExample::viewChanged() {}
 
 void VgeExample::onUpdateUIOverlay() {
+  if (ImGui::CollapsingHeader("Model", ImGuiTreeNodeFlags_DefaultOpen)) {
+    const char* items[] = {"helmet", "sphere"};
+    int idx = (opts.model == "sphere") ? 1 : 0;
+    if (ImGui::Combo("model", &idx, items, IM_ARRAYSIZE(items))) {
+      opts.model = items[idx];
+      restart = true;
+    }
+  }
   if (ImGui::CollapsingHeader("Thin Film", ImGuiTreeNodeFlags_DefaultOpen)) {
     ImGui::SliderFloat("thicknessMin (nm)", &opts.thicknessMin, 0.f, 2000.f);
     ImGui::SliderFloat("thicknessMax (nm)", &opts.thicknessMax, 0.f, 2000.f);
@@ -422,6 +434,17 @@ void VgeExample::onUpdateUIOverlay() {
 void VgeExample::updateGlobalsUbo() {
   globalsUbo.view = camera.getView();
   globalsUbo.projection = camera.getProjection();
+  if (opts.model == "helmet") {
+    // DamagedHelmet ships in Y-up convention; same rotations as the pbr
+    // example.
+    glm::vec3 up{0.f, -1.f, 0.f};
+    glm::vec3 right{1.f, 0.f, 0.f};
+    globalsUbo.model = glm::rotate(glm::mat4{1.f}, glm::radians(90.f), up);
+    globalsUbo.model =
+        glm::rotate(globalsUbo.model, glm::radians(-90.f), right);
+  } else {
+    globalsUbo.model = glm::mat4{1.f};
+  }
   globalsUbo.viewPos = glm::vec4(camera.getPosition(), 1.0f);
   std::memcpy(uniformBuffers[currentFrameIndex].globals->getMappedData(),
               &globalsUbo, sizeof(GlobalsUbo));

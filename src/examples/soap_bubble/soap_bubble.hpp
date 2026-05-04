@@ -36,11 +36,14 @@ struct Options {
   // Debug
   bool showThicknessHeatmap = false;
   bool showFresnelOnly = false;
+  // Model: "helmet" (DamagedHelmet) or "sphere"
+  std::string model = "helmet";
 };
 
 struct GlobalsUbo {
   glm::mat4 view{1.f};
   glm::mat4 projection{1.f};
+  glm::mat4 model{1.f};
   glm::vec4 viewPos{0.f};
 };
 
