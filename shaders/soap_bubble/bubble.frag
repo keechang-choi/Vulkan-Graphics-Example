@@ -20,13 +20,13 @@ layout(set = 1, binding = 0) uniform BubbleParams {
   float driftSpeed;
   float roughness;
   float alphaScale;
+  float alphaBase;
   float iblExposure;
   float iblGamma;
   float time;
   int showThicknessHeatmap;
   int showFresnelOnly;
   float _pad0;
-  float _pad1;
 } params;
 
 layout(set = 2, binding = 0) uniform sampler2D heightTex;
@@ -191,7 +191,8 @@ void main() {
 
   // Fresnel-driven alpha at the outer boundary
   float fresnel = fresnelSchlick(cosTheta1, params.n1, params.n2);
-  float alpha = clamp(fresnel * params.alphaScale, 0.0, 1.0);
+  float alpha =
+      clamp(params.alphaBase + fresnel * params.alphaScale, 0.0, 1.0);
 
   outColor = vec4(color, alpha);
 }
