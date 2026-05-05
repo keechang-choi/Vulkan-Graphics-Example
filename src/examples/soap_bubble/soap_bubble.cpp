@@ -400,6 +400,7 @@ void VgeExample::onUpdateUIOverlay() {
                               ImGuiTreeNodeFlags_DefaultOpen)) {
     ImGui::SliderFloat("roughness", &opts.roughness, 0.f, 1.f);
     ImGui::SliderFloat("alphaScale", &opts.alphaScale, 0.f, 3.f);
+    ImGui::SliderFloat("alphaBase", &opts.alphaBase, 0.f, 1.f);
   }
 
   if (ImGui::CollapsingHeader("IBL / Env")) {
