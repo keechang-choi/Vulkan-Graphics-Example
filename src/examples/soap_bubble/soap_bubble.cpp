@@ -26,6 +26,7 @@ void VgeExample::setupCommandLineParser(CLI::App& app) {
   app.add_option("--driftSpeed", opts.driftSpeed);
   app.add_option("--roughness", opts.roughness);
   app.add_option("--alphaScale", opts.alphaScale);
+  app.add_option("--alphaBase", opts.alphaBase);
   app.add_option("--iblExposure", opts.iblExposure);
   app.add_option("--iblGamma", opts.iblGamma);
   app.add_option("--useJitter", opts.useJitter);
@@ -464,6 +465,7 @@ void VgeExample::updateBubbleParamsUbo() {
   bubbleParamsUbo.driftSpeed = opts.driftSpeed;
   bubbleParamsUbo.roughness = opts.roughness;
   bubbleParamsUbo.alphaScale = opts.alphaScale;
+  bubbleParamsUbo.alphaBase = opts.alphaBase;
   bubbleParamsUbo.iblExposure = opts.iblExposure;
   bubbleParamsUbo.iblGamma = opts.iblGamma;
   bubbleParamsUbo.time = static_cast<float>(timer);
