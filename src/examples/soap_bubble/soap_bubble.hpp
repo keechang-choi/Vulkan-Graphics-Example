@@ -28,6 +28,7 @@ struct Options {
   // Surface & Blending
   float roughness = 0.0f;
   float alphaScale = 1.0f;
+  float alphaBase = 0.0f;
   // IBL / Env
   float iblExposure = 4.5f;
   float iblGamma = 2.2f;
@@ -64,14 +65,14 @@ struct BubbleParamsUbo {
   float roughness;
   // -- 16 --
   float alphaScale;
+  float alphaBase;
   float iblExposure;
   float iblGamma;
-  float time;
   // -- 16 --
+  float time;
   int32_t showThicknessHeatmap;
   int32_t showFresnelOnly;
   float _pad0;
-  float _pad1;
 };
 
 class VgeExample : public VgeBase {
