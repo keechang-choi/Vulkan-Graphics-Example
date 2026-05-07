@@ -33,6 +33,29 @@ void VgeExample::setupCommandLineParser(CLI::App& app) {
   app.add_option("--model", opts.model, "model: helmet | sphere")
       ->check(CLI::IsMember({"helmet", "sphere"}))
       ->capture_default_str();
+
+  app.add_option_function<std::vector<std::string>>(
+         "--bgEnable",
+         [this](const std::vector<std::string>& names) {
+           // First occurrence resets all to disabled, then enables only named.
+           for (auto& bg : opts.backgrounds) bg.enabled = false;
+           for (const auto& name : names) {
+             for (auto& bg : opts.backgrounds) {
+               auto slash = bg.path.find_last_of('/');
+               std::string leaf = (slash == std::string::npos)
+                                      ? bg.path
+                                      : bg.path.substr(slash + 1);
+               auto dot = leaf.find_last_of('.');
+               std::string stem =
+                   (dot == std::string::npos) ? leaf : leaf.substr(0, dot);
+               if (leaf == name || stem == name) bg.enabled = true;
+             }
+           }
+         },
+         "enable only the named background instances; "
+         "names match leaf filename or stem (e.g. apple, Fox, "
+         "smooth_sphere, dutch_ship_medium_1k)")
+      ->take_all();
 }
 
 void VgeExample::setOptions(const std::optional<Options>& o) {
@@ -539,6 +562,18 @@ void VgeExample::onUpdateUIOverlay() {
                                    envInfo),
             nullptr);
       }
+    }
+  }
+
+  if (ImGui::CollapsingHeader("Background", ImGuiTreeNodeFlags_DefaultOpen)) {
+    for (size_t i = 0; i < opts.backgrounds.size(); ++i) {
+      ImGui::PushID(static_cast<int>(i));
+      const auto& path = opts.backgrounds[i].path;
+      auto slash = path.find_last_of('/');
+      std::string label =
+          (slash == std::string::npos) ? path : path.substr(slash + 1);
+      ImGui::Checkbox(label.c_str(), &opts.backgrounds[i].enabled);
+      ImGui::PopID();
     }
   }
 
