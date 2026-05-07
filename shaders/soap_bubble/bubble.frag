@@ -65,33 +65,43 @@ vec3 xyzToSrgb(vec3 xyz) {
   return M * xyz;
 }
 
-float hash3(vec3 p) {
+// 3-component hash producing a gradient direction in [-1, 1]^3.
+vec3 hashGrad(vec3 p) {
   p = fract(p * vec3(443.8975, 397.2973, 491.1871));
   p += dot(p, p.yzx + 19.19);
-  return fract((p.x + p.y) * p.z);
+  vec3 g = vec3(fract((p.x + p.y) * p.z), fract((p.y + p.z) * p.x),
+                fract((p.z + p.x) * p.y));
+  return g * 2.0 - 1.0;
 }
 
-float valueNoise3D(vec3 p) {
+// Perlin gradient noise. Replaces value noise: corner values are always 0
+// (grad . displacement = 0 at the corner itself), so the spatial-rate-of-change
+// peaks at corners disappear and noiseScale increases no longer expose visible
+// cell-boundary "circles" on the sphere. Quintic interpolation keeps it C2.
+// Native range ~[-0.7, 0.7] in 3D; remapped to [0, 1].
+float perlinNoise3D(vec3 p) {
   vec3 i = floor(p);
   vec3 f = fract(p);
-  // Perlin quintic (C2 continuous): kills the visible cell-boundary creases
-  // that smoothstep (C1) shows on the sphere when noiseScale grows.
   vec3 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
-  float n000 = hash3(i + vec3(0, 0, 0));
-  float n100 = hash3(i + vec3(1, 0, 0));
-  float n010 = hash3(i + vec3(0, 1, 0));
-  float n110 = hash3(i + vec3(1, 1, 0));
-  float n001 = hash3(i + vec3(0, 0, 1));
-  float n101 = hash3(i + vec3(1, 0, 1));
-  float n011 = hash3(i + vec3(0, 1, 1));
-  float n111 = hash3(i + vec3(1, 1, 1));
+
+  float n000 = dot(hashGrad(i + vec3(0, 0, 0)), f - vec3(0, 0, 0));
+  float n100 = dot(hashGrad(i + vec3(1, 0, 0)), f - vec3(1, 0, 0));
+  float n010 = dot(hashGrad(i + vec3(0, 1, 0)), f - vec3(0, 1, 0));
+  float n110 = dot(hashGrad(i + vec3(1, 1, 0)), f - vec3(1, 1, 0));
+  float n001 = dot(hashGrad(i + vec3(0, 0, 1)), f - vec3(0, 0, 1));
+  float n101 = dot(hashGrad(i + vec3(1, 0, 1)), f - vec3(1, 0, 1));
+  float n011 = dot(hashGrad(i + vec3(0, 1, 1)), f - vec3(0, 1, 1));
+  float n111 = dot(hashGrad(i + vec3(1, 1, 1)), f - vec3(1, 1, 1));
+
   float nx00 = mix(n000, n100, u.x);
   float nx10 = mix(n010, n110, u.x);
   float nx01 = mix(n001, n101, u.x);
   float nx11 = mix(n011, n111, u.x);
   float nxy0 = mix(nx00, nx10, u.y);
   float nxy1 = mix(nx01, nx11, u.y);
-  return mix(nxy0, nxy1, u.z);
+  float n = mix(nxy0, nxy1, u.z);
+
+  return clamp(n * 0.7 + 0.5, 0.0, 1.0);
 }
 
 float thicknessAt(vec2 uv, vec3 worldPos, vec3 normal) {
@@ -108,7 +118,7 @@ float thicknessAt(vec2 uv, vec3 worldPos, vec3 normal) {
     if (params.useAnimation != 0) {
       noisePos += vec3(0.0, 0.0, params.time * params.driftSpeed);
     }
-    float n = valueNoise3D(noisePos);
+    float n = perlinNoise3D(noisePos);
     h = mix(gravity, n, 0.5);
   }
   return mix(params.thicknessMin, params.thicknessMax, h);
