@@ -36,7 +36,7 @@ struct Options {
   float n3 = 1.0f;
   int32_t spectralSamples = 16;
   // Thickness Source
-  int32_t thicknessMode = 0;  // 0=Texture, 1=Procedural
+  int32_t thicknessMode = 1;  // 0=Texture, 1=Procedural
   float gravityStrength = 1.0f;
   float noiseScale = 2.0f;
   // Animation
@@ -58,15 +58,15 @@ struct Options {
   // Background scene (hardcoded N-extensible; per-instance enable togglable)
   std::vector<BgInstance> backgrounds = {
       {"/models/apple/food_apple_01_4k.gltf", glm::vec3(-1.5f, 0.3f, 1.5f),
-       glm::vec3(0.f, 25.f, 0.f), 7.5f, glm::vec3(0.85f, 0.18f, 0.18f), true},
+       glm::vec3(0.f, 25.f, 0.f), 7.5f, glm::vec3(0.85f, 0.18f, 0.18f), false},
       {"/models/fox/Fox.gltf", glm::vec3(1.6f, -0.2f, 1.2f),
        glm::vec3(0.f, 180.f, 0.f), 0.015f, glm::vec3(0.95f, 0.62f, 0.20f),
-       true},
+       false},
       {"/models/sphere/smooth_sphere.gltf", glm::vec3(0.0f, 1.4f, 2.5f),
-       glm::vec3(0.f, 0.f, 0.f), 0.6f, glm::vec3(0.30f, 0.55f, 0.85f), true},
+       glm::vec3(0.f, 0.f, 0.f), 0.6f, glm::vec3(0.30f, 0.55f, 0.85f), false},
       {"/models/dutch_ship_medium_1k/dutch_ship_medium_1k.gltf",
        glm::vec3(0.0f, -1.5f, 2.0f), glm::vec3(0.f, 90.f, 15.f), 0.1f,
-       glm::vec3(0.55f, 0.42f, 0.30f), true},
+       glm::vec3(0.55f, 0.42f, 0.30f), false},
   };
   // Model: "helmet" (DamagedHelmet) or "sphere"
   std::string model = "helmet";
