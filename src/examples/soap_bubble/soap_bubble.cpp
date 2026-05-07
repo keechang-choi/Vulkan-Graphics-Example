@@ -551,7 +551,8 @@ void VgeExample::onUpdateUIOverlay() {
       device.waitIdle();
       iblConfig.useJitter = opts.useJitter;
       iblBaker->rebakeFiltering(iblConfig);
-      // Re-bind env descriptor (prefilteredMap was rebuilt)
+      // Re-bind both prefilteredMap (bubble pass) and irradianceMap (bg pass)
+      // since rebakeFiltering rebuilds both image views.
       for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; ++i) {
         vk::DescriptorImageInfo envInfo(
             *iblBaker->iblSampler(), *iblBaker->prefilteredMap().getImageView(),
@@ -560,6 +561,15 @@ void VgeExample::onUpdateUIOverlay() {
             vk::WriteDescriptorSet(*envDescSets[i], 0, 0,
                                    vk::DescriptorType::eCombinedImageSampler,
                                    envInfo),
+            nullptr);
+
+        vk::DescriptorImageInfo irrInfo(
+            *iblBaker->iblSampler(), *iblBaker->irradianceMap().getImageView(),
+            vk::ImageLayout::eShaderReadOnlyOptimal);
+        device.updateDescriptorSets(
+            vk::WriteDescriptorSet(*bgIrradianceDescSets[i], 0, 0,
+                                   vk::DescriptorType::eCombinedImageSampler,
+                                   irrInfo),
             nullptr);
       }
     }
