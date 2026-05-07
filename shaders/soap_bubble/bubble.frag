@@ -74,7 +74,9 @@ float hash3(vec3 p) {
 float valueNoise3D(vec3 p) {
   vec3 i = floor(p);
   vec3 f = fract(p);
-  vec3 u = f * f * (3.0 - 2.0 * f);
+  // Perlin quintic (C2 continuous): kills the visible cell-boundary creases
+  // that smoothstep (C1) shows on the sphere when noiseScale grows.
+  vec3 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
   float n000 = hash3(i + vec3(0, 0, 0));
   float n100 = hash3(i + vec3(1, 0, 0));
   float n010 = hash3(i + vec3(0, 1, 0));
