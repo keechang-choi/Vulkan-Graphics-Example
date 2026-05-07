@@ -372,6 +372,16 @@ void VgeExample::preparePipelines() {
   bgPipeline = vk::raii::Pipeline(device, pipelineCache, bgPipelineCI);
 }
 
+static glm::mat4 buildModelMatrix(const BgInstance& inst) {
+  glm::mat4 m{1.f};
+  m = glm::translate(m, inst.translate);
+  m = glm::rotate(m, glm::radians(inst.eulerDeg.y), glm::vec3(0, 1, 0));
+  m = glm::rotate(m, glm::radians(inst.eulerDeg.x), glm::vec3(1, 0, 0));
+  m = glm::rotate(m, glm::radians(inst.eulerDeg.z), glm::vec3(0, 0, 1));
+  m = glm::scale(m, glm::vec3(inst.scale));
+  return m;
+}
+
 void VgeExample::buildCommandBuffers() {
   const auto& cmd = drawCmdBuffers[currentFrameIndex];
   cmd.begin({});
@@ -390,6 +400,26 @@ void VgeExample::buildCommandBuffers() {
 
   skybox->draw(cmd, currentFrameIndex, camera.getView(), camera.getProjection(),
                opts.skyboxLod);
+
+  // background pass
+  cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *bgPipeline);
+  std::array<vk::DescriptorSet, 2> bgDescSets{
+      *globalsDescSets[currentFrameIndex],
+      *bgIrradianceDescSets[currentFrameIndex]};
+  cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *bgPipelineLayout, 0,
+                         bgDescSets, nullptr);
+  for (size_t i = 0; i < opts.backgrounds.size(); ++i) {
+    if (!opts.backgrounds[i].enabled) continue;
+    BgPushConstant pc{
+        buildModelMatrix(opts.backgrounds[i]),
+        glm::vec4(opts.backgrounds[i].baseColor, 1.0f),
+    };
+    cmd.pushConstants<BgPushConstant>(
+        *bgPipelineLayout,
+        vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+        0, pc);
+    bgModels[i]->draw(currentFrameIndex, cmd);
+  }
 
   // bubble pass
   cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *bubblePipeline);
