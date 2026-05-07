@@ -375,7 +375,7 @@ void VgeExample::preparePipelines() {
   };
 
   vk::PipelineRasterizationStateCreateInfo bgRsCI(
-      {}, false, false, vk::PolygonMode::eFill, vk::CullModeFlagBits::eBack,
+      {}, false, false, vk::PolygonMode::eFill, vk::CullModeFlagBits::eFront,
       vk::FrontFace::eCounterClockwise, false, 0.f, 0.f, 0.f, 1.f);
 
   vk::PipelineDepthStencilStateCreateInfo bgDsCI(

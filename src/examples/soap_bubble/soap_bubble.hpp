@@ -62,10 +62,10 @@ struct Options {
       {"/models/fox/Fox.gltf", glm::vec3(1.6f, -0.2f, 1.2f),
        glm::vec3(0.f, 180.f, 0.f), 0.015f, glm::vec3(0.95f, 0.62f, 0.20f),
        true},
-      {"/models/sphere/smooth_sphere.gltf", glm::vec3(0.0f, -1.5f, 2.0f),
+      {"/models/sphere/smooth_sphere.gltf", glm::vec3(0.0f, 1.4f, 2.5f),
        glm::vec3(0.f, 0.f, 0.f), 0.6f, glm::vec3(0.30f, 0.55f, 0.85f), true},
       {"/models/dutch_ship_medium_1k/dutch_ship_medium_1k.gltf",
-       glm::vec3(0.0f, 1.4f, 2.5f), glm::vec3(0.f, 90.f, 15.f), 0.1f,
+       glm::vec3(0.0f, -1.5f, 2.0f), glm::vec3(0.f, 90.f, 15.f), 0.1f,
        glm::vec3(0.55f, 0.42f, 0.30f), true},
   };
   // Model: "helmet" (DamagedHelmet) or "sphere"
