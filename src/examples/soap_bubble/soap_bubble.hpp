@@ -37,6 +37,7 @@ struct Options {
   // Debug
   bool showThicknessHeatmap = false;
   bool showFresnelOnly = false;
+  bool showNormal = false;
   // Model: "helmet" (DamagedHelmet) or "sphere"
   std::string model = "helmet";
 };
@@ -72,7 +73,7 @@ struct BubbleParamsUbo {
   float time;
   int32_t showThicknessHeatmap;
   int32_t showFresnelOnly;
-  float _pad0;
+  int32_t showNormal;
 };
 
 class VgeExample : public VgeBase {

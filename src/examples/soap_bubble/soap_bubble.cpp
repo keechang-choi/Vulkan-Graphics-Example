@@ -70,9 +70,10 @@ void VgeExample::loadAssets() {
       vgeu::FileLoadingFlagBits::kPreMultiplyVertexColors |
       vgeu::FileLoadingFlagBits::kPreTransformVertices |
       vgeu::FileLoadingFlagBits::kFlipY;
-  std::string modelPath = (opts.model == "sphere")
-                              ? "/models/sphere/smooth_sphere.gltf"
-                              : "/models/DamagedHelmet/glTF/DamagedHelmet.gltf";
+  std::string modelPath =
+      (opts.model == "sphere")
+          ? "/models/sphere/pirate-gold/pirate-gold-pbr.gltf"
+          : "/models/DamagedHelmet/glTF/DamagedHelmet.gltf";
   bubbleModel->loadFromFile(getAssetsPath() + modelPath, loadFlags);
 
   heightTexture = std::make_unique<vgeu::Texture2D>(
@@ -260,15 +261,14 @@ void VgeExample::preparePipelines() {
   vk::PipelineViewportStateCreateInfo vpCI({}, 1, nullptr, 1, nullptr);
 
   vk::PipelineRasterizationStateCreateInfo rsCI(
-      {}, false, false, vk::PolygonMode::eFill, vk::CullModeFlagBits::eBack,
+      {}, false, false, vk::PolygonMode::eFill, vk::CullModeFlagBits::eNone,
       vk::FrontFace::eCounterClockwise, false, 0.f, 0.f, 0.f, 1.f);
 
   vk::PipelineMultisampleStateCreateInfo msCI({}, vk::SampleCountFlagBits::e1);
 
   // Depth test on, depth write OFF (transparent surfaces in Task 21+)
-  vk::PipelineDepthStencilStateCreateInfo dsCI({}, true /*depthTest*/,
-                                               false /*depthWrite*/,
-                                               vk::CompareOp::eLessOrEqual);
+  vk::PipelineDepthStencilStateCreateInfo dsCI(
+      {}, true /*depthTest*/, true /*depthWrite*/, vk::CompareOp::eLessOrEqual);
 
   // Alpha blend (uses src.a; for Task 17 placeholder fragment outputs a=1.0)
   vk::PipelineColorBlendAttachmentState cbAtt(
@@ -430,6 +430,7 @@ void VgeExample::onUpdateUIOverlay() {
     ImGui::Text("camera: %.2f, %.2f, %.2f", cp.x, cp.y, cp.z);
     ImGui::Checkbox("showThicknessHeatmap", &opts.showThicknessHeatmap);
     ImGui::Checkbox("showFresnelOnly", &opts.showFresnelOnly);
+    ImGui::Checkbox("showNormal", &opts.showNormal);
   }
 }
 
@@ -472,6 +473,7 @@ void VgeExample::updateBubbleParamsUbo() {
   bubbleParamsUbo.time = static_cast<float>(timer);
   bubbleParamsUbo.showThicknessHeatmap = opts.showThicknessHeatmap ? 1 : 0;
   bubbleParamsUbo.showFresnelOnly = opts.showFresnelOnly ? 1 : 0;
+  bubbleParamsUbo.showNormal = opts.showNormal ? 1 : 0;
   std::memcpy(uniformBuffers[currentFrameIndex].bubbleParams->getMappedData(),
               &bubbleParamsUbo, sizeof(BubbleParamsUbo));
 }

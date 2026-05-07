@@ -27,7 +27,7 @@ layout(set = 1, binding = 0) uniform BubbleParams {
   float time;
   int showThicknessHeatmap;
   int showFresnelOnly;
-  float _pad0;
+  int showNormal;
 } params;
 
 layout(set = 2, binding = 0) uniform sampler2D heightTex;
@@ -155,6 +155,12 @@ vec3 thinFilmReflectance(float d, float cosTheta1) {
 void main() {
   vec3 N = normalize(inWorldNormal);
   vec3 V = normalize(globals.viewPos.xyz - inWorldPos);
+
+  if (params.showNormal != 0) {
+    outColor = vec4(N * 0.5 + 0.5, 1.0);
+    return;
+  }
+
   float cosTheta1 = max(dot(N, V), 0.001);
   vec3 R = reflect(-V, N);
 
