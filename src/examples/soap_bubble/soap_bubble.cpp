@@ -25,8 +25,7 @@ void VgeExample::setupCommandLineParser(CLI::App& app) {
   app.add_option("--useAnimation", opts.useAnimation);
   app.add_option("--driftSpeed", opts.driftSpeed);
   app.add_option("--roughness", opts.roughness);
-  app.add_option("--alphaScale", opts.alphaScale);
-  app.add_option("--alphaBase", opts.alphaBase);
+  app.add_option("--rtMode", opts.rtMode, "0=both, 1=R-only, 2=T-only");
   app.add_option("--iblExposure", opts.iblExposure);
   app.add_option("--iblGamma", opts.iblGamma);
   app.add_option("--useJitter", opts.useJitter);
@@ -261,7 +260,7 @@ void VgeExample::preparePipelines() {
   vk::PipelineViewportStateCreateInfo vpCI({}, 1, nullptr, 1, nullptr);
 
   vk::PipelineRasterizationStateCreateInfo rsCI(
-      {}, false, false, vk::PolygonMode::eFill, vk::CullModeFlagBits::eNone,
+      {}, false, false, vk::PolygonMode::eFill, vk::CullModeFlagBits::eBack,
       vk::FrontFace::eCounterClockwise, false, 0.f, 0.f, 0.f, 1.f);
 
   vk::PipelineMultisampleStateCreateInfo msCI({}, vk::SampleCountFlagBits::e1);
@@ -270,9 +269,10 @@ void VgeExample::preparePipelines() {
   vk::PipelineDepthStencilStateCreateInfo dsCI(
       {}, true /*depthTest*/, true /*depthWrite*/, vk::CompareOp::eLessOrEqual);
 
-  // Alpha blend (uses src.a; for Task 17 placeholder fragment outputs a=1.0)
+  // Blend OFF: bubble outputs alpha=1 with R/T compositing already done in
+  // shader; no alphablend fudge needed.
   vk::PipelineColorBlendAttachmentState cbAtt(
-      true, vk::BlendFactor::eSrcAlpha, vk::BlendFactor::eOneMinusSrcAlpha,
+      false, vk::BlendFactor::eSrcAlpha, vk::BlendFactor::eOneMinusSrcAlpha,
       vk::BlendOp::eAdd, vk::BlendFactor::eOne, vk::BlendFactor::eZero,
       vk::BlendOp::eAdd,
       vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
@@ -396,11 +396,16 @@ void VgeExample::onUpdateUIOverlay() {
     }
   }
 
-  if (ImGui::CollapsingHeader("Surface & Blending",
-                              ImGuiTreeNodeFlags_DefaultOpen)) {
+  if (ImGui::CollapsingHeader("Surface", ImGuiTreeNodeFlags_DefaultOpen)) {
     ImGui::SliderFloat("roughness", &opts.roughness, 0.f, 1.f);
-    ImGui::SliderFloat("alphaScale", &opts.alphaScale, 0.f, 3.f);
-    ImGui::SliderFloat("alphaBase", &opts.alphaBase, 0.f, 1.f);
+  }
+
+  if (ImGui::CollapsingHeader("R/T Debug", ImGuiTreeNodeFlags_DefaultOpen)) {
+    ImGui::RadioButton("Both", &opts.rtMode, 0);
+    ImGui::SameLine();
+    ImGui::RadioButton("R-only", &opts.rtMode, 1);
+    ImGui::SameLine();
+    ImGui::RadioButton("T-only", &opts.rtMode, 2);
   }
 
   if (ImGui::CollapsingHeader("IBL / Env")) {
@@ -466,11 +471,10 @@ void VgeExample::updateBubbleParamsUbo() {
   bubbleParamsUbo.useAnimation = opts.useAnimation ? 1 : 0;
   bubbleParamsUbo.driftSpeed = opts.driftSpeed;
   bubbleParamsUbo.roughness = opts.roughness;
-  bubbleParamsUbo.alphaScale = opts.alphaScale;
-  bubbleParamsUbo.alphaBase = opts.alphaBase;
   bubbleParamsUbo.iblExposure = opts.iblExposure;
   bubbleParamsUbo.iblGamma = opts.iblGamma;
   bubbleParamsUbo.time = static_cast<float>(timer);
+  bubbleParamsUbo.rtMode = opts.rtMode;
   bubbleParamsUbo.showThicknessHeatmap = opts.showThicknessHeatmap ? 1 : 0;
   bubbleParamsUbo.showFresnelOnly = opts.showFresnelOnly ? 1 : 0;
   bubbleParamsUbo.showNormal = opts.showNormal ? 1 : 0;

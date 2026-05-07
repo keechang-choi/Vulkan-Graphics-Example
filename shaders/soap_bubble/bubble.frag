@@ -20,14 +20,14 @@ layout(set = 1, binding = 0) uniform BubbleParams {
   int useAnimation;
   float driftSpeed;
   float roughness;
-  float alphaScale;
-  float alphaBase;
   float iblExposure;
   float iblGamma;
   float time;
+  int rtMode;                // 0=both, 1=R-only, 2=T-only
   int showThicknessHeatmap;
   int showFresnelOnly;
   int showNormal;
+  int _pad0;
 } params;
 
 layout(set = 2, binding = 0) uniform sampler2D heightTex;
@@ -41,8 +41,6 @@ layout(location = 0) out vec4 outColor;
 
 const float PI = 3.14159265358979323846;
 
-// Wyman 2013 analytical fit for CIE 1931 color matching functions.
-// Input: lambda in nm. Output: (x_bar, y_bar, z_bar).
 vec3 wymanCMF(float lambda) {
   float x = 0.398 * exp(-1250.0 * pow(log((lambda + 570.1) / 1014.0), 2.0)) +
             1.132 * exp(-234.0 * pow(log((1338.0 - lambda) / 743.5), 2.0));
@@ -51,23 +49,22 @@ vec3 wymanCMF(float lambda) {
   return vec3(x, y, z);
 }
 
-// Schlick Fresnel for unpolarized light at boundary nFrom -> nTo.
 float fresnelSchlick(float cosTheta, float nFrom, float nTo) {
   float f0 = (nFrom - nTo) / (nFrom + nTo);
   f0 = f0 * f0;
   return f0 + (1.0 - f0) * pow(1.0 - cosTheta, 5.0);
 }
 
-// XYZ -> linear sRGB (D65). Caller applies any gamma after.
+// XYZ -> linear sRGB (D65). max(0) clamp deferred to after composite so
+// out-of-gamut channels can cancel against env contributions.
 vec3 xyzToSrgb(vec3 xyz) {
   mat3 M = mat3(
        3.2406, -0.9689,  0.0557,
       -1.5372,  1.8758, -0.2040,
       -0.4986,  0.0415,  1.0570);
-  return max(M * xyz, vec3(0.0));
+  return M * xyz;
 }
 
-// Smooth 3D value noise via interleaved gradient hashing.
 float hash3(vec3 p) {
   p = fract(p * vec3(443.8975, 397.2973, 491.1871));
   p += dot(p, p.yzx + 19.19);
@@ -77,8 +74,7 @@ float hash3(vec3 p) {
 float valueNoise3D(vec3 p) {
   vec3 i = floor(p);
   vec3 f = fract(p);
-  vec3 u = f * f * (3.0 - 2.0 * f);  // smoothstep
-
+  vec3 u = f * f * (3.0 - 2.0 * f);
   float n000 = hash3(i + vec3(0, 0, 0));
   float n100 = hash3(i + vec3(1, 0, 0));
   float n010 = hash3(i + vec3(0, 1, 0));
@@ -87,7 +83,6 @@ float valueNoise3D(vec3 p) {
   float n101 = hash3(i + vec3(1, 0, 1));
   float n011 = hash3(i + vec3(0, 1, 1));
   float n111 = hash3(i + vec3(1, 1, 1));
-
   float nx00 = mix(n000, n100, u.x);
   float nx10 = mix(n010, n110, u.x);
   float nx01 = mix(n001, n101, u.x);
@@ -97,9 +92,6 @@ float valueNoise3D(vec3 p) {
   return mix(nxy0, nxy1, u.z);
 }
 
-// Sample thickness at a surface point.
-//   mode 0: heightTex .r in [0,1] (UV scrolls with time when animated)
-//   mode 1: gravity gradient + 3D value noise (worldPos drives both)
 float thicknessAt(vec2 uv, vec3 worldPos, vec3 normal) {
   float h;
   if (params.thicknessMode == 0) {
@@ -120,36 +112,13 @@ float thicknessAt(vec2 uv, vec3 worldPos, vec3 normal) {
   return mix(params.thicknessMin, params.thicknessMax, h);
 }
 
-// Per-pixel thin-film reflectance integrated over visible spectrum,
-// returned as linear sRGB. d = thickness in nm, cosTheta1 = view-N dot.
-vec3 thinFilmReflectance(float d, float cosTheta1) {
-  float sinTheta1Sq = 1.0 - cosTheta1 * cosTheta1;
-  float sinTheta2 = (params.n1 / params.n2) * sqrt(max(sinTheta1Sq, 0.0));
-  if (sinTheta2 >= 1.0) return vec3(1.0);  // total internal reflection
-  float cosTheta2 = sqrt(1.0 - sinTheta2 * sinTheta2);
-
-  float r1 = fresnelSchlick(cosTheta1, params.n1, params.n2);
-  float r2 = fresnelSchlick(cosTheta2, params.n2, params.n3);
-
-  float phi1 = (params.n1 < params.n2) ? PI : 0.0;
-  float phi2 = (params.n2 < params.n3) ? PI : 0.0;
-  float deltaPhi = phi1 - phi2;
-
-  vec3 XYZ = vec3(0.0);
-  float yWeight = 0.0;
-  int N = clamp(params.spectralSamples, 4, 64);
-  for (int i = 0; i < N; ++i) {
-    float t = (float(i) + 0.5) / float(N);
-    float lambda = mix(380.0, 780.0, t);  // nm
-    float opdPhase = (4.0 * PI * params.n2 * d * cosTheta2) / lambda;
-    float R = r1 * r1 + r2 * r2 +
-              2.0 * r1 * r2 * cos(opdPhase + deltaPhi);
-    vec3 cmf = wymanCMF(lambda);
-    XYZ += R * cmf;
-    yWeight += cmf.y;
-  }
-  XYZ /= max(yWeight, 1e-6);
-  return xyzToSrgb(XYZ);
+// Per-wavelength reflectance R(lambda). Amplitude form: R = R1 + R2 +
+// 2*sqrt(R1*R2)*cos(opdPhase + deltaPhi). R1, R2 are wavelength-independent
+// under Schlick (no dispersion) so passed in.
+float thinFilmR(float d, float cosTheta2, float deltaPhi, float lambda,
+                float R1, float R2) {
+  float opdPhase = (4.0 * PI * params.n2 * d * cosTheta2) / lambda;
+  return R1 + R2 + 2.0 * sqrt(max(R1 * R2, 0.0)) * cos(opdPhase + deltaPhi);
 }
 
 void main() {
@@ -162,11 +131,21 @@ void main() {
   }
 
   float cosTheta1 = max(dot(N, V), 0.001);
-  vec3 R = reflect(-V, N);
+  float sinTheta1Sq = 1.0 - cosTheta1 * cosTheta1;
+  float sinTheta2 = (params.n1 / params.n2) * sqrt(max(sinTheta1Sq, 0.0));
+  float cosTheta2 = (sinTheta2 >= 1.0) ? 0.0
+                                       : sqrt(1.0 - sinTheta2 * sinTheta2);
+
+  float R1 = fresnelSchlick(cosTheta1, params.n1, params.n2);
+  float R2 = (sinTheta2 >= 1.0)
+                 ? 1.0
+                 : fresnelSchlick(cosTheta2, params.n2, params.n3);
+  float phi1 = (params.n1 < params.n2) ? PI : 0.0;
+  float phi2 = (params.n2 < params.n3) ? PI : 0.0;
+  float deltaPhi = phi1 - phi2;
 
   float d = thicknessAt(inUV, inWorldPos, N);
 
-  // Debug: thickness heatmap (viridis-like ramp)
   if (params.showThicknessHeatmap != 0) {
     float t = clamp((d - params.thicknessMin) /
                         max(params.thicknessMax - params.thicknessMin, 1.0),
@@ -176,30 +155,53 @@ void main() {
     outColor = vec4(c, 1.0);
     return;
   }
-
-  // Debug: Fresnel grayscale
   if (params.showFresnelOnly != 0) {
-    float f = fresnelSchlick(cosTheta1, params.n1, params.n2);
-    outColor = vec4(f, f, f, 1.0);
+    outColor = vec4(R1, R1, R1, 1.0);
     return;
   }
 
-  vec3 thinFilm = thinFilmReflectance(d, cosTheta1);
+  // Spectral integration: accumulate XYZ for both R(lambda) and T(lambda)=1-R.
+  vec3 XYZ_R = vec3(0.0);
+  vec3 XYZ_T = vec3(0.0);
+  float yWeight = 0.0;
+  int N_samples = clamp(params.spectralSamples, 4, 64);
+  for (int i = 0; i < N_samples; ++i) {
+    float lambda =
+        mix(380.0, 780.0, (float(i) + 0.5) / float(N_samples));
+    float R = (sinTheta2 >= 1.0)
+                  ? 1.0
+                  : thinFilmR(d, cosTheta2, deltaPhi, lambda, R1, R2);
+    R = clamp(R, 0.0, 1.0);
+    vec3 cmf = wymanCMF(lambda);
+    XYZ_R += R * cmf;
+    XYZ_T += (1.0 - R) * cmf;
+    yWeight += cmf.y;
+  }
+  float invY = 1.0 / max(yWeight, 1e-6);
+  vec3 rgbR = xyzToSrgb(XYZ_R * invY);
+  vec3 rgbT = xyzToSrgb(XYZ_T * invY);
 
-  // roughness -> LOD on prefiltered cubemap
+  vec3 R_dir = reflect(-V, N);
+  vec3 T_dir = refract(-V, N, params.n1 / params.n2);
+  if (length(T_dir) < 1e-3) T_dir = -V;
+
   float maxLod = float(textureQueryLevels(prefilteredCubemap) - 1);
   float lod = clamp(params.roughness, 0.0, 1.0) * maxLod;
-  vec3 envColor = textureLod(prefilteredCubemap, R, lod).rgb;
+  vec3 envR = textureLod(prefilteredCubemap, R_dir, lod).rgb;
+  vec3 envT = textureLod(prefilteredCubemap, T_dir, lod).rgb;
 
-  vec3 color = thinFilm * envColor * params.iblExposure;
+  vec3 colorR = rgbR * envR;
+  vec3 colorT = rgbT * envT;
+  vec3 color;
+  if (params.rtMode == 1) {
+    color = colorR;
+  } else if (params.rtMode == 2) {
+    color = colorT;
+  } else {
+    color = colorR + colorT;
+  }
+  color = max(color, vec3(0.0)) * params.iblExposure;
+  color = pow(color, vec3(1.0 / params.iblGamma));
 
-  // Optional gamma (linear -> display)
-  color = pow(max(color, vec3(0.0)), vec3(1.0 / params.iblGamma));
-
-  // Fresnel-driven alpha at the outer boundary
-  float fresnel = fresnelSchlick(cosTheta1, params.n1, params.n2);
-  float alpha =
-      clamp(params.alphaBase + fresnel * params.alphaScale, 0.0, 1.0);
-
-  outColor = vec4(color, alpha);
+  outColor = vec4(color, 1.0);
 }

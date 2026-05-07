@@ -25,10 +25,10 @@ struct Options {
   // Animation
   bool useAnimation = false;
   float driftSpeed = 0.2f;
-  // Surface & Blending
+  // Surface
   float roughness = 0.0f;
-  float alphaScale = 1.0f;
-  float alphaBase = 0.0f;
+  // R/T Debug
+  int32_t rtMode = 0;  // 0=both, 1=R-only, 2=T-only
   // IBL / Env
   float iblExposure = 4.5f;
   float iblGamma = 2.2f;
@@ -65,15 +65,15 @@ struct BubbleParamsUbo {
   float driftSpeed;
   float roughness;
   // -- 16 --
-  float alphaScale;
-  float alphaBase;
   float iblExposure;
   float iblGamma;
-  // -- 16 --
   float time;
+  int32_t rtMode;
+  // -- 16 --
   int32_t showThicknessHeatmap;
   int32_t showFresnelOnly;
   int32_t showNormal;
+  int32_t _pad0;
 };
 
 class VgeExample : public VgeBase {
