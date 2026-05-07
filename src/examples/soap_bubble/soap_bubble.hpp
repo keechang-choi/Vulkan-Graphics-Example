@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <optional>
+#include <vector>
 
 #include "vge_base.hpp"
 #include "vgeu_gltf.hpp"
@@ -9,6 +10,22 @@
 #include "vgeu_texture.hpp"
 
 namespace vge {
+
+struct BgInstance {
+  std::string path;  // assetsPath-relative
+  glm::vec3 translate;
+  glm::vec3 eulerDeg;   // degrees
+  float scale;          // uniform
+  glm::vec3 baseColor;  // linear RGB
+  bool enabled;
+};
+
+struct BgPushConstant {
+  glm::mat4 model;
+  glm::vec4 baseColor;
+};
+static_assert(sizeof(BgPushConstant) == 80,
+              "BgPushConstant size must be 80 bytes");
 
 struct Options {
   // Thin Film
@@ -38,6 +55,19 @@ struct Options {
   bool showThicknessHeatmap = false;
   bool showFresnelOnly = false;
   bool showNormal = false;
+  // Background scene (hardcoded N-extensible; per-instance enable togglable)
+  std::vector<BgInstance> backgrounds = {
+      {"/models/apple/food_apple_01_4k.gltf", glm::vec3(-1.5f, 0.3f, 1.5f),
+       glm::vec3(0.f, 25.f, 0.f), 1.5f, glm::vec3(0.85f, 0.18f, 0.18f), true},
+      {"/models/fox/Fox.gltf", glm::vec3(1.6f, -0.2f, 1.2f),
+       glm::vec3(0.f, -20.f, 0.f), 0.015f, glm::vec3(0.95f, 0.62f, 0.20f),
+       true},
+      {"/models/sphere/smooth_sphere.gltf", glm::vec3(0.0f, -1.5f, 2.0f),
+       glm::vec3(0.f, 0.f, 0.f), 0.6f, glm::vec3(0.30f, 0.55f, 0.85f), true},
+      {"/models/dutch_ship_medium_1k/dutch_ship_medium_1k.gltf",
+       glm::vec3(0.0f, 1.4f, 2.5f), glm::vec3(0.f, 180.f, 15.f), 0.5f,
+       glm::vec3(0.55f, 0.42f, 0.30f), true},
+  };
   // Model: "helmet" (DamagedHelmet) or "sphere"
   std::string model = "helmet";
 };
@@ -112,6 +142,9 @@ public:
   // Bubble model
   std::shared_ptr<vgeu::glTF::Model> bubbleModel;
 
+  // Background scene
+  std::vector<std::shared_ptr<vgeu::glTF::Model>> bgModels;
+
   // Height texture (separate Texture2D, used for thickness modulation)
   std::unique_ptr<vgeu::Texture2D> heightTexture;
 
@@ -137,6 +170,12 @@ public:
   std::vector<vk::raii::DescriptorSet> bubbleParamsDescSets;
   vk::raii::DescriptorSet heightTexDescSet = nullptr;
   std::vector<vk::raii::DescriptorSet> envDescSets;
+
+  // Background pipeline / descriptor handles
+  vk::raii::DescriptorSetLayout bgIrradianceSetLayout = nullptr;
+  vk::raii::PipelineLayout bgPipelineLayout = nullptr;
+  vk::raii::Pipeline bgPipeline = nullptr;
+  std::vector<vk::raii::DescriptorSet> bgIrradianceDescSets;
 };
 
 }  // namespace vge

@@ -78,6 +78,20 @@ void VgeExample::loadAssets() {
   heightTexture = std::make_unique<vgeu::Texture2D>(
       getAssetsPath() + "/models/sphere/pirate-gold/pirate-gold_height.png",
       device, globalAllocator->getAllocator(), queue, commandPool, true);
+
+  // Background scene models
+  vgeu::FileLoadingFlags bgLoadFlags =
+      vgeu::FileLoadingFlagBits::kPreMultiplyVertexColors |
+      vgeu::FileLoadingFlagBits::kPreTransformVertices |
+      vgeu::FileLoadingFlagBits::kFlipY;
+  bgModels.reserve(opts.backgrounds.size());
+  for (const auto& inst : opts.backgrounds) {
+    auto m = std::make_shared<vgeu::glTF::Model>(
+        device, globalAllocator->getAllocator(), queue, commandPool,
+        MAX_CONCURRENT_FRAMES);
+    m->loadFromFile(getAssetsPath() + inst.path, bgLoadFlags);
+    bgModels.push_back(std::move(m));
+  }
 }
 
 void VgeExample::prepareIBL() {
@@ -116,10 +130,10 @@ void VgeExample::setupDescriptors() {
       {vk::DescriptorType::eUniformBuffer,
        3u * MAX_CONCURRENT_FRAMES /*globals + params + skybox*/},
       {vk::DescriptorType::eCombinedImageSampler,
-       1u + 2u * MAX_CONCURRENT_FRAMES /*height + env + skybox*/}};
-  // Set count: globals + params + env (per-frame) + height(1) +
+       1u + 3u * MAX_CONCURRENT_FRAMES /*height + env + skybox + bgIrr*/}};
+  // Set count: globals + params + env + bgIrr (per-frame) + height(1) +
   // skybox(per-frame)
-  uint32_t maxSets = 3u * MAX_CONCURRENT_FRAMES + 1u + MAX_CONCURRENT_FRAMES;
+  uint32_t maxSets = 4u * MAX_CONCURRENT_FRAMES + 1u + MAX_CONCURRENT_FRAMES;
   descriptorPool = vk::raii::DescriptorPool(
       device, vk::DescriptorPoolCreateInfo(
                   vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, maxSets,
@@ -222,6 +236,31 @@ void VgeExample::setupDescriptors() {
         nullptr);
   }
 
+  // bg pass set=1: irradiance map (frag)
+  {
+    vk::DescriptorSetLayoutBinding b(0,
+                                     vk::DescriptorType::eCombinedImageSampler,
+                                     1, vk::ShaderStageFlagBits::eFragment);
+    bgIrradianceSetLayout = vk::raii::DescriptorSetLayout(
+        device, vk::DescriptorSetLayoutCreateInfo({}, b));
+  }
+
+  bgIrradianceDescSets.reserve(MAX_CONCURRENT_FRAMES);
+  for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; ++i) {
+    bgIrradianceDescSets.push_back(
+        std::move(vk::raii::DescriptorSets(
+                      device, vk::DescriptorSetAllocateInfo(
+                                  *descriptorPool, *bgIrradianceSetLayout))
+                      .front()));
+    vk::DescriptorImageInfo info(*iblBaker->iblSampler(),
+                                 *iblBaker->irradianceMap().getImageView(),
+                                 vk::ImageLayout::eShaderReadOnlyOptimal);
+    device.updateDescriptorSets(
+        vk::WriteDescriptorSet(*bgIrradianceDescSets[i], 0, 0,
+                               vk::DescriptorType::eCombinedImageSampler, info),
+        nullptr);
+  }
+
   skybox = std::make_unique<vgeu::Skybox>(
       device, pipelineCache, descriptorPool, renderPass,
       iblConfig.commonShadersPath, *iblBaker, MAX_CONCURRENT_FRAMES);
@@ -288,6 +327,49 @@ void VgeExample::preparePipelines() {
       {}, stages, &vertexInputSCI, &iaCI, nullptr, &vpCI, &rsCI, &msCI, &dsCI,
       &cbCI, &dynCI, *bubblePipelineLayout, *renderPass);
   bubblePipeline = vk::raii::Pipeline(device, pipelineCache, pipelineCI);
+
+  // Background pipeline
+  std::array<vk::DescriptorSetLayout, 2> bgSetLayouts{*globalsSetLayout,
+                                                      *bgIrradianceSetLayout};
+  vk::PushConstantRange bgPcRange(
+      vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0,
+      sizeof(BgPushConstant));
+  bgPipelineLayout = vk::raii::PipelineLayout(
+      device, vk::PipelineLayoutCreateInfo({}, bgSetLayouts, bgPcRange));
+
+  auto bgVertCode =
+      vgeu::readFile(getShadersPath() + "/soap_bubble/bg.vert.spv");
+  auto bgFragCode =
+      vgeu::readFile(getShadersPath() + "/soap_bubble/bg.frag.spv");
+  auto bgVertSM = vgeu::createShaderModule(device, bgVertCode);
+  auto bgFragSM = vgeu::createShaderModule(device, bgFragCode);
+
+  std::array<vk::PipelineShaderStageCreateInfo, 2> bgStages{
+      vk::PipelineShaderStageCreateInfo({}, vk::ShaderStageFlagBits::eVertex,
+                                        *bgVertSM, "main"),
+      vk::PipelineShaderStageCreateInfo({}, vk::ShaderStageFlagBits::eFragment,
+                                        *bgFragSM, "main"),
+  };
+
+  vk::PipelineRasterizationStateCreateInfo bgRsCI(
+      {}, false, false, vk::PolygonMode::eFill, vk::CullModeFlagBits::eBack,
+      vk::FrontFace::eCounterClockwise, false, 0.f, 0.f, 0.f, 1.f);
+
+  vk::PipelineDepthStencilStateCreateInfo bgDsCI(
+      {}, true /*depthTest*/, true /*depthWrite*/, vk::CompareOp::eLessOrEqual);
+
+  vk::PipelineColorBlendAttachmentState bgCbAtt(
+      false, vk::BlendFactor::eOne, vk::BlendFactor::eZero, vk::BlendOp::eAdd,
+      vk::BlendFactor::eOne, vk::BlendFactor::eZero, vk::BlendOp::eAdd,
+      vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+          vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA);
+  vk::PipelineColorBlendStateCreateInfo bgCbCI({}, false, vk::LogicOp::eClear,
+                                               bgCbAtt);
+
+  vk::GraphicsPipelineCreateInfo bgPipelineCI(
+      {}, bgStages, &vertexInputSCI, &iaCI, nullptr, &vpCI, &bgRsCI, &msCI,
+      &bgDsCI, &bgCbCI, &dynCI, *bgPipelineLayout, *renderPass);
+  bgPipeline = vk::raii::Pipeline(device, pipelineCache, bgPipelineCI);
 }
 
 void VgeExample::buildCommandBuffers() {
