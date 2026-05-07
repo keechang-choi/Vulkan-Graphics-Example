@@ -322,7 +322,7 @@ void VgeExample::preparePipelines() {
   vk::PipelineViewportStateCreateInfo vpCI({}, 1, nullptr, 1, nullptr);
 
   vk::PipelineRasterizationStateCreateInfo rsCI(
-      {}, false, false, vk::PolygonMode::eFill, vk::CullModeFlagBits::eBack,
+      {}, false, false, vk::PolygonMode::eFill, vk::CullModeFlagBits::eFront,
       vk::FrontFace::eCounterClockwise, false, 0.f, 0.f, 0.f, 1.f);
 
   vk::PipelineMultisampleStateCreateInfo msCI({}, vk::SampleCountFlagBits::e1);
