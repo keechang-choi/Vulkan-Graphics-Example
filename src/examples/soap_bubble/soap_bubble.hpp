@@ -130,6 +130,7 @@ public:
   void prepare() override;
   void render() override;
   void viewChanged() override;
+  void windowResized() override;
   void onUpdateUIOverlay() override;
 
   void loadAssets();

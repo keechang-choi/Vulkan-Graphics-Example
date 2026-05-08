@@ -651,6 +651,23 @@ void VgeExample::render() {
 
 void VgeExample::viewChanged() {}
 
+void VgeExample::windowResized() {
+  // VgeBase::windowResized is called after swapchain is recreated and
+  // the new extent is in width/height + swapChainData->swapChainExtent.
+  // Rebuild offscreen attachments to match the new extent and rebind the
+  // sceneColor descriptors to the new image views.
+  prepareOffscreen();
+  for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; ++i) {
+    vk::DescriptorImageInfo info(*sceneColorSampler,
+                                 *offscreenColors[i]->getImageView(),
+                                 vk::ImageLayout::eShaderReadOnlyOptimal);
+    device.updateDescriptorSets(
+        vk::WriteDescriptorSet(*sceneColorDescSets[i], 0, 0,
+                               vk::DescriptorType::eCombinedImageSampler, info),
+        nullptr);
+  }
+}
+
 void VgeExample::onUpdateUIOverlay() {
   if (ImGui::CollapsingHeader("Model", ImGuiTreeNodeFlags_DefaultOpen)) {
     const char* items[] = {"helmet", "sphere"};
