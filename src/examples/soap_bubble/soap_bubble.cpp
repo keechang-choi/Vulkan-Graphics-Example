@@ -26,6 +26,9 @@ void VgeExample::setupCommandLineParser(CLI::App& app) {
   app.add_option("--driftSpeed", opts.driftSpeed);
   app.add_option("--roughness", opts.roughness);
   app.add_option("--rtMode", opts.rtMode, "0=both, 1=R-only, 2=T-only");
+  app.add_option("--useSSR", opts.useSSR);
+  app.add_option("--refractDepth", opts.refractDepth,
+                 "empirical depth along T_dir for SSR sample");
   app.add_option("--iblExposure", opts.iblExposure);
   app.add_option("--iblGamma", opts.iblGamma);
   app.add_option("--useJitter", opts.useJitter);
@@ -553,6 +556,47 @@ void VgeExample::buildCommandBuffers() {
   clearValues[0].color = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
   clearValues[1].depthStencil = vk::ClearDepthStencilValue(1.0f, 0);
 
+  // Helper to record skybox + background draws into the currently-bound
+  // render pass. Reused for both the offscreen pass and the swapchain pass
+  // when SSR is on.
+  auto recordSkyboxAndBg = [&]() {
+    skybox->draw(cmd, currentFrameIndex, camera.getView(),
+                 camera.getProjection(), opts.skyboxLod);
+
+    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *bgPipeline);
+    std::array<vk::DescriptorSet, 2> bgDescSets{
+        *globalsDescSets[currentFrameIndex],
+        *bgIrradianceDescSets[currentFrameIndex]};
+    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *bgPipelineLayout,
+                           0, bgDescSets, nullptr);
+    for (size_t i = 0; i < opts.backgrounds.size(); ++i) {
+      if (!opts.backgrounds[i].enabled) continue;
+      BgPushConstant pc{
+          buildModelMatrix(opts.backgrounds[i]),
+          glm::vec4(opts.backgrounds[i].baseColor, 1.0f),
+      };
+      cmd.pushConstants<BgPushConstant>(
+          *bgPipelineLayout,
+          vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+          0, pc);
+      bgModels[i]->draw(currentFrameIndex, cmd);
+    }
+  };
+
+  // Offscreen pass (only when SSR is on).
+  if (opts.useSSR) {
+    vk::RenderPassBeginInfo offBegin(*offscreenRenderPass,
+                                     *offscreenFramebuffers[currentFrameIndex],
+                                     {{0, 0}, {width, height}}, clearValues);
+    cmd.beginRenderPass(offBegin, vk::SubpassContents::eInline);
+    cmd.setViewport(
+        0, vk::Viewport(0.f, 0.f, (float)width, (float)height, 0.f, 1.f));
+    cmd.setScissor(0, vk::Rect2D({0, 0}, {width, height}));
+    recordSkyboxAndBg();
+    cmd.endRenderPass();
+  }
+
+  // Swapchain pass.
   vk::RenderPassBeginInfo rpBegin(*renderPass, *frameBuffers[currentImageIndex],
                                   {{0, 0}, {width, height}}, clearValues);
   cmd.beginRenderPass(rpBegin, vk::SubpassContents::eInline);
@@ -561,28 +605,7 @@ void VgeExample::buildCommandBuffers() {
       0, vk::Viewport(0.f, 0.f, (float)width, (float)height, 0.f, 1.f));
   cmd.setScissor(0, vk::Rect2D({0, 0}, {width, height}));
 
-  skybox->draw(cmd, currentFrameIndex, camera.getView(), camera.getProjection(),
-               opts.skyboxLod);
-
-  // background pass
-  cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *bgPipeline);
-  std::array<vk::DescriptorSet, 2> bgDescSets{
-      *globalsDescSets[currentFrameIndex],
-      *bgIrradianceDescSets[currentFrameIndex]};
-  cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *bgPipelineLayout, 0,
-                         bgDescSets, nullptr);
-  for (size_t i = 0; i < opts.backgrounds.size(); ++i) {
-    if (!opts.backgrounds[i].enabled) continue;
-    BgPushConstant pc{
-        buildModelMatrix(opts.backgrounds[i]),
-        glm::vec4(opts.backgrounds[i].baseColor, 1.0f),
-    };
-    cmd.pushConstants<BgPushConstant>(
-        *bgPipelineLayout,
-        vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-        0, pc);
-    bgModels[i]->draw(currentFrameIndex, cmd);
-  }
+  recordSkyboxAndBg();
 
   // bubble pass
   cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *bubblePipeline);
@@ -683,6 +706,13 @@ void VgeExample::onUpdateUIOverlay() {
     ImGui::RadioButton("T-only", &opts.rtMode, 2);
   }
 
+  if (ImGui::CollapsingHeader("Refraction", ImGuiTreeNodeFlags_DefaultOpen)) {
+    ImGui::Checkbox("Use Screen-Space Refraction (T)", &opts.useSSR);
+    if (opts.useSSR) {
+      ImGui::SliderFloat("refractDepth", &opts.refractDepth, 0.0f, 2.0f);
+    }
+  }
+
   if (ImGui::CollapsingHeader("IBL / Env")) {
     ImGui::SliderFloat("iblExposure", &opts.iblExposure, 0.f, 10.f);
     ImGui::SliderFloat("iblGamma", &opts.iblGamma, 1.f, 3.f);
@@ -775,6 +805,8 @@ void VgeExample::updateBubbleParamsUbo() {
   bubbleParamsUbo.showThicknessHeatmap = opts.showThicknessHeatmap ? 1 : 0;
   bubbleParamsUbo.showFresnelOnly = opts.showFresnelOnly ? 1 : 0;
   bubbleParamsUbo.showNormal = opts.showNormal ? 1 : 0;
+  bubbleParamsUbo.useSSR = opts.useSSR ? 1 : 0;
+  bubbleParamsUbo.refractDepth = opts.refractDepth;
   std::memcpy(uniformBuffers[currentFrameIndex].bubbleParams->getMappedData(),
               &bubbleParamsUbo, sizeof(BubbleParamsUbo));
 }

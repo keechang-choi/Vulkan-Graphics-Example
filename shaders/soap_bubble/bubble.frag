@@ -28,10 +28,15 @@ layout(set = 1, binding = 0) uniform BubbleParams {
   int showFresnelOnly;
   int showNormal;
   int _pad0;
+  int useSSR;                // 0=cubemap T, 1=screen-space refraction
+  float refractDepth;        // empirical offset along T_dir
+  int _pad1;
+  int _pad2;
 } params;
 
 layout(set = 2, binding = 0) uniform sampler2D heightTex;
 layout(set = 3, binding = 0) uniform samplerCube prefilteredCubemap;
+layout(set = 4, binding = 0) uniform sampler2D sceneColor;
 
 layout(location = 0) in vec3 inWorldPos;
 layout(location = 1) in vec3 inWorldNormal;
@@ -243,7 +248,20 @@ void main() {
   float maxLod = float(textureQueryLevels(prefilteredCubemap) - 1);
   float lod = clamp(params.roughness, 0.0, 1.0) * maxLod;
   vec3 envR = textureLod(prefilteredCubemap, R_dir, lod).rgb;
-  vec3 envT = textureLod(prefilteredCubemap, T_dir, lod).rgb;
+  vec3 envT;
+  if (params.useSSR != 0) {
+    vec3 P_behind = inWorldPos + T_dir * params.refractDepth;
+    vec4 ndc = globals.projection * globals.view * vec4(P_behind, 1.0);
+    vec2 uv = (ndc.xy / ndc.w) * 0.5 + 0.5;
+    if (all(greaterThanEqual(uv, vec2(0.0))) &&
+        all(lessThanEqual(uv, vec2(1.0)))) {
+      envT = texture(sceneColor, uv).rgb;
+    } else {
+      envT = textureLod(prefilteredCubemap, T_dir, lod).rgb;
+    }
+  } else {
+    envT = textureLod(prefilteredCubemap, T_dir, lod).rgb;
+  }
 
   vec3 colorR = rgbR * envR;
   vec3 colorT = rgbT * envT;

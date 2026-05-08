@@ -55,18 +55,21 @@ struct Options {
   bool showThicknessHeatmap = false;
   bool showFresnelOnly = false;
   bool showNormal = false;
+  // Refraction
+  bool useSSR = true;
+  float refractDepth = 0.5f;
   // Background scene (hardcoded N-extensible; per-instance enable togglable)
   std::vector<BgInstance> backgrounds = {
       {"/models/apple/food_apple_01_4k.gltf", glm::vec3(-1.5f, 0.3f, 1.5f),
-       glm::vec3(0.f, 25.f, 0.f), 7.5f, glm::vec3(0.85f, 0.18f, 0.18f), false},
+       glm::vec3(0.f, 25.f, 0.f), 7.5f, glm::vec3(0.85f, 0.18f, 0.18f), true},
       {"/models/fox/Fox.gltf", glm::vec3(1.6f, -0.2f, 1.2f),
        glm::vec3(0.f, 180.f, 0.f), 0.015f, glm::vec3(0.95f, 0.62f, 0.20f),
-       false},
+       true},
       {"/models/sphere/smooth_sphere.gltf", glm::vec3(0.0f, 1.4f, 2.5f),
-       glm::vec3(0.f, 0.f, 0.f), 0.6f, glm::vec3(0.30f, 0.55f, 0.85f), false},
+       glm::vec3(0.f, 0.f, 0.f), 0.6f, glm::vec3(0.30f, 0.55f, 0.85f), true},
       {"/models/dutch_ship_medium_1k/dutch_ship_medium_1k.gltf",
        glm::vec3(0.0f, -1.5f, 2.0f), glm::vec3(0.f, 90.f, 15.f), 0.1f,
-       glm::vec3(0.55f, 0.42f, 0.30f), false},
+       glm::vec3(0.55f, 0.42f, 0.30f), true},
   };
   // Model: "helmet" (DamagedHelmet) or "sphere"
   std::string model = "helmet";
@@ -104,6 +107,11 @@ struct BubbleParamsUbo {
   int32_t showFresnelOnly;
   int32_t showNormal;
   int32_t _pad0;
+  // -- 16 --
+  int32_t useSSR;
+  float refractDepth;
+  int32_t _pad1;
+  int32_t _pad2;
 };
 
 class VgeExample : public VgeBase {
