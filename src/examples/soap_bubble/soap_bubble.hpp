@@ -106,13 +106,16 @@ struct BubbleParamsUbo {
   int32_t showThicknessHeatmap;
   int32_t showFresnelOnly;
   int32_t showNormal;
-  int32_t _pad0;
+  int32_t _pad0 = 0;
   // -- 16 --
   int32_t useSSR;
   float refractDepth;
-  int32_t _pad1;
-  int32_t _pad2;
+  int32_t _pad1 = 0;
+  int32_t _pad2 = 0;
 };
+static_assert(
+    sizeof(BubbleParamsUbo) == 96,
+    "BubbleParamsUbo size must match shader std140 layout (96 bytes)");
 
 class VgeExample : public VgeBase {
 public:
