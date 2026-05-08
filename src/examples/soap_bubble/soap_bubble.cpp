@@ -154,45 +154,12 @@ void VgeExample::prepareOffscreen() {
         vk::ImageAspectFlagBits::eDepth, 1));
   }
 
-  // Render pass: color (eShaderReadOnly <-> eColorAttachment cycle) + depth.
-  {
-    std::array<vk::AttachmentDescription, 2> attachments;
-    attachments[0] = vk::AttachmentDescription(
-        {}, colorFmt, vk::SampleCountFlagBits::e1, vk::AttachmentLoadOp::eClear,
-        vk::AttachmentStoreOp::eStore, vk::AttachmentLoadOp::eDontCare,
-        vk::AttachmentStoreOp::eDontCare,
-        vk::ImageLayout::eShaderReadOnlyOptimal,
-        vk::ImageLayout::eShaderReadOnlyOptimal);
-    attachments[1] = vk::AttachmentDescription(
-        {}, depthFormat, vk::SampleCountFlagBits::e1,
-        vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eDontCare,
-        vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
-        vk::ImageLayout::eUndefined,
-        vk::ImageLayout::eDepthStencilAttachmentOptimal);
-
-    vk::AttachmentReference colorRef(0,
-                                     vk::ImageLayout::eColorAttachmentOptimal);
-    vk::AttachmentReference depthRef(
-        1, vk::ImageLayout::eDepthStencilAttachmentOptimal);
-    vk::SubpassDescription subpass({}, vk::PipelineBindPoint::eGraphics, {},
-                                   colorRef, {}, &depthRef);
-
-    std::array<vk::SubpassDependency, 2> deps;
-    deps[0] = vk::SubpassDependency(
-        VK_SUBPASS_EXTERNAL, 0, vk::PipelineStageFlagBits::eFragmentShader,
-        vk::PipelineStageFlagBits::eColorAttachmentOutput,
-        vk::AccessFlagBits::eShaderRead,
-        vk::AccessFlagBits::eColorAttachmentWrite);
-    deps[1] =
-        vk::SubpassDependency(0, VK_SUBPASS_EXTERNAL,
-                              vk::PipelineStageFlagBits::eColorAttachmentOutput,
-                              vk::PipelineStageFlagBits::eFragmentShader,
-                              vk::AccessFlagBits::eColorAttachmentWrite,
-                              vk::AccessFlagBits::eShaderRead);
-
-    offscreenRenderPass = vk::raii::RenderPass(
-        device, vk::RenderPassCreateInfo({}, attachments, subpass, deps));
-  }
+  // Render pass: reuse the shared helper so subpass dependencies match the
+  // swap render pass exactly (required for render-pass compatibility with
+  // pipelines created against the swap pass).
+  offscreenRenderPass = vgeu::createRenderPass(
+      device, colorFmt, depthFormat, vk::AttachmentLoadOp::eClear,
+      vk::ImageLayout::eShaderReadOnlyOptimal);
 
   // Per-frame framebuffer (one color + one depth view).
   for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; ++i) {
@@ -213,25 +180,6 @@ void VgeExample::prepareOffscreen() {
                             vk::SamplerAddressMode::eClampToEdge, 0.f, false,
                             1.f, false, vk::CompareOp::eAlways, 0.f, 0.f,
                             vk::BorderColor::eFloatOpaqueBlack, false));
-
-  // Init barrier: bring color images to ShaderReadOnly so the very first
-  // offscreen render pass's initialLayout assumption holds. Depth attachments
-  // are transitioned by the render pass itself (initialLayout = Undefined).
-  vgeu::oneTimeSubmit(
-      device, commandPool, queue, [&](const vk::raii::CommandBuffer& cmd) {
-        for (auto& img : offscreenColors) {
-          vk::ImageMemoryBarrier b(
-              vk::AccessFlags{}, vk::AccessFlagBits::eShaderRead,
-              vk::ImageLayout::eUndefined,
-              vk::ImageLayout::eShaderReadOnlyOptimal, VK_QUEUE_FAMILY_IGNORED,
-              VK_QUEUE_FAMILY_IGNORED, img->getImage(),
-              vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1,
-                                        0, 1));
-          cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
-                              vk::PipelineStageFlagBits::eFragmentShader, {},
-                              nullptr, nullptr, b);
-        }
-      });
 }
 
 void VgeExample::prepareIBL() {
@@ -594,6 +542,21 @@ void VgeExample::buildCommandBuffers() {
     cmd.setScissor(0, vk::Rect2D({0, 0}, {width, height}));
     recordSkyboxAndBg();
     cmd.endRenderPass();
+
+    // Barrier: ColorAttachmentWrite (offscreen pass) -> ShaderRead (bubble
+    // pass). The render pass's finalLayout already transitioned the image to
+    // eShaderReadOnlyOptimal, but the layout transition alone does not provide
+    // memory visibility - we still need an explicit memory dependency.
+    vk::ImageMemoryBarrier offscreenToShaderRead(
+        vk::AccessFlagBits::eColorAttachmentWrite,
+        vk::AccessFlagBits::eShaderRead,
+        vk::ImageLayout::eShaderReadOnlyOptimal,
+        vk::ImageLayout::eShaderReadOnlyOptimal, VK_QUEUE_FAMILY_IGNORED,
+        VK_QUEUE_FAMILY_IGNORED, offscreenColors[currentFrameIndex]->getImage(),
+        vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+    cmd.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                        vk::PipelineStageFlagBits::eFragmentShader, {}, nullptr,
+                        nullptr, offscreenToShaderRead);
   }
 
   // Swapchain pass.
