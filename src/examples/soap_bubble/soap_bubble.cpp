@@ -78,6 +78,7 @@ void VgeExample::prepare() {
   VgeBase::prepare();
   loadAssets();
   prepareIBL();
+  prepareOffscreen();
   prepareUniformBuffers();
   setupDescriptors();
   preparePipelines();
@@ -115,6 +116,119 @@ void VgeExample::loadAssets() {
     m->loadFromFile(getAssetsPath() + inst.path, bgLoadFlags);
     bgModels.push_back(std::move(m));
   }
+}
+
+void VgeExample::destroyOffscreen() {
+  // Tear down in reverse order; clear vectors so emplace later starts clean.
+  offscreenFramebuffers.clear();
+  offscreenColors.clear();
+  offscreenDepths.clear();
+}
+
+void VgeExample::prepareOffscreen() {
+  destroyOffscreen();
+
+  vk::Extent2D extent = swapChainData->swapChainExtent;
+  vk::Format colorFmt = swapChainData->colorFormat;
+
+  // Create per-frame color + depth images.
+  for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; ++i) {
+    offscreenColors.push_back(std::make_unique<vgeu::VgeuImage>(
+        device, globalAllocator->getAllocator(), colorFmt, extent,
+        vk::ImageTiling::eOptimal,
+        vk::ImageUsageFlagBits::eColorAttachment |
+            vk::ImageUsageFlagBits::eSampled,
+        vk::ImageLayout::eUndefined, VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
+        vk::ImageAspectFlagBits::eColor, 1));
+
+    offscreenDepths.push_back(std::make_unique<vgeu::VgeuImage>(
+        device, globalAllocator->getAllocator(), depthFormat, extent,
+        vk::ImageTiling::eOptimal,
+        vk::ImageUsageFlagBits::eDepthStencilAttachment,
+        vk::ImageLayout::eUndefined, VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
+        vk::ImageAspectFlagBits::eDepth, 1));
+  }
+
+  // Render pass: color (eShaderReadOnly <-> eColorAttachment cycle) + depth.
+  {
+    std::array<vk::AttachmentDescription, 2> attachments;
+    attachments[0] = vk::AttachmentDescription(
+        {}, colorFmt, vk::SampleCountFlagBits::e1, vk::AttachmentLoadOp::eClear,
+        vk::AttachmentStoreOp::eStore, vk::AttachmentLoadOp::eDontCare,
+        vk::AttachmentStoreOp::eDontCare,
+        vk::ImageLayout::eShaderReadOnlyOptimal,
+        vk::ImageLayout::eShaderReadOnlyOptimal);
+    attachments[1] = vk::AttachmentDescription(
+        {}, depthFormat, vk::SampleCountFlagBits::e1,
+        vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eDontCare,
+        vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
+        vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eDepthStencilAttachmentOptimal);
+
+    vk::AttachmentReference colorRef(0,
+                                     vk::ImageLayout::eColorAttachmentOptimal);
+    vk::AttachmentReference depthRef(
+        1, vk::ImageLayout::eDepthStencilAttachmentOptimal);
+    vk::SubpassDescription subpass({}, vk::PipelineBindPoint::eGraphics, {},
+                                   colorRef, {}, &depthRef);
+
+    std::array<vk::SubpassDependency, 2> deps;
+    deps[0] = vk::SubpassDependency(
+        VK_SUBPASS_EXTERNAL, 0, vk::PipelineStageFlagBits::eFragmentShader,
+        vk::PipelineStageFlagBits::eColorAttachmentOutput,
+        vk::AccessFlagBits::eShaderRead,
+        vk::AccessFlagBits::eColorAttachmentWrite);
+    deps[1] =
+        vk::SubpassDependency(0, VK_SUBPASS_EXTERNAL,
+                              vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                              vk::PipelineStageFlagBits::eFragmentShader,
+                              vk::AccessFlagBits::eColorAttachmentWrite,
+                              vk::AccessFlagBits::eShaderRead);
+
+    offscreenRenderPass = vk::raii::RenderPass(
+        device, vk::RenderPassCreateInfo({}, attachments, subpass, deps));
+  }
+
+  // Per-frame framebuffer (one color + one depth view).
+  for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; ++i) {
+    std::array<vk::ImageView, 2> views{*offscreenColors[i]->getImageView(),
+                                       *offscreenDepths[i]->getImageView()};
+    offscreenFramebuffers.push_back(vk::raii::Framebuffer(
+        device, vk::FramebufferCreateInfo({}, *offscreenRenderPass, views,
+                                          extent.width, extent.height, 1)));
+  }
+
+  // Sampler for the bubble pass to read offscreen color.
+  sceneColorSampler = vk::raii::Sampler(
+      device,
+      vk::SamplerCreateInfo({}, vk::Filter::eLinear, vk::Filter::eLinear,
+                            vk::SamplerMipmapMode::eNearest,
+                            vk::SamplerAddressMode::eClampToEdge,
+                            vk::SamplerAddressMode::eClampToEdge,
+                            vk::SamplerAddressMode::eClampToEdge, 0.f, false,
+                            1.f, false, vk::CompareOp::eAlways, 0.f, 0.f,
+                            vk::BorderColor::eFloatOpaqueBlack, false));
+
+  // Init barrier: bring color images to ShaderReadOnly so the very first
+  // offscreen render pass's initialLayout assumption holds. Depth attachments
+  // are transitioned by the render pass itself (initialLayout = Undefined).
+  vgeu::oneTimeSubmit(
+      device, commandPool, queue, [&](const vk::raii::CommandBuffer& cmd) {
+        for (auto& img : offscreenColors) {
+          vk::ImageMemoryBarrier b(
+              vk::AccessFlags{}, vk::AccessFlagBits::eShaderRead,
+              vk::ImageLayout::eUndefined,
+              vk::ImageLayout::eShaderReadOnlyOptimal, VK_QUEUE_FAMILY_IGNORED,
+              VK_QUEUE_FAMILY_IGNORED, img->getImage(),
+              vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1,
+                                        0, 1));
+          cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                              vk::PipelineStageFlagBits::eFragmentShader, {},
+                              nullptr, nullptr, b);
+        }
+      });
 }
 
 void VgeExample::prepareIBL() {

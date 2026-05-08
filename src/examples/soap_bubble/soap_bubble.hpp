@@ -123,6 +123,8 @@ public:
 
   void loadAssets();
   void prepareIBL();
+  void prepareOffscreen();
+  void destroyOffscreen();
   void prepareUniformBuffers();
   void setupDescriptors();
   void preparePipelines();
@@ -170,6 +172,14 @@ public:
   std::vector<vk::raii::DescriptorSet> bubbleParamsDescSets;
   vk::raii::DescriptorSet heightTexDescSet = nullptr;
   std::vector<vk::raii::DescriptorSet> envDescSets;
+
+  // Offscreen attachments for screen-space refraction.
+  // Per-frame so frame N+1 doesn't race frame N's sample.
+  std::vector<std::unique_ptr<vgeu::VgeuImage>> offscreenColors;
+  std::vector<std::unique_ptr<vgeu::VgeuImage>> offscreenDepths;
+  std::vector<vk::raii::Framebuffer> offscreenFramebuffers;
+  vk::raii::RenderPass offscreenRenderPass = nullptr;
+  vk::raii::Sampler sceneColorSampler = nullptr;
 
   // Background pipeline / descriptor handles
   vk::raii::DescriptorSetLayout bgIrradianceSetLayout = nullptr;
