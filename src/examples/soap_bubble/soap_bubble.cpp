@@ -266,11 +266,12 @@ void VgeExample::setupDescriptors() {
   std::vector<vk::DescriptorPoolSize> poolSizes{
       {vk::DescriptorType::eUniformBuffer,
        3u * MAX_CONCURRENT_FRAMES /*globals + params + skybox*/},
-      {vk::DescriptorType::eCombinedImageSampler,
-       1u + 3u * MAX_CONCURRENT_FRAMES /*height + env + skybox + bgIrr*/}};
-  // Set count: globals + params + env + bgIrr (per-frame) + height(1) +
-  // skybox(per-frame)
-  uint32_t maxSets = 4u * MAX_CONCURRENT_FRAMES + 1u + MAX_CONCURRENT_FRAMES;
+      {vk::DescriptorType::eCombinedImageSampler, 1u +
+                                                      4u *
+                                                          MAX_CONCURRENT_FRAMES /*height + env + skybox + bgIrr + scene*/}};
+  // Set count: globals + params + env + bgIrr + scene (per-frame) +
+  // height(1) + skybox(per-frame)
+  uint32_t maxSets = 5u * MAX_CONCURRENT_FRAMES + 1u + MAX_CONCURRENT_FRAMES;
   descriptorPool = vk::raii::DescriptorPool(
       device, vk::DescriptorPoolCreateInfo(
                   vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, maxSets,
@@ -398,15 +399,40 @@ void VgeExample::setupDescriptors() {
         nullptr);
   }
 
+  // bubble pass set=4: scene color (frag)
+  {
+    vk::DescriptorSetLayoutBinding b(0,
+                                     vk::DescriptorType::eCombinedImageSampler,
+                                     1, vk::ShaderStageFlagBits::eFragment);
+    sceneColorSetLayout = vk::raii::DescriptorSetLayout(
+        device, vk::DescriptorSetLayoutCreateInfo({}, b));
+  }
+
+  sceneColorDescSets.reserve(MAX_CONCURRENT_FRAMES);
+  for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; ++i) {
+    sceneColorDescSets.push_back(
+        std::move(vk::raii::DescriptorSets(
+                      device, vk::DescriptorSetAllocateInfo(
+                                  *descriptorPool, *sceneColorSetLayout))
+                      .front()));
+    vk::DescriptorImageInfo info(*sceneColorSampler,
+                                 *offscreenColors[i]->getImageView(),
+                                 vk::ImageLayout::eShaderReadOnlyOptimal);
+    device.updateDescriptorSets(
+        vk::WriteDescriptorSet(*sceneColorDescSets[i], 0, 0,
+                               vk::DescriptorType::eCombinedImageSampler, info),
+        nullptr);
+  }
+
   skybox = std::make_unique<vgeu::Skybox>(
       device, pipelineCache, descriptorPool, renderPass,
       iblConfig.commonShadersPath, *iblBaker, MAX_CONCURRENT_FRAMES);
 }
 
 void VgeExample::preparePipelines() {
-  std::array<vk::DescriptorSetLayout, 4> setLayouts{
+  std::array<vk::DescriptorSetLayout, 5> setLayouts{
       *globalsSetLayout, *bubbleParamsSetLayout, *heightTexSetLayout,
-      *envSetLayout};
+      *envSetLayout, *sceneColorSetLayout};
   bubblePipelineLayout = vk::raii::PipelineLayout(
       device, vk::PipelineLayoutCreateInfo({}, setLayouts));
 
@@ -560,10 +586,10 @@ void VgeExample::buildCommandBuffers() {
 
   // bubble pass
   cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *bubblePipeline);
-  std::array<vk::DescriptorSet, 4> descSets{
+  std::array<vk::DescriptorSet, 5> descSets{
       *globalsDescSets[currentFrameIndex],
       *bubbleParamsDescSets[currentFrameIndex], *heightTexDescSet,
-      *envDescSets[currentFrameIndex]};
+      *envDescSets[currentFrameIndex], *sceneColorDescSets[currentFrameIndex]};
   cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
                          *bubblePipelineLayout, 0, descSets, nullptr);
   bubbleModel->draw(currentFrameIndex, cmd);

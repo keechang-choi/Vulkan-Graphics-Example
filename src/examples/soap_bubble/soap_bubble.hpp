@@ -186,6 +186,11 @@ public:
   vk::raii::PipelineLayout bgPipelineLayout = nullptr;
   vk::raii::Pipeline bgPipeline = nullptr;
   std::vector<vk::raii::DescriptorSet> bgIrradianceDescSets;
+
+  // Scene-color descriptor (set=4) for SSR; per-frame, points at the matching
+  // offscreen color image view.
+  vk::raii::DescriptorSetLayout sceneColorSetLayout = nullptr;
+  std::vector<vk::raii::DescriptorSet> sceneColorDescSets;
 };
 
 }  // namespace vge
