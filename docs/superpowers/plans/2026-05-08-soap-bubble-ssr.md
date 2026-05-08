@@ -829,3 +829,6 @@ Expected log (top-down):
 - (preceding commits…)
 
 `git status` should be clean.
+
+animation 이 중간에 끊기는 것 처럼 보이는 문제 수정 필요.
+ssr 쓸때와 안쓸때  ibl exposure 값으로 인한 밝기 차이가 좀 큰데 일관되게 맞출 수 있는지. ssr 쓰면 너무 밝아보임.
