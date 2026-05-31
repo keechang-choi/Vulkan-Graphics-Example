@@ -30,6 +30,7 @@ Each milestone ends with a `GATE (user)` step. The executing agent must pause th
 - **Buffers:** use `vgeu::VgeuBuffer` (`src/base/vgeu_buffer.hpp`) and `vgeu::VgeuImage` for allocations (VMA-backed).
 - **Sync handshake (the sharp edge — copy exactly):** the compute↔graphics ping-pong from `particle.cpp:1356-1394` (submit) + `particle.cpp:1413-1431` (graphics acquire barrier) + `particle.cpp:1510-1640` (compute acquire/release barriers). Reproduced concretely in M2.
 - **GPU struct rule:** every struct shared with a shader gets explicit `// -- 16 --` boundary comments, zero-init `_padN` members, and a `static_assert(sizeof(...) == N, ...)` — lesson from `BubbleParamsUbo` (`soap_bubble.hpp:85-118`).
+- **World convention (LOCKED — applies to all milestones):** this engine renders with **screen-up = world −Y** (`setViewTarget` feeds `glm::lookAtLH` the negated up; viewport height is positive; projection is `perspectiveLH_ZO`, no flip). Therefore: gravity pulls **+Y** (down on screen); the canvas floor is the X-Z plane at **y=0**, which is the **max-Y** boundary of the fluid domain; fluid particles and spoids live at **y<0** (above the floor); the camera sits at **y<0** (e.g. `eye=(0,-4,-4)`) looking down at the floor. Do NOT use +Y-up math — keep every gravity/collision/camera sign consistent with this.
 - **clang-format:** run `clang-format -i` on every edited `.cpp/.hpp` before each commit (user rule).
 - **Build:** `mingwBuild.bat` (Windows/MinGW) from repo root. Shaders compile as part of the build (confirm in Task 0). Run the example binary from `build/` (`set_target_properties ... RUNTIME_OUTPUT_DIRECTORY .../build`).
 - **rtk:** prefix shell commands with `rtk` per user rule (e.g. `rtk git commit ...`).
@@ -175,7 +176,7 @@ static_assert(sizeof(Particle) == 64, "Particle std430 size");
 
 - [ ] **Step 2: Allocate per-frame particle SSBOs** sized `kMaxParticles` (start 1<<16 = 65536). Use `eStorageBuffer | eVertexBuffer | eTransferDst` usage. Add a `numParticles` counter (host-side for M2; becomes a GPU counter buffer in M5).
 
-- [ ] **Step 3: Seed a static block.** On `prepare()`, fill a CPU vector with an NxNxN lattice of particles centered above the canvas (y = 1.5), upload to all per-frame SSBOs. READBACK: print `numParticles` and particle[0].pos.
+- [ ] **Step 3: Seed a static block.** On `prepare()`, fill a CPU vector with an NxNxN lattice of particles centered above the canvas (above the floor = **negative Y**, e.g. y ≈ −1.5), upload to all per-frame SSBOs. READBACK: print `numParticles` and particle[0].pos.
 
 - [ ] **Step 4: Commit.**
 ```bash
@@ -244,7 +245,7 @@ layout(std140, set=0, binding=1) uniform Ubo { float dt; uint count; float gravi
 void main(){
   uint i = gl_GlobalInvocationID.x;
   if (i >= u.count) return;
-  p[i].vel.xyz += vec3(0.0, -u.gravity, 0.0) * u.dt;
+  p[i].vel.xyz += vec3(0.0, u.gravity, 0.0) * u.dt; // gravity = +Y (down on screen)
   p[i].predict.xyz = p[i].pos.xyz + p[i].vel.xyz * u.dt;
 }
 ```
@@ -278,21 +279,23 @@ rtk git add -A && rtk git commit -m "feat(paint_splatter): compute queue + predi
 
 **Files:** Modify `pbf_predict.comp`; Create `shaders/paint_splatter/pbf_finalize.comp` (minimal); Modify `paint_splatter.cpp`
 
-- [ ] **Step 1: Promote predict→pos with collision.** For M3 (no constraint solve), use a single pass: predict, clamp `predict` to the domain box `[cmin.xyz, cmax.xyz]` with floor at y=0, then write back. Replace the body of `pbf_predict.comp`:
+- [ ] **Step 1: Promote predict→pos with collision.** WORLD CONVENTION (see top): screen-up = world −Y, gravity pulls **+Y**, the canvas floor is at **y=0** which is the domain's **max-Y** boundary, and fluid/spoids live at **y<0** (above the floor). For M3 (no constraint solve), use a single pass: predict, clamp `predict` to the domain box `[cmin.xyz, cmax.xyz]`, then write back. Replace the body of `pbf_predict.comp`:
 ```glsl
   uint i = gl_GlobalInvocationID.x;
   if (i >= u.count) return;
-  vec3 v = p[i].vel.xyz + vec3(0.0,-u.gravity,0.0)*u.dt;
+  vec3 v = p[i].vel.xyz + vec3(0.0, u.gravity, 0.0)*u.dt; // gravity = +Y (down on screen)
   vec3 x = p[i].pos.xyz + v*u.dt;
-  // domain + canvas-floor collision (solid half-space y>=0)
-  vec3 lo = u.cmin.xyz, hi = u.cmax.xyz;
-  if (x.y < lo.y) { x.y = lo.y; v.y = 0.0; v.xz *= 0.98; } // floor friction
+  // domain + canvas-floor collision. Floor is the solid half-space at y>=0
+  // (cmax.y==0); particles approach it from below (y<0).
+  vec3 lo = u.cmin.xyz, hi = u.cmax.xyz; // lo.y = -domainHeight, hi.y = 0
+  if (x.y > hi.y) { x.y = hi.y; v.y = 0.0; v.xz *= 0.98; } // floor friction
+  if (x.y < lo.y){x.y=lo.y; v.y=0.0;}                      // ceiling clamp
   if (x.x < lo.x){x.x=lo.x; v.x=0.0;} if (x.x>hi.x){x.x=hi.x; v.x=0.0;}
   if (x.z < lo.z){x.z=lo.z; v.z=0.0;} if (x.z>hi.z){x.z=hi.z; v.z=0.0;}
   p[i].vel.xyz = v; p[i].pos.xyz = x;
 ```
 
-- [ ] **Step 2: Set domain.** In `updateComputeUbo()` set `cmin = (-half, 0, -half)`, `cmax = (half, worldHeight, half)`, `h = particleSpacing` (used in M4). Default `gravity` to e.g. 9.8 (world units/s²); expose `dt` (e.g. frameTimer or fixed 1/120 with substeps) and `gravity` as ImGui sliders.
+- [ ] **Step 2: Set domain.** In `updateComputeUbo()` set `cmin = (-half, -worldHeight, -half)`, `cmax = (half, 0, half)` (floor at `cmax.y=0`; domain extends upward to `cmin.y=-worldHeight`), `h = particleSpacing` (used in M4). Default `gravity` to e.g. 9.8 (world units/s², **positive**); expose `dt` (e.g. frameTimer or fixed 1/120 with substeps) and `gravity` as ImGui sliders. Seed the M2 block at y≈-worldHeight*0.7 so it falls onto the floor.
 
 - [ ] **Step 3: Build + run.** Expected: the block falls, hits y=0, spreads into a flat layer; nothing escapes the box. READBACK: print min/max particle y each second; min should clamp at 0.
 
@@ -393,7 +396,7 @@ rtk git add -A && rtk git commit -m "feat(paint_splatter): PBF density solve + s
 
 - [ ] **Step 1: Convert `numParticles` to a GPU counter buffer** (`uint liveCount`) so compute can append. Add an `EmitRequest` SSBO/UBO array: per request `{vec4 originRadius (xyz=origin, w=holeRadius); vec4 velColor0; vec4 color; uint countToSpawn; ...}` with size assert.
 
-- [ ] **Step 2: `emit.comp`** — one invocation per (request, slot): sample a position inside the hole disk (use a hash/RNG on gid for jitter), set initial downward velocity from `emissionVelocity`, set color/concentration, `atomicAdd(liveCount,1)` to get the destination index (clamp to kMaxParticles; reject if full). Append into the particle SSBO.
+- [ ] **Step 2: `emit.comp`** — one invocation per (request, slot): sample a position inside the hole disk (use a hash/RNG on gid for jitter), set initial downward velocity (**+Y**, toward the floor) of magnitude `emissionVelocity`, set color/concentration, `atomicAdd(liveCount,1)` to get the destination index (clamp to kMaxParticles; reject if full). Append into the particle SSBO.
 
 - [ ] **Step 3: Dispatch emit first** in the compute cmd buffer (before predict), guarded by a host-set `numEmitThisFrame`. Barrier emit→predict.
 
@@ -428,7 +431,7 @@ struct SpoidController {
 
 - [ ] **Step 2: `KeyboardSpoidController`** — arrow/WASD move all `selected` spoids in canvas XY (+QE for height); Space pushes each selected spoid's index into `emitDrops` (one burst of `amount`). Read input via the project's input path (check how `vgeu_keyboard_movement_controller` / GLFW keys are read in `particle.cpp`/`cloth.cpp`).
 
-- [ ] **Step 3: Build EmitRequests** from `emitDrops` each frame; set `numEmitThisFrame`. Derive initial velocity `= emissionVelocity` downward (leave `mass`/`pressure` as independent inputs for now; comment the Phase-2 coupling point `emissionVelocity=f(mass,ω)`).
+- [ ] **Step 3: Build EmitRequests** from `emitDrops` each frame; set `numEmitThisFrame`. Derive initial velocity `= emissionVelocity` downward (**+Y**) (leave `mass`/`pressure` as independent inputs for now; comment the Phase-2 coupling point `emissionVelocity=f(mass,ω)`).
 
 - [ ] **Step 4: ImGui spoid panel** — list spoids with a `selected` checkbox each; sliders for the selected spoid's params; a "+ Add spoid" / "− Remove" control; render a small marker (reuse particle pipeline or a debug line) at each spoid position so you can see them.
 
@@ -454,7 +457,7 @@ rtk git add -A && rtk git commit -m "feat(paint_splatter): Spoid model + Keyboar
 
 - [ ] **Step 1: Create the canvas storage image** — RGBA8 (or R32_UINT packed for atomic blending — see Step 3), default 2048², usage `eStorage | eSampled | eTransferSrc`, initial layout cleared to transparent/white. Make it a `vgeu::VgeuImage`. Bind as `sampler2D` to `canvas.frag` (replace the checker) and as `image2D`/`uimage2D` to `deposit.comp`.
 
-- [ ] **Step 2: World→UV mapping.** A particle at world `(x,y,z)` maps to canvas UV `((x-cmin.x)/size, (z-cmin.z)/size)`. Deposit only when `pos.y < depositHeight` (≈ particleRadius) and moving downward/at rest.
+- [ ] **Step 2: World→UV mapping.** A particle at world `(x,y,z)` maps to canvas UV `((x-cmin.x)/size, (z-cmin.z)/size)`. The floor is at y=0 and particles approach from below (y<0), so deposit only when `pos.y >= -depositHeight` (≈ particleRadius below the floor plane) and moving toward the floor (`vel.y > 0`) or at rest.
 
 - [ ] **Step 3: `deposit.comp`** — for each particle within deposit height: compute texel, **alpha-over blend** its `color` with stamp alpha `= concentration * depositStrength`. Concurrency: multiple particles may hit one texel in a frame. Use **`R32_UINT` + `imageAtomicMax`/packed accumulation OR a per-texel spinlock-free additive scheme**. SIMPLEST correct v1: pack premultiplied RGBA into a `uint`, use `imageAtomicAdd` on four 8-bit-ish fixed-point channels with saturation handled on read, OR accept minor races with a plain `imageStore` (visually fine for a demo) and document the tradeoff. Pick `imageStore` alpha-over for v1; note atomic upgrade as a follow-up.
 

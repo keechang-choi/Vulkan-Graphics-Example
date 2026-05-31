@@ -60,7 +60,7 @@ Single-responsibility units:
 |---|---|---|
 | `PbfSolver` | Drives the PBF loop (predict → hash → solve → finalize) via compute dispatches | particle SSBO, `NeighborGrid` |
 | `NeighborGrid` | Uniform-grid neighbor search (count → partial-sum → scatter) | `pbd` SpatialHash pattern (ported to GPU compute) |
-| `CanvasDeposit` | Stamp z≈0 particle color into canvas texture (alpha-over) + decrement absorption alpha + mark consumed | canvas storage image, particle SSBO |
+| `CanvasDeposit` | Stamp near-floor (y≈0) particle color into canvas texture (alpha-over) + decrement absorption alpha + mark consumed | canvas storage image, particle SSBO |
 | `Spoid` (POD) | Emitter state: pos(x,y,z), holeRadius, mass, emissionVelocity, pressure, amount, color, concentration | — |
 | `SpoidController` (interface) | Per-frame: update spoid positions + emit triggers | — |
 | `KeyboardSpoidController` | ImGui multi-select + keyboard move + Space to release a drop | `Spoid[]` |
@@ -91,7 +91,7 @@ per frame, for numSubSteps:
   4. finalize  : v = (x* − x)/dt ; vorticity confinement ;
                  XSPH viscosity ; x = x*                           [comp]
 post:
-  5. deposit   : CanvasDeposit — z≈0 particles stamp canvas + dry  [comp, imageStore]
+  5. deposit   : CanvasDeposit — y≈0 particles stamp canvas + dry  [comp, imageStore]
   6. compact   : remove consumed particles (free-list / stream compaction)
 ```
 
@@ -128,8 +128,10 @@ PBF detail mapping:
   (resolution exposed as a setting), sampled by `CanvasRenderer` and saved by
   `TextureSaver`.
 - **Deposition (method B)**: in the `deposit` compute pass, a particle within ε
-  of z = 0 writes `alpha-over` into the canvas texel at its (x,y)→UV, with stamp
-  alpha derived from `concentration`. The particle's remaining "wetness" alpha
+  of the canvas floor (the X-Z plane at **y = 0**) writes `alpha-over` into the
+  canvas texel at its **(x,z)→UV**, with stamp alpha derived from
+  `concentration`. (World convention: screen-up = −Y, gravity = +Y, floor at
+  y=0, fluid/spoids at y<0 — see the design note below.) The particle's remaining "wetness" alpha
   then decays by a per-particle **drying rate**; when exhausted, the particle is
   marked consumed and removed in `compact`.
 - **Blend**: alpha-over wet-on-wet; colors mix as paint accumulates.
@@ -159,7 +161,12 @@ PBF detail mapping:
 
 ## §5. Rendering, Save, and Frame Flow
 
-- **Camera**: 3D free orbit (`vgeu_camera`).
+- **Camera**: 3D free orbit (`vgeu_camera`). **World convention (locked):** this
+  engine renders with screen-up = world **−Y** (`setViewTarget`→`lookAtLH` with
+  negated up, positive viewport height, `perspectiveLH_ZO`). So gravity = **+Y**,
+  the canvas floor is the X-Z plane at **y=0** (domain max-Y), fluid/spoids live
+  at **y<0**, and the camera sits at y<0 (e.g. `eye=(0,-4,-4)`) looking down at
+  the floor. All later milestones keep signs consistent with this.
 - **Graphics**: `CanvasRenderer` (textured quad) + optional `ParticleRenderer`
   (debug particle/density view) + `UiOverlay`.
 - **Compute ↔ graphics** synchronized with semaphores (reuse `particle` pattern).
