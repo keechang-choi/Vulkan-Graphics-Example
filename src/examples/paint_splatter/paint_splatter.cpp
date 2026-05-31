@@ -65,14 +65,14 @@ void VgeExample::createVertexBuffer() {
   std::memcpy(stagingBuffer.getMappedData(), vertices.data(),
               stagingBuffer.getBufferSize());
 
+  // Device-local destination: filled once via the staging copy below, never
+  // CPU-mapped, so request DEVICE_PREFER with no host-access flags.
   vertexBuffer = std::make_unique<vgeu::VgeuBuffer>(
       globalAllocator->getAllocator(), sizeof(CanvasVertex),
       static_cast<uint32_t>(vertices.size()),
       vk::BufferUsageFlagBits::eVertexBuffer |
           vk::BufferUsageFlagBits::eTransferDst,
-      VMA_MEMORY_USAGE_AUTO,
-      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-          VMA_ALLOCATION_CREATE_MAPPED_BIT);
+      VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, 0);
 
   vgeu::oneTimeSubmit(
       device, commandPool, queue,
@@ -96,14 +96,13 @@ void VgeExample::createIndexBuffer() {
   std::memcpy(stagingBuffer.getMappedData(), indices.data(),
               stagingBuffer.getBufferSize());
 
+  // Device-local destination (see createVertexBuffer): staging-filled only.
   indexBuffer = std::make_unique<vgeu::VgeuBuffer>(
       globalAllocator->getAllocator(), sizeof(uint32_t),
       static_cast<uint32_t>(indices.size()),
       vk::BufferUsageFlagBits::eIndexBuffer |
           vk::BufferUsageFlagBits::eTransferDst,
-      VMA_MEMORY_USAGE_AUTO,
-      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-          VMA_ALLOCATION_CREATE_MAPPED_BIT);
+      VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, 0);
 
   vgeu::oneTimeSubmit(
       device, commandPool, queue,
@@ -363,8 +362,7 @@ void VgeExample::onUpdateUIOverlay() {
     // Read-only info
     ImGui::Text("Frame time : %.3f ms", frameTimer * 1000.0f);
 
-    glm::vec3 camPos =
-        glm::vec3(camera.getInverseView()[3]);  // world-space eye position
+    glm::vec3 camPos = camera.getPosition();
     ImGui::Text("Camera pos : (%.2f, %.2f, %.2f)", camPos.x, camPos.y,
                 camPos.z);
 

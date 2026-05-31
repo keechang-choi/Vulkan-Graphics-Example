@@ -35,6 +35,8 @@ struct GlobalUbo {
 };
 static_assert(sizeof(GlobalUbo) == 208, "GlobalUbo std140 size");
 
+// Intentionally empty for M1; simulation/spoid knobs are added in later
+// milestones.
 struct Options {};
 
 class VgeExample : public VgeBase {
