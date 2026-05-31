@@ -7,9 +7,12 @@
 
 // std
 #include <array>
+#include <cassert>
+#include <cmath>
 #include <cstring>
 #include <iostream>
 #include <limits>
+#include <vector>
 
 namespace vge {
 
@@ -20,7 +23,13 @@ void VgeExample::setupCommandLineParser(CLI::App& app) {
   VgeBase::setupCommandLineParser(app);
 }
 
-void VgeExample::getEnabledFeatures() {}
+void VgeExample::getEnabledFeatures() {
+  // shaderClipDistance for gl_PointSize in vertex shader
+  enabledFeatures.shaderClipDistance =
+      physicalDevice.getFeatures().shaderClipDistance;
+  // largePoints may be needed for point sizes > 1
+  enabledFeatures.largePoints = physicalDevice.getFeatures().largePoints;
+}
 
 void VgeExample::initVulkan() {
   // World convention (consistent with engine): screen-up = world -Y, so the
@@ -35,13 +44,22 @@ void VgeExample::initVulkan() {
 
 void VgeExample::prepare() {
   VgeBase::prepare();
+
+  // Set queue family indices (mirrors particle.cpp:92-93)
+  graphics.queueFamilyIndex = queueFamilyIndices.graphics;
+  compute.queueFamilyIndex = queueFamilyIndices.compute;
+
   createVertexBuffer();
   createIndexBuffer();
+  createParticleBuffers();
   createUniformBuffers();
   createDescriptorSetLayout();
   createDescriptorPool();
   createDescriptorSets();
   createPipelines();
+  createParticlePipeline();
+  prepareCompute();
+
   prepared = true;
 }
 
@@ -115,6 +133,75 @@ void VgeExample::createIndexBuffer() {
       });
 }
 
+// ---------------------------------------------------------------------------
+// Particle SSBO: device-local, one per frame in flight
+// Seed: 16x16x16 lattice above the canvas floor (y < 0)
+// ---------------------------------------------------------------------------
+void VgeExample::createParticleBuffers() {
+  // Build CPU seed data
+  const int N = 16;
+  const float spacing = 0.05f;
+  const float centerY = -1.5f;  // above the canvas floor (world -Y = up)
+
+  std::vector<Particle> cpuParticles;
+  cpuParticles.reserve(static_cast<size_t>(N * N * N));
+
+  for (int ix = 0; ix < N; ix++) {
+    for (int iy = 0; iy < N; iy++) {
+      for (int iz = 0; iz < N; iz++) {
+        Particle p{};
+        p.pos =
+            glm::vec4((ix - N / 2) * spacing, centerY + (iy - N / 2) * spacing,
+                      (iz - N / 2) * spacing, 1.f);
+        p.vel = glm::vec4(0.f);
+        p.predict = glm::vec4(0.f);
+        // Color varies by position for visual distinction
+        p.color =
+            glm::vec4(static_cast<float>(ix) / N, static_cast<float>(iy) / N,
+                      static_cast<float>(iz) / N, 1.f);
+        cpuParticles.push_back(p);
+      }
+    }
+  }
+
+  numParticles = static_cast<uint32_t>(cpuParticles.size());
+  assert(numParticles <= kMaxParticles);
+
+  // Readback: print first particle + count
+  std::cout << "[paint_splatter] numParticles=" << numParticles
+            << "  particle[0].pos=(" << cpuParticles[0].pos.x << ","
+            << cpuParticles[0].pos.y << "," << cpuParticles[0].pos.z << ")\n";
+
+  // Staging buffer
+  vgeu::VgeuBuffer stagingBuffer(
+      globalAllocator->getAllocator(), sizeof(Particle), kMaxParticles,
+      vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_AUTO,
+      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+          VMA_ALLOCATION_CREATE_MAPPED_BIT);
+  std::memcpy(stagingBuffer.getMappedData(), cpuParticles.data(),
+              sizeof(Particle) * numParticles);
+
+  // Per-frame device-local SSBOs
+  particleBuffers.reserve(MAX_CONCURRENT_FRAMES);
+  for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    particleBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
+        globalAllocator->getAllocator(), sizeof(Particle), kMaxParticles,
+        vk::BufferUsageFlagBits::eStorageBuffer |
+            vk::BufferUsageFlagBits::eVertexBuffer |
+            vk::BufferUsageFlagBits::eTransferDst,
+        VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, 0));
+
+    // Upload seed to each frame's SSBO
+    vgeu::oneTimeSubmit(
+        device, commandPool, queue,
+        [&](const vk::raii::CommandBuffer& cmdBuffer) {
+          cmdBuffer.copyBuffer(
+              stagingBuffer.getBuffer(), particleBuffers[i]->getBuffer(),
+              vk::BufferCopy(0, 0, sizeof(Particle) * numParticles));
+        });
+  }
+}
+
 void VgeExample::createUniformBuffers() {
   uniformBuffers.reserve(MAX_CONCURRENT_FRAMES);
   for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
@@ -142,12 +229,17 @@ void VgeExample::createDescriptorSetLayout() {
 }
 
 void VgeExample::createDescriptorPool() {
+  // Canvas UBO: MAX_CONCURRENT_FRAMES
+  // Compute UBO: MAX_CONCURRENT_FRAMES
+  // Compute SSBO: MAX_CONCURRENT_FRAMES
   std::vector<vk::DescriptorPoolSize> poolSizes;
   poolSizes.emplace_back(vk::DescriptorType::eUniformBuffer,
+                         MAX_CONCURRENT_FRAMES * 2u);
+  poolSizes.emplace_back(vk::DescriptorType::eStorageBuffer,
                          MAX_CONCURRENT_FRAMES);
   vk::DescriptorPoolCreateInfo descriptorPoolCI(
       vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-      MAX_CONCURRENT_FRAMES, poolSizes);
+      MAX_CONCURRENT_FRAMES * 2u, poolSizes);
   descriptorPool = vk::raii::DescriptorPool(device, descriptorPoolCI);
 }
 
@@ -259,6 +351,236 @@ void VgeExample::createPipelines() {
 }
 
 // ---------------------------------------------------------------------------
+// Particle debug renderer: point list, same set=0 GlobalUbo layout
+// Stride = sizeof(Particle) = 64; attr 0 = pos, attr 1 = vel (skip), attr 2 =
+// predict (skip), attr 3 = color (location 1 in shader maps to inColor).
+// ---------------------------------------------------------------------------
+void VgeExample::createParticlePipeline() {
+  auto vertCode =
+      vgeu::readFile(getShadersPath() + "/paint_splatter/particle.vert.spv");
+  auto fragCode =
+      vgeu::readFile(getShadersPath() + "/paint_splatter/particle.frag.spv");
+
+  vk::raii::ShaderModule vertShaderModule =
+      vgeu::createShaderModule(device, vertCode);
+  vk::raii::ShaderModule fragShaderModule =
+      vgeu::createShaderModule(device, fragCode);
+
+  std::array<vk::PipelineShaderStageCreateInfo, 2> shaderStageCIs{
+      vk::PipelineShaderStageCreateInfo(vk::PipelineShaderStageCreateFlags(),
+                                        vk::ShaderStageFlagBits::eVertex,
+                                        *vertShaderModule, "main", nullptr),
+      vk::PipelineShaderStageCreateInfo(vk::PipelineShaderStageCreateFlags(),
+                                        vk::ShaderStageFlagBits::eFragment,
+                                        *fragShaderModule, "main", nullptr),
+  };
+
+  // Binding 0: Particle SSBO used as vertex buffer, stride = sizeof(Particle)
+  vk::VertexInputBindingDescription bindingDesc(0, sizeof(Particle));
+
+  // location=0  inPos   = Particle::pos   at offset 0
+  // location=1  inVel   = Particle::vel   at offset 16  (needed in vert for
+  //                                                       attribute layout)
+  // location=2  inPred  = Particle::predict at offset 32
+  // location=3  inColor = Particle::color at offset 48
+  // The shader only uses location=0 (inPos) and location=3 (inColor).
+  // We declare all 4 so the binding stride is correct.
+  std::vector<vk::VertexInputAttributeDescription> attrDescs;
+  attrDescs.emplace_back(0, 0, vk::Format::eR32G32B32A32Sfloat,
+                         static_cast<uint32_t>(offsetof(Particle, pos)));
+  attrDescs.emplace_back(1, 0, vk::Format::eR32G32B32A32Sfloat,
+                         static_cast<uint32_t>(offsetof(Particle, vel)));
+  attrDescs.emplace_back(2, 0, vk::Format::eR32G32B32A32Sfloat,
+                         static_cast<uint32_t>(offsetof(Particle, predict)));
+  attrDescs.emplace_back(3, 0, vk::Format::eR32G32B32A32Sfloat,
+                         static_cast<uint32_t>(offsetof(Particle, color)));
+
+  vk::PipelineVertexInputStateCreateInfo vertexInputSCI(
+      vk::PipelineVertexInputStateCreateFlags(), bindingDesc, attrDescs);
+
+  // Point list topology
+  vk::PipelineInputAssemblyStateCreateInfo inputAssemblySCI(
+      vk::PipelineInputAssemblyStateCreateFlags(),
+      vk::PrimitiveTopology::ePointList);
+
+  vk::PipelineViewportStateCreateInfo viewportSCI(
+      vk::PipelineViewportStateCreateFlags(), 1, nullptr, 1, nullptr);
+
+  vk::PipelineRasterizationStateCreateInfo rasterizationSCI(
+      vk::PipelineRasterizationStateCreateFlags(), false, false,
+      vk::PolygonMode::eFill, vk::CullModeFlagBits::eNone,
+      vk::FrontFace::eCounterClockwise, false, 0.0f, 0.0f, 0.0f, 1.0f);
+
+  vk::PipelineMultisampleStateCreateInfo multisampleSCI(
+      vk::PipelineMultisampleStateCreateFlags(), vk::SampleCountFlagBits::e1);
+
+  vk::StencilOpState stencilOpState(vk::StencilOp::eKeep, vk::StencilOp::eKeep,
+                                    vk::StencilOp::eKeep,
+                                    vk::CompareOp::eAlways);
+  vk::PipelineDepthStencilStateCreateInfo depthStencilSCI(
+      vk::PipelineDepthStencilStateCreateFlags(), true, true,
+      vk::CompareOp::eLessOrEqual, false, false, stencilOpState,
+      stencilOpState);
+
+  vk::PipelineColorBlendAttachmentState colorBlendAttachmentState(
+      false, vk::BlendFactor::eZero, vk::BlendFactor::eZero, vk::BlendOp::eAdd,
+      vk::BlendFactor::eZero, vk::BlendFactor::eZero, vk::BlendOp::eAdd,
+      vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+          vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA);
+
+  vk::PipelineColorBlendStateCreateInfo colorBlendSCI(
+      vk::PipelineColorBlendStateCreateFlags(), false, vk::LogicOp::eNoOp,
+      colorBlendAttachmentState, {{1.0f, 1.0f, 1.0f, 1.0f}});
+
+  std::array<vk::DynamicState, 2> dynamicStates = {vk::DynamicState::eViewport,
+                                                   vk::DynamicState::eScissor};
+  vk::PipelineDynamicStateCreateInfo dynamicSCI(
+      vk::PipelineDynamicStateCreateFlags(), dynamicStates);
+
+  // Reuse the same pipelineLayout (set=0 = GlobalUbo)
+  vk::GraphicsPipelineCreateInfo graphicsPipelineCI(
+      vk::PipelineCreateFlags(), shaderStageCIs, &vertexInputSCI,
+      &inputAssemblySCI, nullptr, &viewportSCI, &rasterizationSCI,
+      &multisampleSCI, &depthStencilSCI, &colorBlendSCI, &dynamicSCI,
+      *pipelineLayout, *renderPass);
+
+  particlePipeline =
+      vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
+}
+
+// ---------------------------------------------------------------------------
+// Compute setup: mirrors particle.cpp prepareGraphics / prepareCompute
+// ---------------------------------------------------------------------------
+void VgeExample::prepareCompute() {
+  // --- 1. Create per-frame compute uniform buffers ---
+  compute.ubo.dt = 0.016f;
+  compute.ubo.particleCount = numParticles;
+  compute.ubo.gravity = 0.f;  // default: static block
+  compute.ubo._pad0 = 0.f;
+  compute.ubo.canvasMin = glm::vec4(-2.f, -3.f, -2.f, 0.1f);
+  compute.ubo.canvasMax = glm::vec4(2.f, 0.f, 2.f, 0.f);
+
+  compute.uniformBuffers.reserve(MAX_CONCURRENT_FRAMES);
+  for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    compute.uniformBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
+        globalAllocator->getAllocator(), sizeof(ComputeUbo), 1,
+        vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT |
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT));
+    std::memcpy(compute.uniformBuffers[i]->getMappedData(), &compute.ubo,
+                sizeof(ComputeUbo));
+  }
+
+  // --- 2. Get compute queue (mirrors particle.cpp:161) ---
+  compute.queue = vk::raii::Queue(device, compute.queueFamilyIndex, 0);
+
+  // --- 3. Compute descriptor set layout: binding 0 = SSBO, binding 1 = UBO ---
+  createComputeDescriptorSetLayout();
+
+  // --- 4. Compute pipeline ---
+  createComputePipeline();
+
+  // --- 5. Compute descriptor sets ---
+  createComputeDescriptorSets();
+
+  // --- 6. Compute command pool + buffers ---
+  vk::CommandPoolCreateInfo cmdPoolCI(
+      vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+      compute.queueFamilyIndex);
+  compute.cmdPool = vk::raii::CommandPool(device, cmdPoolCI);
+
+  vk::CommandBufferAllocateInfo cmdBufAllocInfo(
+      *compute.cmdPool, vk::CommandBufferLevel::ePrimary,
+      MAX_CONCURRENT_FRAMES);
+  compute.cmdBuffers = vk::raii::CommandBuffers(device, cmdBufAllocInfo);
+
+  // --- 7. Create semaphores ---
+  // Compute semaphores: signalled by compute, waited by graphics
+  compute.semaphores.reserve(MAX_CONCURRENT_FRAMES);
+  for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    compute.semaphores.emplace_back(device, vk::SemaphoreCreateInfo());
+  }
+
+  // Graphics semaphores: signalled by graphics, waited by compute
+  // Mirrors particle.cpp prepareGraphics() lines 106-120
+  {
+    std::vector<vk::Semaphore> semaphoresToSignal;
+    semaphoresToSignal.reserve(MAX_CONCURRENT_FRAMES);
+    graphics.semaphores.reserve(MAX_CONCURRENT_FRAMES);
+    for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      vk::raii::Semaphore& semaphore =
+          graphics.semaphores.emplace_back(device, vk::SemaphoreCreateInfo());
+      semaphoresToSignal.push_back(*semaphore);
+    }
+    // Initial signal so frame-0 compute submit does NOT deadlock waiting for
+    // graphics (which has never run yet). Mirrors particle.cpp:117-119.
+    vk::SubmitInfo submitInfo({}, {}, {}, semaphoresToSignal);
+    queue.submit(submitInfo);
+    queue.waitIdle();
+  }
+}
+
+void VgeExample::createComputeDescriptorSetLayout() {
+  std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
+  // binding 0: particle SSBO
+  layoutBindings.emplace_back(0, vk::DescriptorType::eStorageBuffer, 1,
+                              vk::ShaderStageFlagBits::eCompute);
+  // binding 1: ComputeUbo
+  layoutBindings.emplace_back(1, vk::DescriptorType::eUniformBuffer, 1,
+                              vk::ShaderStageFlagBits::eCompute);
+
+  vk::DescriptorSetLayoutCreateInfo layoutCI({}, layoutBindings);
+  compute.descriptorSetLayout = vk::raii::DescriptorSetLayout(device, layoutCI);
+
+  vk::PipelineLayoutCreateInfo pipelineLayoutCI({},
+                                                *compute.descriptorSetLayout);
+  compute.pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutCI);
+}
+
+void VgeExample::createComputePipeline() {
+  auto compCode =
+      vgeu::readFile(getShadersPath() + "/paint_splatter/pbf_predict.comp.spv");
+  vk::raii::ShaderModule compShaderModule =
+      vgeu::createShaderModule(device, compCode);
+
+  vk::PipelineShaderStageCreateInfo shaderStageCI(
+      vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eCompute,
+      *compShaderModule, "main", nullptr);
+
+  vk::ComputePipelineCreateInfo pipelineCI(
+      vk::PipelineCreateFlags(), shaderStageCI, *compute.pipelineLayout);
+  compute.pipeline = vk::raii::Pipeline(device, pipelineCache, pipelineCI);
+}
+
+void VgeExample::createComputeDescriptorSets() {
+  vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
+                                          *compute.descriptorSetLayout);
+  compute.descriptorSets.reserve(MAX_CONCURRENT_FRAMES);
+  for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    compute.descriptorSets.push_back(
+        std::move(vk::raii::DescriptorSets(device, allocInfo).front()));
+  }
+
+  for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    vk::DescriptorBufferInfo ssboInfo(particleBuffers[i]->getBuffer(), 0,
+                                      particleBuffers[i]->getBufferSize());
+    vk::DescriptorBufferInfo uboInfo =
+        compute.uniformBuffers[i]->descriptorInfo();
+
+    std::array<vk::WriteDescriptorSet, 2> writes{
+        vk::WriteDescriptorSet(*compute.descriptorSets[i], 0, 0,
+                               vk::DescriptorType::eStorageBuffer, nullptr,
+                               ssboInfo),
+        vk::WriteDescriptorSet(*compute.descriptorSets[i], 1, 0,
+                               vk::DescriptorType::eUniformBuffer, nullptr,
+                               uboInfo),
+    };
+    device.updateDescriptorSets(writes, nullptr);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Per-frame UBO update
 // ---------------------------------------------------------------------------
 void VgeExample::updateGlobalUbo() {
@@ -271,15 +593,31 @@ void VgeExample::updateGlobalUbo() {
               sizeof(GlobalUbo));
 }
 
+void VgeExample::updateComputeUbo() {
+  compute.ubo.dt = frameTimer;
+  compute.ubo.particleCount = numParticles;
+  // gravity = 0 by default (block stays static); gravity = +Y = pull down
+  compute.ubo.gravity = 0.f;
+  compute.ubo._pad0 = 0.f;
+  compute.ubo.canvasMin = glm::vec4(-2.f, -3.f, -2.f, 0.1f);
+  compute.ubo.canvasMax = glm::vec4(2.f, 0.f, 2.f, 0.f);
+  std::memcpy(compute.uniformBuffers[currentFrameIndex]->getMappedData(),
+              &compute.ubo, sizeof(ComputeUbo));
+}
+
 // ---------------------------------------------------------------------------
 // render / draw
 // ---------------------------------------------------------------------------
 void VgeExample::render() {
   if (!prepared) return;
   updateGlobalUbo();
+  updateComputeUbo();
   draw();
 }
 
+// ---------------------------------------------------------------------------
+// draw: two-submit handshake mirroring particle.cpp:1298-1395
+// ---------------------------------------------------------------------------
 void VgeExample::draw() {
   vk::Result result =
       device.waitForFences(*waitFences[currentFrameIndex], VK_TRUE,
@@ -289,21 +627,123 @@ void VgeExample::draw() {
   device.resetFences(*waitFences[currentFrameIndex]);
 
   prepareFrame();
-  buildCommandBuffers();
 
-  vk::PipelineStageFlags waitDstStageMask(
-      vk::PipelineStageFlagBits::eColorAttachmentOutput);
-  vk::SubmitInfo submitInfo(*presentCompleteSemaphores[currentFrameIndex],
-                            waitDstStageMask,
-                            *drawCmdBuffers[currentFrameIndex],
-                            *renderCompleteSemaphores[currentFrameIndex]);
+  // --- Compute submit: wait graphics semaphore, signal compute semaphore ---
+  // Mirrors particle.cpp:1356-1366
+  {
+    buildComputeCommandBuffers();
+    vk::PipelineStageFlags computeWaitDstStageMask(
+        vk::PipelineStageFlagBits::eComputeShader);
+    vk::SubmitInfo computeSubmitInfo(*graphics.semaphores[currentFrameIndex],
+                                     computeWaitDstStageMask,
+                                     *compute.cmdBuffers[currentFrameIndex],
+                                     *compute.semaphores[currentFrameIndex]);
+    compute.queue.submit(computeSubmitInfo);
+  }
 
-  queue.submit(submitInfo, *waitFences[currentFrameIndex]);
+  // --- Graphics submit: wait {compute semaphore, present semaphore},
+  //     signal {graphics semaphore, render-complete semaphore} ---
+  // Mirrors particle.cpp:1368-1393
+  {
+    buildCommandBuffers();
+
+    std::vector<vk::PipelineStageFlags> graphicsWaitDstStageMasks{
+        vk::PipelineStageFlagBits::eVertexInput,
+        vk::PipelineStageFlagBits::eColorAttachmentOutput,
+    };
+
+    std::vector<vk::Semaphore> graphicsWaitSemaphores{
+        *compute.semaphores[currentFrameIndex],
+        *presentCompleteSemaphores[currentFrameIndex],
+    };
+
+    std::vector<vk::Semaphore> graphicsSignalSemaphores{
+        *graphics.semaphores[currentFrameIndex],
+        *renderCompleteSemaphores[currentFrameIndex],
+    };
+
+    vk::SubmitInfo graphicsSubmitInfo(
+        graphicsWaitSemaphores, graphicsWaitDstStageMasks,
+        *drawCmdBuffers[currentFrameIndex], graphicsSignalSemaphores);
+
+    queue.submit(graphicsSubmitInfo, *waitFences[currentFrameIndex]);
+  }
+
   submitFrame();
 }
 
+// ---------------------------------------------------------------------------
+// buildComputeCommandBuffers: acquire barrier, dispatch, release barrier
+// Mirrors particle.cpp:1510-1641
+// ---------------------------------------------------------------------------
+void VgeExample::buildComputeCommandBuffers() {
+  compute.cmdBuffers[currentFrameIndex].begin({});
+
+  // Acquire barrier graphics -> compute (if different queue families)
+  // Mirrors particle.cpp:1513-1532
+  if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
+    vk::BufferMemoryBarrier bufBarrier(
+        vk::AccessFlags{}, vk::AccessFlagBits::eShaderWrite,
+        graphics.queueFamilyIndex, compute.queueFamilyIndex,
+        particleBuffers[currentFrameIndex]->getBuffer(), 0ull,
+        particleBuffers[currentFrameIndex]->getBufferSize());
+
+    compute.cmdBuffers[currentFrameIndex].pipelineBarrier(
+        vk::PipelineStageFlagBits::eTopOfPipe,
+        vk::PipelineStageFlagBits::eComputeShader, vk::DependencyFlags{},
+        nullptr, bufBarrier, nullptr);
+  }
+
+  // Bind predict pipeline + descriptor set for this frame
+  compute.cmdBuffers[currentFrameIndex].bindPipeline(
+      vk::PipelineBindPoint::eCompute, *compute.pipeline);
+  compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
+      vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 0,
+      *compute.descriptorSets[currentFrameIndex], nullptr);
+
+  // Dispatch: ceil(numParticles / 256)
+  uint32_t groupCount = (numParticles + 255u) / 256u;
+  compute.cmdBuffers[currentFrameIndex].dispatch(groupCount, 1, 1);
+
+  // Release barrier compute -> graphics (if different queue families)
+  // Mirrors particle.cpp:1621-1639
+  if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
+    vk::BufferMemoryBarrier bufBarrier(
+        vk::AccessFlagBits::eShaderWrite, vk::AccessFlags{},
+        compute.queueFamilyIndex, graphics.queueFamilyIndex,
+        particleBuffers[currentFrameIndex]->getBuffer(), 0ull,
+        particleBuffers[currentFrameIndex]->getBufferSize());
+
+    compute.cmdBuffers[currentFrameIndex].pipelineBarrier(
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::PipelineStageFlagBits::eBottomOfPipe, vk::DependencyFlags{},
+        nullptr, bufBarrier, nullptr);
+  }
+
+  compute.cmdBuffers[currentFrameIndex].end();
+}
+
+// ---------------------------------------------------------------------------
+// buildCommandBuffers: acquire barrier, canvas draw, particle draw, UI
+// Mirrors particle.cpp:1397-1508
+// ---------------------------------------------------------------------------
 void VgeExample::buildCommandBuffers() {
   drawCmdBuffers[currentFrameIndex].begin({});
+
+  // Acquire barrier compute -> graphics (if different queue families)
+  // Mirrors particle.cpp:1413-1431
+  if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
+    vk::BufferMemoryBarrier bufBarrier(
+        vk::AccessFlags{}, vk::AccessFlagBits::eVertexAttributeRead,
+        compute.queueFamilyIndex, graphics.queueFamilyIndex,
+        particleBuffers[currentFrameIndex]->getBuffer(), 0ull,
+        particleBuffers[currentFrameIndex]->getBufferSize());
+
+    drawCmdBuffers[currentFrameIndex].pipelineBarrier(
+        vk::PipelineStageFlagBits::eTopOfPipe,
+        vk::PipelineStageFlagBits::eVertexInput, vk::DependencyFlags{}, nullptr,
+        bufBarrier, nullptr);
+  }
 
   // Mid-gray clear
   std::array<vk::ClearValue, 2> clearValues;
@@ -326,27 +766,53 @@ void VgeExample::buildCommandBuffers() {
   drawCmdBuffers[currentFrameIndex].setScissor(
       0, vk::Rect2D(vk::Offset2D(0, 0), swapChainData->swapChainExtent));
 
-  // Bind pipeline + set=0 UBO
+  // --- Canvas quad ---
   drawCmdBuffers[currentFrameIndex].bindPipeline(
       vk::PipelineBindPoint::eGraphics, *pipeline);
   drawCmdBuffers[currentFrameIndex].bindDescriptorSets(
       vk::PipelineBindPoint::eGraphics, *pipelineLayout, 0,
       {*descriptorSets[currentFrameIndex]}, nullptr);
-
-  // Bind canvas geometry
   drawCmdBuffers[currentFrameIndex].bindVertexBuffers(
       0, {vertexBuffer->getBuffer()}, {0});
   drawCmdBuffers[currentFrameIndex].bindIndexBuffer(indexBuffer->getBuffer(), 0,
                                                     vk::IndexType::eUint32);
-
-  // Draw quad (6 indices)
   drawCmdBuffers[currentFrameIndex].drawIndexed(indexBuffer->getInstanceCount(),
                                                 1, 0, 0, 0);
+
+  // --- Particle debug renderer ---
+  if (showParticles && numParticles > 0) {
+    drawCmdBuffers[currentFrameIndex].bindPipeline(
+        vk::PipelineBindPoint::eGraphics, *particlePipeline);
+    // reuse same set=0 descriptor (GlobalUbo)
+    drawCmdBuffers[currentFrameIndex].bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics, *pipelineLayout, 0,
+        {*descriptorSets[currentFrameIndex]}, nullptr);
+    vk::DeviceSize offset(0);
+    drawCmdBuffers[currentFrameIndex].bindVertexBuffers(
+        0, particleBuffers[currentFrameIndex]->getBuffer(), offset);
+    drawCmdBuffers[currentFrameIndex].draw(numParticles, 1, 0, 0);
+  }
 
   // ImGui overlay
   drawUI(drawCmdBuffers[currentFrameIndex]);
 
   drawCmdBuffers[currentFrameIndex].endRenderPass();
+
+  // Release barrier graphics -> compute (if different queue families)
+  // Mirrors particle.cpp:1487-1504
+  if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
+    vk::BufferMemoryBarrier bufBarrier(
+        vk::AccessFlagBits::eVertexAttributeRead, vk::AccessFlags{},
+        graphics.queueFamilyIndex, compute.queueFamilyIndex,
+        particleBuffers[currentFrameIndex]->getBuffer(), 0ull,
+        particleBuffers[currentFrameIndex]->getBufferSize());
+
+    drawCmdBuffers[currentFrameIndex].pipelineBarrier(
+        vk::PipelineStageFlagBits::eVertexInput,
+        vk::PipelineStageFlagBits::eBottomOfPipe, vk::DependencyFlags{},
+        nullptr, bufBarrier, nullptr);
+  }
+
   drawCmdBuffers[currentFrameIndex].end();
 }
 
@@ -356,7 +822,7 @@ void VgeExample::viewChanged() {
 }
 
 // ---------------------------------------------------------------------------
-// ImGui panel skeleton
+// ImGui panel
 // ---------------------------------------------------------------------------
 void VgeExample::onUpdateUIOverlay() {
   if (ImGui::CollapsingHeader("Paint Splatter",
@@ -368,7 +834,9 @@ void VgeExample::onUpdateUIOverlay() {
     ImGui::Text("Camera pos : (%.2f, %.2f, %.2f)", camPos.x, camPos.y,
                 camPos.z);
 
-    // Placeholder button — no-op, just logs to stdout
+    ImGui::Text("Particles  : %u", numParticles);
+    ImGui::Checkbox("Show particles", &showParticles);
+
     if (uiOverlay->button("Save (no-op)")) {
       std::cout << "[paint_splatter] Save button pressed (no-op)\n";
     }
