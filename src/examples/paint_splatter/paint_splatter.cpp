@@ -6,6 +6,7 @@
 #include <glm/glm.hpp>
 
 // std
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -141,7 +142,9 @@ void VgeExample::createParticleBuffers() {
   // Build CPU seed data
   const int N = 16;
   const float spacing = 0.05f;
-  const float centerY = -1.5f;  // above the canvas floor (world -Y = up)
+  // Seed the block high above the floor (~0.7 of domain height) so it falls
+  // onto the canvas at y=0. Domain spans y in [-kDomainHeight, 0].
+  const float centerY = -kDomainHeight * 0.7f;  // world -Y = up
 
   std::vector<Particle> cpuParticles;
   cpuParticles.reserve(static_cast<size_t>(N * N * N));
@@ -188,7 +191,9 @@ void VgeExample::createParticleBuffers() {
         globalAllocator->getAllocator(), sizeof(Particle), kMaxParticles,
         vk::BufferUsageFlagBits::eStorageBuffer |
             vk::BufferUsageFlagBits::eVertexBuffer |
-            vk::BufferUsageFlagBits::eTransferDst,
+            vk::BufferUsageFlagBits::eTransferDst |
+            vk::BufferUsageFlagBits::eTransferSrc,  // debug readback copy
+                                                    // source
         VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, 0));
 
     // Upload seed to each frame's SSBO
@@ -199,6 +204,17 @@ void VgeExample::createParticleBuffers() {
               stagingBuffer.getBuffer(), particleBuffers[i]->getBuffer(),
               vk::BufferCopy(0, 0, sizeof(Particle) * numParticles));
         });
+  }
+
+  // Per-frame host-visible readback targets (debug y min/max).
+  readbackBuffers.reserve(MAX_CONCURRENT_FRAMES);
+  readbackPending.assign(MAX_CONCURRENT_FRAMES, 0);
+  for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    readbackBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
+        globalAllocator->getAllocator(), sizeof(Particle), kMaxParticles,
+        vk::BufferUsageFlagBits::eTransferDst, VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT));
   }
 }
 
@@ -453,12 +469,17 @@ void VgeExample::createParticlePipeline() {
 // ---------------------------------------------------------------------------
 void VgeExample::prepareCompute() {
   // --- 1. Create per-frame compute uniform buffers ---
-  compute.ubo.dt = 0.016f;
+  computeFirstUse.assign(MAX_CONCURRENT_FRAMES, 1);
+
+  compute.ubo.dt = kFixedDt;
   compute.ubo.particleCount = numParticles;
-  compute.ubo.gravity = 0.f;  // default: static block
+  compute.ubo.gravity = gravity;
   compute.ubo._pad0 = 0.f;
-  compute.ubo.canvasMin = glm::vec4(-2.f, -3.f, -2.f, 0.1f);
-  compute.ubo.canvasMax = glm::vec4(2.f, 0.f, 2.f, 0.f);
+  {
+    const float half = kCanvasWorld * 0.5f;
+    compute.ubo.canvasMin = glm::vec4(-half, -kDomainHeight, -half, 0.05f);
+    compute.ubo.canvasMax = glm::vec4(half, 0.f, half, 0.f);
+  }
 
   compute.uniformBuffers.reserve(MAX_CONCURRENT_FRAMES);
   for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
@@ -594,15 +615,59 @@ void VgeExample::updateGlobalUbo() {
 }
 
 void VgeExample::updateComputeUbo() {
-  compute.ubo.dt = frameTimer;
+  // dt: frameTimer by default, optional fixed dt for stable stepping.
+  compute.ubo.dt = useFixedDt ? kFixedDt : frameTimer;
   compute.ubo.particleCount = numParticles;
-  // gravity = 0 by default (block stays static); gravity = +Y = pull down
-  compute.ubo.gravity = 0.f;
+  // gravity = +Y pulls particles down on screen (toward the floor at y=0).
+  compute.ubo.gravity = gravity;
   compute.ubo._pad0 = 0.f;
-  compute.ubo.canvasMin = glm::vec4(-2.f, -3.f, -2.f, 0.1f);
-  compute.ubo.canvasMax = glm::vec4(2.f, 0.f, 2.f, 0.f);
+  // Domain box: floor at cmax.y=0, extends upward (screen) to cmin.y=-height.
+  const float half = kCanvasWorld * 0.5f;
+  const float h = 0.05f;  // cell size / particle spacing (used in M4)
+  compute.ubo.canvasMin = glm::vec4(-half, -kDomainHeight, -half, h);
+  compute.ubo.canvasMax = glm::vec4(half, 0.f, half, 0.f);
   std::memcpy(compute.uniformBuffers[currentFrameIndex]->getMappedData(),
               &compute.ubo, sizeof(ComputeUbo));
+}
+
+// Debug READBACK (M3): record a copy of the particle SSBO into a host-visible
+// buffer INSIDE the graphics command buffer (the buffer is owned by graphics
+// there, after the compute->graphics acquire), so the queue-ownership ping-pong
+// is left intact. The copy is read one frame later in consumeParticleReadback.
+void VgeExample::recordParticleReadbackCopy() {
+  if (!readbackRequest || numParticles == 0) return;
+  const vk::raii::CommandBuffer& cmd = drawCmdBuffers[currentFrameIndex];
+  // Make the compute-produced data visible to a transfer read (same queue).
+  vk::BufferMemoryBarrier toTransfer(
+      vk::AccessFlagBits::eVertexAttributeRead,
+      vk::AccessFlagBits::eTransferRead, graphics.queueFamilyIndex,
+      graphics.queueFamilyIndex,
+      particleBuffers[currentFrameIndex]->getBuffer(), 0ull,
+      sizeof(Particle) * numParticles);
+  cmd.pipelineBarrier(vk::PipelineStageFlagBits::eVertexInput,
+                      vk::PipelineStageFlagBits::eTransfer,
+                      vk::DependencyFlags{}, nullptr, toTransfer, nullptr);
+  cmd.copyBuffer(particleBuffers[currentFrameIndex]->getBuffer(),
+                 readbackBuffers[currentFrameIndex]->getBuffer(),
+                 vk::BufferCopy(0, 0, sizeof(Particle) * numParticles));
+  readbackPending[currentFrameIndex] = 1;
+  readbackRequest = false;
+}
+
+// Read the previously-recorded copy (its fence has been waited on) and print
+// the particle y range to verify collision clamping numerically.
+void VgeExample::consumeParticleReadback() {
+  if (!readbackPending[currentFrameIndex]) return;
+  readbackPending[currentFrameIndex] = 0;
+  const Particle* data = static_cast<const Particle*>(
+      readbackBuffers[currentFrameIndex]->getMappedData());
+  float minY = data[0].pos.y, maxY = data[0].pos.y;
+  for (uint32_t i = 1; i < numParticles; i++) {
+    minY = std::min(minY, data[i].pos.y);
+    maxY = std::max(maxY, data[i].pos.y);
+  }
+  std::cout << "[paint_splatter] particle y range: min=" << minY
+            << " max=" << maxY << " (floor at y=0)" << std::endl;
 }
 
 // ---------------------------------------------------------------------------
@@ -612,6 +677,15 @@ void VgeExample::render() {
   if (!prepared) return;
   updateGlobalUbo();
   updateComputeUbo();
+
+  // Request a particle readback ~once per second (recorded in this frame's
+  // graphics command buffer, read back one frame later).
+  readbackTimer += frameTimer;
+  if (readbackTimer >= 1.0f) {
+    readbackTimer = 0.f;
+    readbackRequest = true;
+  }
+
   draw();
 }
 
@@ -625,6 +699,10 @@ void VgeExample::draw() {
   assert(result != vk::Result::eTimeout && "Timed out: waitFence");
 
   device.resetFences(*waitFences[currentFrameIndex]);
+
+  // This frame slot's previous submission has completed; if it recorded a
+  // debug readback copy, its host-visible buffer is now valid to read.
+  consumeParticleReadback();
 
   prepareFrame();
 
@@ -679,9 +757,12 @@ void VgeExample::draw() {
 void VgeExample::buildComputeCommandBuffers() {
   compute.cmdBuffers[currentFrameIndex].begin({});
 
-  // Acquire barrier graphics -> compute (if different queue families)
+  // Acquire barrier graphics -> compute (if different queue families).
+  // Skip on the very first dispatch per buffer: no graphics release precedes
+  // it, so acquiring would be an unmatched ownership transfer (validation).
   // Mirrors particle.cpp:1513-1532
-  if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
+  if (graphics.queueFamilyIndex != compute.queueFamilyIndex &&
+      !computeFirstUse[currentFrameIndex]) {
     vk::BufferMemoryBarrier bufBarrier(
         vk::AccessFlags{}, vk::AccessFlagBits::eShaderWrite,
         graphics.queueFamilyIndex, compute.queueFamilyIndex,
@@ -693,6 +774,7 @@ void VgeExample::buildComputeCommandBuffers() {
         vk::PipelineStageFlagBits::eComputeShader, vk::DependencyFlags{},
         nullptr, bufBarrier, nullptr);
   }
+  computeFirstUse[currentFrameIndex] = 0;
 
   // Bind predict pipeline + descriptor set for this frame
   compute.cmdBuffers[currentFrameIndex].bindPipeline(
@@ -798,6 +880,11 @@ void VgeExample::buildCommandBuffers() {
 
   drawCmdBuffers[currentFrameIndex].endRenderPass();
 
+  // Debug readback copy (outside the render pass; buffer still owned by
+  // graphics). The graphics submit's completion semaphore is waited on by the
+  // next compute submit, so the copy finishes before compute overwrites.
+  recordParticleReadbackCopy();
+
   // Release barrier graphics -> compute (if different queue families)
   // Mirrors particle.cpp:1487-1504
   if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
@@ -836,6 +923,10 @@ void VgeExample::onUpdateUIOverlay() {
 
     ImGui::Text("Particles  : %u", numParticles);
     ImGui::Checkbox("Show particles", &showParticles);
+
+    // --- sim params (M3) ---
+    ImGui::SliderFloat("gravity (+Y)", &gravity, 0.f, 30.f);
+    ImGui::Checkbox("fixed dt (1/120)", &useFixedDt);
 
     if (uiOverlay->button("Save (no-op)")) {
       std::cout << "[paint_splatter] Save button pressed (no-op)\n";

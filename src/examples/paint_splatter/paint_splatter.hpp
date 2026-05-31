@@ -116,6 +116,18 @@ private:
   void updateComputeUbo();
   void buildComputeCommandBuffers();
 
+  // ---- debug readback (M3): print particle y min/max ~once per second ----
+  // The particle SSBO participates in the compute<->graphics queue-ownership
+  // ping-pong, so an out-of-band copy would break the release/acquire pairing.
+  // Instead the copy is recorded INSIDE the graphics command buffer (where the
+  // buffer is already owned by graphics) and read one frame later.
+  void recordParticleReadbackCopy();  // inside buildCommandBuffers
+  void consumeParticleReadback();     // after waitForFences in draw()
+  float readbackTimer = 0.f;
+  bool readbackRequest = false;
+  std::vector<std::unique_ptr<vgeu::VgeuBuffer>> readbackBuffers;
+  std::vector<uint8_t> readbackPending;  // per-frame: copy recorded, await read
+
   // geometry
   std::unique_ptr<vgeu::VgeuBuffer> vertexBuffer;
   std::unique_ptr<vgeu::VgeuBuffer> indexBuffer;
@@ -141,6 +153,17 @@ private:
   // particle debug renderer (point list)
   vk::raii::Pipeline particlePipeline = nullptr;
   bool showParticles = true;
+
+  // Per-frame-index flag: the very first compute dispatch on each particle
+  // buffer must NOT acquire queue ownership (no graphics release precedes it),
+  // else validation reports an unmatched ownership-acquire barrier at startup.
+  std::vector<uint8_t> computeFirstUse;
+
+  // ---- sim params (M3) ----
+  float gravity = 9.8f;     // world units/s^2, +Y (down on screen)
+  bool useFixedDt = false;  // false -> frameTimer; true -> kFixedDt
+  static constexpr float kFixedDt = 1.0f / 120.0f;
+  static constexpr float kDomainHeight = 3.0f;  // floor y=0 .. cmin.y=-height
 
   // ---- graphics sync semaphores (signalled by graphics, waited by compute)
   // ----

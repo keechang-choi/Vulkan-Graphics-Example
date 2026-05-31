@@ -23,7 +23,39 @@ u;
 void main() {
   uint i = gl_GlobalInvocationID.x;
   if (i >= u.count) return;
-  // gravity = +Y (down on screen in engine world convention)
-  p[i].vel.xyz += vec3(0.0, u.gravity, 0.0) * u.dt;
-  p[i].predict.xyz = p[i].pos.xyz + p[i].vel.xyz * u.dt;
+  // M3: integrate gravity + box/floor collision (no density solve yet).
+  // World convention: screen-up = world -Y, gravity pulls +Y (down on screen),
+  // the canvas floor is the solid half-space at y >= 0 (cmax.y == 0); particles
+  // approach it from below (y < 0). cmin.y = -domainHeight, cmax.y = 0.
+  vec3 v = p[i].vel.xyz + vec3(0.0, u.gravity, 0.0) * u.dt;
+  vec3 x = p[i].pos.xyz + v * u.dt;
+  vec3 lo = u.cmin.xyz, hi = u.cmax.xyz;
+  if (x.y > hi.y) {
+    x.y = hi.y;
+    v.y = 0.0;
+    v.xz *= 0.98;  // floor friction
+  }
+  if (x.y < lo.y) {
+    x.y = lo.y;
+    v.y = 0.0;
+  }
+  if (x.x < lo.x) {
+    x.x = lo.x;
+    v.x = 0.0;
+  }
+  if (x.x > hi.x) {
+    x.x = hi.x;
+    v.x = 0.0;
+  }
+  if (x.z < lo.z) {
+    x.z = lo.z;
+    v.z = 0.0;
+  }
+  if (x.z > hi.z) {
+    x.z = hi.z;
+    v.z = 0.0;
+  }
+  p[i].vel.xyz = v;
+  p[i].pos.xyz = x;
+  p[i].predict.xyz = x;
 }
