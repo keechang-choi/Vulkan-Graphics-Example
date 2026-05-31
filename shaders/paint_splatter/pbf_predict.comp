@@ -1,0 +1,29 @@
+#version 450
+layout(local_size_x = 256) in;
+
+struct Particle {
+  vec4 pos;      // xyz position, w unused
+  vec4 vel;      // xyz velocity, w = wetness
+  vec4 predict;  // xyz predicted x*, w = lambda
+  vec4 color;    // rgba paint color
+};
+
+layout(std430, set = 0, binding = 0) buffer Particles { Particle p[]; };
+
+layout(std140, set = 0, binding = 1) uniform Ubo {
+  float dt;
+  uint count;
+  float gravity;
+  float _p0;
+  vec4 cmin;
+  vec4 cmax;
+}
+u;
+
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  if (i >= u.count) return;
+  // gravity = +Y (down on screen in engine world convention)
+  p[i].vel.xyz += vec3(0.0, u.gravity, 0.0) * u.dt;
+  p[i].predict.xyz = p[i].pos.xyz + p[i].vel.xyz * u.dt;
+}
