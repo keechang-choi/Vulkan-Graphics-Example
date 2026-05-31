@@ -23,8 +23,10 @@ void VgeExample::setupCommandLineParser(CLI::App& app) {
 void VgeExample::getEnabledFeatures() {}
 
 void VgeExample::initVulkan() {
-  // Camera: orbit above and behind the canvas (X-Z plane at y=0)
-  camera.setViewTarget(glm::vec3{0.f, 4.f, -4.f}, glm::vec3{0.f, 0.f, 0.f});
+  // World convention (consistent with engine): screen-up = world -Y, so the
+  // canvas floor (X-Z plane at y=0) is viewed from the -Y side (above) and -Z
+  // (behind). Gravity will pull +Y; spoids/fluid live at y<0 (above the floor).
+  camera.setViewTarget(glm::vec3{0.f, -4.f, -4.f}, glm::vec3{0.f, 0.f, 0.f});
   camera.setPerspectiveProjection(
       glm::radians(60.f),
       static_cast<float>(width) / static_cast<float>(height), 0.1f, 256.f);
