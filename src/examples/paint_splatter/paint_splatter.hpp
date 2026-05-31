@@ -106,6 +106,8 @@ private:
 
   // ---- particle SSBO helpers ----
   void createParticleBuffers();
+  void seedParticles();      // (re)fill all particle SSBOs with the lattice
+  void restartSimulation();  // waitIdle + reseed + reset sync bootstrap
   void createParticlePipeline();
 
   // ---- compute helpers ----
@@ -160,8 +162,10 @@ private:
   std::vector<uint8_t> computeFirstUse;
 
   // ---- sim params (M3) ----
-  float gravity = 9.8f;     // world units/s^2, +Y (down on screen)
-  bool useFixedDt = false;  // false -> frameTimer; true -> kFixedDt
+  float gravity = 9.8f;       // world units/s^2, +Y (down on screen)
+  bool useFixedDt = false;    // false -> frameTimer; true -> kFixedDt
+  float seedJitterXZ = 1.0f;  // max random horizontal initial speed at seed
+  bool restartRequested = false;
   static constexpr float kFixedDt = 1.0f / 120.0f;
   static constexpr float kDomainHeight = 3.0f;  // floor y=0 .. cmin.y=-height
 

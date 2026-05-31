@@ -13,6 +13,7 @@
 #include <cstring>
 #include <iostream>
 #include <limits>
+#include <random>
 #include <vector>
 
 namespace vge {
@@ -139,12 +140,46 @@ void VgeExample::createIndexBuffer() {
 // Seed: 16x16x16 lattice above the canvas floor (y < 0)
 // ---------------------------------------------------------------------------
 void VgeExample::createParticleBuffers() {
-  // Build CPU seed data
+  // Per-frame device-local SSBOs (filled by seedParticles()).
+  particleBuffers.reserve(MAX_CONCURRENT_FRAMES);
+  for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    particleBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
+        globalAllocator->getAllocator(), sizeof(Particle), kMaxParticles,
+        vk::BufferUsageFlagBits::eStorageBuffer |
+            vk::BufferUsageFlagBits::eVertexBuffer |
+            vk::BufferUsageFlagBits::eTransferDst |
+            vk::BufferUsageFlagBits::eTransferSrc,  // debug readback copy
+                                                    // source
+        VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, 0));
+  }
+
+  // Per-frame host-visible readback targets (debug y min/max).
+  readbackBuffers.reserve(MAX_CONCURRENT_FRAMES);
+  readbackPending.assign(MAX_CONCURRENT_FRAMES, 0);
+  for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    readbackBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
+        globalAllocator->getAllocator(), sizeof(Particle), kMaxParticles,
+        vk::BufferUsageFlagBits::eTransferDst, VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT));
+  }
+
+  seedParticles();
+}
+
+// Fill all per-frame particle SSBOs with the lattice block. Each particle gets
+// a random horizontal (xz) initial velocity so the falling block spreads out
+// instead of dropping as a rigid column (debug visualization aid).
+void VgeExample::seedParticles() {
   const int N = 16;
   const float spacing = 0.05f;
   // Seed the block high above the floor (~0.7 of domain height) so it falls
   // onto the canvas at y=0. Domain spans y in [-kDomainHeight, 0].
   const float centerY = -kDomainHeight * 0.7f;  // world -Y = up
+
+  std::mt19937 rng(1337u);
+  std::uniform_real_distribution<float> angle(0.f, 6.2831853f);
+  std::uniform_real_distribution<float> speed(0.f, seedJitterXZ);
 
   std::vector<Particle> cpuParticles;
   cpuParticles.reserve(static_cast<size_t>(N * N * N));
@@ -156,7 +191,9 @@ void VgeExample::createParticleBuffers() {
         p.pos =
             glm::vec4((ix - N / 2) * spacing, centerY + (iy - N / 2) * spacing,
                       (iz - N / 2) * spacing, 1.f);
-        p.vel = glm::vec4(0.f);
+        // Random xz-direction initial velocity (y = 0; gravity does the rest).
+        float a = angle(rng), s = speed(rng);
+        p.vel = glm::vec4(std::cos(a) * s, 0.f, std::sin(a) * s, 0.f);
         p.predict = glm::vec4(0.f);
         // Color varies by position for visual distinction
         p.color =
@@ -170,12 +207,12 @@ void VgeExample::createParticleBuffers() {
   numParticles = static_cast<uint32_t>(cpuParticles.size());
   assert(numParticles <= kMaxParticles);
 
-  // Readback: print first particle + count
-  std::cout << "[paint_splatter] numParticles=" << numParticles
-            << "  particle[0].pos=(" << cpuParticles[0].pos.x << ","
-            << cpuParticles[0].pos.y << "," << cpuParticles[0].pos.z << ")\n";
+  std::cout << "[paint_splatter] seed numParticles=" << numParticles
+            << "  jitterXZ=" << seedJitterXZ << "  particle[0].pos=("
+            << cpuParticles[0].pos.x << "," << cpuParticles[0].pos.y << ","
+            << cpuParticles[0].pos.z << ")" << std::endl;
 
-  // Staging buffer
+  // Staging buffer -> upload to every per-frame SSBO.
   vgeu::VgeuBuffer stagingBuffer(
       globalAllocator->getAllocator(), sizeof(Particle), kMaxParticles,
       vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_AUTO,
@@ -184,19 +221,7 @@ void VgeExample::createParticleBuffers() {
   std::memcpy(stagingBuffer.getMappedData(), cpuParticles.data(),
               sizeof(Particle) * numParticles);
 
-  // Per-frame device-local SSBOs
-  particleBuffers.reserve(MAX_CONCURRENT_FRAMES);
   for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
-    particleBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
-        globalAllocator->getAllocator(), sizeof(Particle), kMaxParticles,
-        vk::BufferUsageFlagBits::eStorageBuffer |
-            vk::BufferUsageFlagBits::eVertexBuffer |
-            vk::BufferUsageFlagBits::eTransferDst |
-            vk::BufferUsageFlagBits::eTransferSrc,  // debug readback copy
-                                                    // source
-        VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, 0));
-
-    // Upload seed to each frame's SSBO
     vgeu::oneTimeSubmit(
         device, commandPool, queue,
         [&](const vk::raii::CommandBuffer& cmdBuffer) {
@@ -205,17 +230,18 @@ void VgeExample::createParticleBuffers() {
               vk::BufferCopy(0, 0, sizeof(Particle) * numParticles));
         });
   }
+}
 
-  // Per-frame host-visible readback targets (debug y min/max).
-  readbackBuffers.reserve(MAX_CONCURRENT_FRAMES);
+// Restart: stop the GPU, reseed the lattice, and reset the queue-ownership
+// bootstrap (computeFirstUse) so the next compute dispatch skips its acquire
+// barrier exactly like a fresh start (keeps validation clean).
+void VgeExample::restartSimulation() {
+  device.waitIdle();
+  seedParticles();
+  computeFirstUse.assign(MAX_CONCURRENT_FRAMES, 1);
   readbackPending.assign(MAX_CONCURRENT_FRAMES, 0);
-  for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
-    readbackBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
-        globalAllocator->getAllocator(), sizeof(Particle), kMaxParticles,
-        vk::BufferUsageFlagBits::eTransferDst, VMA_MEMORY_USAGE_AUTO,
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT |
-            VMA_ALLOCATION_CREATE_MAPPED_BIT));
-  }
+  readbackTimer = 0.f;
+  readbackRequest = false;
 }
 
 void VgeExample::createUniformBuffers() {
@@ -675,6 +701,12 @@ void VgeExample::consumeParticleReadback() {
 // ---------------------------------------------------------------------------
 void VgeExample::render() {
   if (!prepared) return;
+
+  if (restartRequested) {
+    restartRequested = false;
+    restartSimulation();
+  }
+
   updateGlobalUbo();
   updateComputeUbo();
 
@@ -927,6 +959,10 @@ void VgeExample::onUpdateUIOverlay() {
     // --- sim params (M3) ---
     ImGui::SliderFloat("gravity (+Y)", &gravity, 0.f, 30.f);
     ImGui::Checkbox("fixed dt (1/120)", &useFixedDt);
+    ImGui::SliderFloat("seed jitter xz", &seedJitterXZ, 0.f, 5.f);
+    if (uiOverlay->button("Restart")) {
+      restartRequested = true;
+    }
 
     if (uiOverlay->button("Save (no-op)")) {
       std::cout << "[paint_splatter] Save button pressed (no-op)\n";
