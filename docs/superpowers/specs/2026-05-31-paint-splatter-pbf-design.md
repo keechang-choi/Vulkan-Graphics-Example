@@ -75,8 +75,9 @@ Single-responsibility units:
 ## §2. PBF Solver (the simulation core)
 
 Implements Algorithm 1 of Macklin & Müller 2013, decomposed into compute
-dispatches (mirrors the `particle` example's multi-pipeline + compute/graphics
-semaphore structure):
+dispatches. Compute↔graphics synchronization (semaphores, buffer ownership,
+per-frame ordering) must follow the **`cloth` and `particle`** examples closely —
+this is a known sharp edge and gets dedicated attention in the plan (§9, M2):
 
 ```
 per frame, for numSubSteps:
@@ -216,6 +217,29 @@ by visual + numerical sanity:
 - UBO/SSBO structs → compile-time `static_assert` on size + zero-init padding
   (lesson from `BubbleParamsUbo` in soap_bubble).
 - Save (file IO) failure → ImGui error message; simulation continues.
+
+---
+
+## §9. Implementation Milestones (user-gated, screen-verified)
+
+The plan MUST be split into small vertical slices where **each milestone renders
+something on screen and the user visually verifies + approves before the next
+one starts**. Rationale: a big-bang implementation that renders nothing is very
+slow to debug; early screen checkpoints localize failures. Start from the most
+minimal on-screen skeleton, add compute/graphics sync with trivial data next,
+then physics incrementally, then features.
+
+| M | Slice | On-screen check (user gate) |
+|---|---|---|
+| M1 | Render skeleton: canvas quad (UV-checker) + 3D camera + ImGui overlay, no sim | Quad visible, camera orbits, ImGui responds |
+| M2 | Particle SSBO + `ParticleRenderer` + trivial compute pass (e.g. gravity only), **compute↔graphics sync wired per `cloth`/`particle`** | A static/falling particle block renders correctly; no sync stalls/flicker/validation errors |
+| M3 | PBF integrate + canvas/wall collision (no density solve) | Particles fall, hit the canvas plane, pile up without leaking |
+| M4 | `NeighborGrid` + full PBF density solve + surface tension | A dropped block behaves as a cohesive incompressible fluid (mini dam-break), no explosion |
+| M5 | `Emitter` + `KeyboardSpoidController` (discrete droplet) | Releasing a droplet → falls, splashes, visible satellite droplets |
+| M6 | `CanvasDeposit` (stamp + dry) + compaction | Droplet leaves a permanent mark; particle count stays bounded |
+| M7 | ImGui spoid multi-select + params + Save (PNG) | Select/move/edit spoids; saved PNG matches on-screen canvas |
+
+Each milestone is a stop-and-verify gate, not just an internal checkpoint.
 
 ---
 
