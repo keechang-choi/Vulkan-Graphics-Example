@@ -547,6 +547,31 @@ void VgeExample::createParticlePipeline() {
 
   particlePipeline =
       vk::raii::Pipeline(device, pipelineCache, graphicsPipelineCI);
+
+  // Spoid marker pipeline: identical state (same layout + Particle vertex
+  // input), but larger, bordered-disc shaders so the eyedroppers stand out.
+  auto mVertCode =
+      vgeu::readFile(getShadersPath() + "/paint_splatter/marker.vert.spv");
+  auto mFragCode =
+      vgeu::readFile(getShadersPath() + "/paint_splatter/marker.frag.spv");
+  vk::raii::ShaderModule mVertModule =
+      vgeu::createShaderModule(device, mVertCode);
+  vk::raii::ShaderModule mFragModule =
+      vgeu::createShaderModule(device, mFragCode);
+  std::array<vk::PipelineShaderStageCreateInfo, 2> markerStageCIs{
+      vk::PipelineShaderStageCreateInfo(vk::PipelineShaderStageCreateFlags(),
+                                        vk::ShaderStageFlagBits::eVertex,
+                                        *mVertModule, "main", nullptr),
+      vk::PipelineShaderStageCreateInfo(vk::PipelineShaderStageCreateFlags(),
+                                        vk::ShaderStageFlagBits::eFragment,
+                                        *mFragModule, "main", nullptr),
+  };
+  vk::GraphicsPipelineCreateInfo markerPipelineCI(
+      vk::PipelineCreateFlags(), markerStageCIs, &vertexInputSCI,
+      &inputAssemblySCI, nullptr, &viewportSCI, &rasterizationSCI,
+      &multisampleSCI, &depthStencilSCI, &colorBlendSCI, &dynamicSCI,
+      *pipelineLayout, *renderPass);
+  markerPipeline = vk::raii::Pipeline(device, pipelineCache, markerPipelineCI);
 }
 
 // ---------------------------------------------------------------------------
@@ -1337,7 +1362,7 @@ void VgeExample::buildCommandBuffers() {
       m[i].color = glm::vec4(spoids[i].color, 1.f);
     }
     drawCmdBuffers[currentFrameIndex].bindPipeline(
-        vk::PipelineBindPoint::eGraphics, *particlePipeline);
+        vk::PipelineBindPoint::eGraphics, *markerPipeline);
     drawCmdBuffers[currentFrameIndex].bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics, *pipelineLayout, 0,
         {*descriptorSets[currentFrameIndex]}, nullptr);

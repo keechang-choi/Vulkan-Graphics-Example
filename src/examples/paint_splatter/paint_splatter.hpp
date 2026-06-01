@@ -245,6 +245,8 @@ private:
 
   // particle debug renderer (point list)
   vk::raii::Pipeline particlePipeline = nullptr;
+  // spoid markers: larger, bordered discs so they stand out from the fluid
+  vk::raii::Pipeline markerPipeline = nullptr;
   bool showParticles = true;
 
   // Per-frame-index flag: the very first compute dispatch on each particle
