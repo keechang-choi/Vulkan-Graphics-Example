@@ -19,6 +19,22 @@
 
 namespace vge {
 
+// Distinct default paint colours so multiple spoids are visually separable.
+static glm::vec3 spoidPalette(int i) {
+  static const glm::vec3 kColors[] = {
+      {0.90f, 0.25f, 0.25f},  // red
+      {0.25f, 0.55f, 0.90f},  // blue
+      {0.30f, 0.75f, 0.35f},  // green
+      {0.95f, 0.80f, 0.20f},  // yellow
+      {0.85f, 0.35f, 0.80f},  // magenta
+      {0.20f, 0.80f, 0.80f},  // cyan
+      {0.95f, 0.55f, 0.20f},  // orange
+      {0.60f, 0.40f, 0.85f},  // purple
+  };
+  constexpr int n = sizeof(kColors) / sizeof(kColors[0]);
+  return kColors[((i % n) + n) % n];
+}
+
 VgeExample::VgeExample() : VgeBase() { title = "Paint Splatter Example"; }
 VgeExample::~VgeExample() {}
 
@@ -53,7 +69,11 @@ void VgeExample::prepare() {
   compute.queueFamilyIndex = queueFamilyIndices.compute;
 
   // One spoid above the canvas centre, driven by the keyboard (design §4).
-  spoids.push_back(Spoid{});
+  {
+    Spoid s{};
+    s.color = spoidPalette(0);
+    spoids.push_back(s);
+  }
   spoidController = std::make_unique<KeyboardSpoidController>();
 
   createVertexBuffer();
@@ -771,8 +791,19 @@ void VgeExample::enqueueDrop(const glm::vec3& origin, float holeRadius,
   uint32_t count = std::min(want, avail);
   if (count < want) poolFull = true;
 
+  // Size the spawn ball so the burst starts near REST density instead of
+  // over-packed: cramming `amount` particles into a tiny hole disk makes the
+  // initial density many times rho0, and PBF's density solve then violently
+  // blasts them apart (the "scatter"). A ball that holds `count` particles at
+  // the rest spacing avoids that. holeRadius is a lower bound (the user's
+  // droplet size), so a wider hole still makes a wider drop.
+  const float restVol = static_cast<float>(count) * kParticleSpacing *
+                        kParticleSpacing * kParticleSpacing;
+  const float ballR = std::cbrt(3.f * restVol / (4.f * glm::pi<float>()));
+  const float spawnR = std::max(holeRadius, ballR);
+
   EmitPush push{};
-  push.originRadius = glm::vec4(origin, holeRadius);
+  push.originRadius = glm::vec4(origin, spawnR);
   // Initial velocity is downward toward the floor (+Y in this engine's world).
   push.velConc = glm::vec4(0.f, emissionVel, 0.f, concentration);
   push.color = glm::vec4(color, 0.f);
@@ -824,8 +855,8 @@ void VgeExample::updateSpoids() {
   glm::vec3 mv(0.f);
   if (glfwGetKey(w, GLFW_KEY_L) == GLFW_PRESS) mv.x += 1.f;
   if (glfwGetKey(w, GLFW_KEY_J) == GLFW_PRESS) mv.x -= 1.f;
-  if (glfwGetKey(w, GLFW_KEY_K) == GLFW_PRESS) mv.z += 1.f;
-  if (glfwGetKey(w, GLFW_KEY_I) == GLFW_PRESS) mv.z -= 1.f;
+  if (glfwGetKey(w, GLFW_KEY_I) == GLFW_PRESS) mv.z += 1.f;
+  if (glfwGetKey(w, GLFW_KEY_K) == GLFW_PRESS) mv.z -= 1.f;
   if (glfwGetKey(w, GLFW_KEY_O) == GLFW_PRESS)
     mv.y += 1.f;  // lower toward floor
   if (glfwGetKey(w, GLFW_KEY_U) == GLFW_PRESS) mv.y -= 1.f;  // raise
@@ -1302,9 +1333,8 @@ void VgeExample::buildCommandBuffers() {
       m[i].pos = glm::vec4(spoids[i].pos, 1.f);
       m[i].vel = glm::vec4(0.f);      // density-debug tint reads vel.w (=0)
       m[i].predict = glm::vec4(0.f);  // unused by the renderer
-      // Selected spoids are highlighted white; others show their paint colour.
-      m[i].color =
-          spoids[i].selected ? glm::vec4(1.f) : glm::vec4(spoids[i].color, 1.f);
+      // Marker shows the spoid's paint colour (selection is shown in the UI).
+      m[i].color = glm::vec4(spoids[i].color, 1.f);
     }
     drawCmdBuffers[currentFrameIndex].bindPipeline(
         vk::PipelineBindPoint::eGraphics, *particlePipeline);
@@ -1394,7 +1424,12 @@ void VgeExample::onUpdateUIOverlay() {
       }
 
       if (uiOverlay->button("+ Add spoid") && spoids.size() < kMaxSpoids) {
-        spoids.push_back(Spoid{});
+        Spoid s{};
+        s.color = spoidPalette(static_cast<int>(spoids.size()));
+        // Offset new spoids so they don't stack on the existing one.
+        s.pos.x = glm::clamp(-0.8f + 0.4f * static_cast<float>(spoids.size()),
+                             -kDomainHalf + 0.1f, kDomainHalf - 0.1f);
+        spoids.push_back(s);
       }
       if (uiOverlay->button("- Remove spoid") && spoids.size() > 1) {
         spoids.pop_back();
