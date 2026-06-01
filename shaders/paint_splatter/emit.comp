@@ -1,0 +1,60 @@
+#version 450
+layout(local_size_x = 256) in;
+
+// Emit pass (M5): spawn one droplet burst into the particle SSBO. The host
+// tracks the live count and computes baseIndex per burst (append-only until M6
+// adds compaction), so no GPU atomic counter is needed here. One dispatch per
+// droplet burst; each invocation writes one new particle at baseIndex + i.
+
+struct Particle {
+  vec4 pos;      // xyz position, w unused
+  vec4 vel;      // xyz velocity, w = wetness
+  vec4 predict;  // xyz predicted x*, w = lambda
+  vec4 color;    // rgba paint color (a = concentration)
+};
+
+layout(std430, set = 0, binding = 0) buffer Particles { Particle p[]; };
+
+layout(push_constant) uniform Push {
+  vec4 originRadius;  // xyz = spoid origin (y<0), w = hole radius
+  vec4 velConc;       // xyz = initial velocity (+Y = down on screen), w = conc
+  vec4 color;         // rgb = paint color, a unused
+  uint baseIndex;     // first particle slot to write
+  uint count;         // number of particles in this burst
+  uint seed;          // rng seed (varies per burst)
+  uint pad;
+}
+pc;
+
+// hash-based RNG (PCG-style integer hash) for per-particle jitter.
+uint hash(uint x) {
+  x ^= x >> 16;
+  x *= 0x7feb352dU;
+  x ^= x >> 15;
+  x *= 0x846ca68bU;
+  x ^= x >> 16;
+  return x;
+}
+float rnd(uint n) {
+  return float(hash(n) & 0x00ffffffU) / float(0x01000000);
+}
+
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  if (i >= pc.count) return;
+  uint idx = pc.baseIndex + i;
+
+  uint s = pc.seed + i * 9781u;
+  // Uniform sample inside the hole disk (horizontal x-z plane at the spoid).
+  float r = pc.originRadius.w * sqrt(rnd(s));
+  float a = 6.2831853 * rnd(s + 1u);
+  vec3 off = vec3(cos(a) * r, 0.0, sin(a) * r);
+  // Small vertical spread so the burst is a blob, not a flat sheet.
+  off.y = (rnd(s + 2u) - 0.5) * pc.originRadius.w;
+
+  vec3 x = pc.originRadius.xyz + off;
+  p[idx].pos = vec4(x, 1.0);
+  p[idx].vel = vec4(pc.velConc.xyz, 1.0);  // w = wetness = 1 (consumed in M6)
+  p[idx].predict = vec4(x, 0.0);
+  p[idx].color = vec4(pc.color.rgb, pc.velConc.w);  // a = concentration
+}

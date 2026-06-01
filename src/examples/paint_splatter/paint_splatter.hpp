@@ -75,6 +75,34 @@ struct ComputeUbo {
 };
 static_assert(sizeof(ComputeUbo) == 112, "ComputeUbo std140 size");
 
+// EmitPush: push constant for the emit pass (M5). One dispatch per droplet
+// burst; the host computes baseIndex (append-only live count) so no GPU atomic
+// counter is needed until compaction lands in M6.
+struct EmitPush {
+  glm::vec4 originRadius;  // -- 0  -- xyz spoid origin (y<0), w hole radius
+  glm::vec4 velConc;   // -- 16 -- xyz initial velocity (+Y), w concentration
+  glm::vec4 color;     // -- 32 -- rgb paint color, a unused
+  uint32_t baseIndex;  // -- 48 -- first particle slot written
+  uint32_t count;      // -- 52 -- particles in this burst
+  uint32_t seed;       // -- 56 -- rng seed (varies per burst)
+  uint32_t _pad;       // -- 60 --
+  // -- 64 --
+};
+static_assert(sizeof(EmitPush) == 64, "EmitPush push-constant size");
+
+// Spoid (M5): host-side eyedropper POD. Selected via ImGui, moved via keyboard;
+// Space releases one droplet burst of `amount` particles from each selected
+// spoid. World convention: spoids live above the floor at y<0.
+struct Spoid {
+  glm::vec3 pos{0.f, -2.5f, 0.f};
+  float holeRadius = 0.12f;
+  glm::vec3 color{0.2f, 0.4f, 0.9f};
+  float emissionVelocity = 2.f;  // initial downward (+Y) speed
+  int amount = 300;              // particles per drop
+  float concentration = 1.f;     // -> stamp alpha (M6) + opacity
+  bool selected = true;
+};
+
 // Intentionally empty for M1; simulation/spoid knobs are added in later
 // milestones.
 struct Options {};
@@ -127,6 +155,19 @@ private:
   // Records one full PBF substep (predict -> grid -> solve iters -> finalize).
   void recordPbfSubstep(const vk::raii::CommandBuffer& cmd, uint32_t frame);
 
+  // ---- emit (M5) ----
+  void createEmitPipeline();
+  // Append one droplet burst: reserves a contiguous slot range from the shared
+  // host live count and enqueues the same EmitPush to every per-frame buffer so
+  // the two independent-but-identical sims stay in lockstep.
+  void enqueueDrop(const glm::vec3& origin, float holeRadius,
+                   const glm::vec3& color, float emissionVel,
+                   float concentration, int amount);
+  void recordEmit(const vk::raii::CommandBuffer& cmd, uint32_t frame);
+  // Per-frame FIFO of pending bursts (drained in buildComputeCommandBuffers).
+  std::vector<std::vector<EmitPush>> emitQueues;
+  uint32_t emitSeedCounter = 1u;  // varies the rng seed per burst
+
   // ---- debug readback (M3): print particle y min/max ~once per second ----
   // The particle SSBO participates in the compute<->graphics queue-ownership
   // ping-pong, so an out-of-band copy would break the release/acquire pairing.
@@ -178,9 +219,22 @@ private:
   static constexpr float kFixedDt = 1.0f / 120.0f;
   static constexpr float kDomainHeight = 3.0f;  // floor y=0 .. cmin.y=-height
   // M4 test: confine the fluid (collision walls + neighbor grid) to a small box
-  // in x,z so a dam-break forms a dense, visible pool. Widened to the canvas in
-  // M5 for droplets. The canvas quad itself stays kCanvasWorld.
+  // in x,z so a dam-break forms a dense, visible pool. The canvas quad itself
+  // stays kCanvasWorld.
   static constexpr float kFluidHalf = 1.0f;
+  // M5: droplets need the full canvas footprint, so the simulation domain
+  // (collision walls + neighbor grid) spans the whole canvas in x,z.
+  static constexpr float kDomainHalf = 2.0f;  // == kCanvasWorld * 0.5
+
+  // ---- emit / spoids (M5) ----
+  std::vector<Spoid> spoids;
+  // Task 9: hardcoded auto-drop (a single fixed emitter) to verify the emit
+  // pass before the spoid UI exists; turned off once spoids drive emission.
+  bool autoEmit = true;
+  float autoEmitInterval = 0.6f;  // seconds between auto drops
+  float autoEmitTimer = 0.f;
+  // Particle pool exhaustion warning (set when a drop is rejected/clamped).
+  bool poolFull = false;
 
   // ---- graphics sync semaphores (signalled by graphics, waited by compute)
   // ----
@@ -213,6 +267,9 @@ private:
     vk::raii::Pipeline delta = nullptr;
     vk::raii::Pipeline apply = nullptr;
     vk::raii::Pipeline finalize = nullptr;
+    // Emit (M5): separate pipeline layout = compute set layout + push constant.
+    vk::raii::PipelineLayout emitPipelineLayout = nullptr;
+    vk::raii::Pipeline emit = nullptr;
   } compute;
 
   // ---- neighbor grid (per-frame; rebuilt every substep) ----

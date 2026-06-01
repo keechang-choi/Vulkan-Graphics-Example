@@ -165,7 +165,12 @@ void VgeExample::createParticleBuffers() {
             VMA_ALLOCATION_CREATE_MAPPED_BIT));
   }
 
-  seedParticles();
+  // Per-frame emit queues (one FIFO of pending bursts per particle buffer).
+  emitQueues.assign(MAX_CONCURRENT_FRAMES, {});
+
+  // M5: start empty — droplets are spawned by the emit pass, not a seed block.
+  // (seedParticles() remains available as an M4 dam-break debug aid.)
+  numParticles = 0;
 }
 
 // Fill all per-frame particle SSBOs with the lattice block. Each particle gets
@@ -243,7 +248,11 @@ void VgeExample::seedParticles() {
 // barrier exactly like a fresh start (keeps validation clean).
 void VgeExample::restartSimulation() {
   device.waitIdle();
-  seedParticles();
+  // M5: clear the canvas of live fluid (emit will repopulate). The SSBO slots
+  // are simply abandoned by setting the live count to 0; no reseed needed.
+  numParticles = 0;
+  for (auto& q : emitQueues) q.clear();
+  poolFull = false;
   // Do NOT reset computeFirstUse here: unlike startup, the buffers are already
   // mid-ping-pong with a pending graphics->compute release. Skipping the next
   // compute acquire would leave that release unconsumed and the following
@@ -545,7 +554,8 @@ void VgeExample::prepareCompute() {
   computeFirstUse.assign(MAX_CONCURRENT_FRAMES, 1);
 
   // --- Grid dimensions from the fluid domain + smoothing radius ---
-  const float half = kFluidHalf;  // fluid box half-extent in x,z
+  // M5: the domain spans the full canvas in x,z (droplets land anywhere).
+  const float half = kDomainHalf;  // domain half-extent in x,z
   const float h = kSmoothingRadius;
   gridDim = glm::ivec3(static_cast<int>(std::ceil((2.f * half) / h)),
                        static_cast<int>(std::ceil(kDomainHeight / h)),
@@ -619,6 +629,7 @@ void VgeExample::prepareCompute() {
 
   // --- 4. Compute pipeline ---
   createComputePipeline();
+  createEmitPipeline();
 
   // --- 5. Compute descriptor sets ---
   createComputeDescriptorSets();
@@ -703,6 +714,86 @@ void VgeExample::createComputePipeline() {
   compute.finalize = makePipeline("pbf_finalize");
 }
 
+// Emit pipeline (M5): its own layout = the compute descriptor-set layout (so it
+// can write the particle SSBO at binding 0) plus an EmitPush push-constant
+// range carrying the per-burst parameters.
+void VgeExample::createEmitPipeline() {
+  vk::PushConstantRange pushRange(vk::ShaderStageFlagBits::eCompute, 0,
+                                  sizeof(EmitPush));
+  vk::PipelineLayoutCreateInfo layoutCI({}, *compute.descriptorSetLayout,
+                                        pushRange);
+  compute.emitPipelineLayout = vk::raii::PipelineLayout(device, layoutCI);
+
+  auto code =
+      vgeu::readFile(getShadersPath() + "/paint_splatter/emit.comp.spv");
+  vk::raii::ShaderModule module = vgeu::createShaderModule(device, code);
+  vk::PipelineShaderStageCreateInfo stageCI(
+      vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eCompute,
+      *module, "main", nullptr);
+  vk::ComputePipelineCreateInfo pipelineCI(vk::PipelineCreateFlags(), stageCI,
+                                           *compute.emitPipelineLayout);
+  compute.emit = vk::raii::Pipeline(device, pipelineCache, pipelineCI);
+}
+
+// Reserve a contiguous slot range from the shared host live count and enqueue
+// the same burst to every per-frame buffer. baseIndex is computed once here so
+// both independent-but-identical sims write the same particle into the same
+// slot when each drains its queue. Append-only (no compaction until M6).
+void VgeExample::enqueueDrop(const glm::vec3& origin, float holeRadius,
+                             const glm::vec3& color, float emissionVel,
+                             float concentration, int amount) {
+  if (amount <= 0) return;
+  uint32_t want = static_cast<uint32_t>(amount);
+  if (numParticles >= kMaxParticles) {
+    poolFull = true;
+    return;
+  }
+  uint32_t avail = kMaxParticles - numParticles;
+  uint32_t count = std::min(want, avail);
+  if (count < want) poolFull = true;
+
+  EmitPush push{};
+  push.originRadius = glm::vec4(origin, holeRadius);
+  // Initial velocity is downward toward the floor (+Y in this engine's world).
+  push.velConc = glm::vec4(0.f, emissionVel, 0.f, concentration);
+  push.color = glm::vec4(color, 0.f);
+  push.baseIndex = numParticles;
+  push.count = count;
+  push.seed = emitSeedCounter++;
+  push._pad = 0u;
+
+  numParticles += count;
+  for (auto& q : emitQueues) q.push_back(push);
+}
+
+// Drain this buffer's pending bursts: one emit dispatch per burst, each writing
+// into its reserved [baseIndex, baseIndex+count) slot range. Runs before the
+// PBF solver so predict/grid see the new particles this same frame.
+void VgeExample::recordEmit(const vk::raii::CommandBuffer& cmd,
+                            uint32_t frame) {
+  auto& queue = emitQueues[frame];
+  if (queue.empty()) return;
+  // Bind the particle SSBO via the emit layout (its push-constant range makes
+  // it a distinct, incompatible layout from the PBF passes' layout).
+  cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
+                         *compute.emitPipelineLayout, 0,
+                         *compute.descriptorSets[frame], nullptr);
+  cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *compute.emit);
+  for (const EmitPush& push : queue) {
+    cmd.pushConstants<EmitPush>(*compute.emitPipelineLayout,
+                                vk::ShaderStageFlagBits::eCompute, 0, push);
+    cmd.dispatch((push.count + 255u) / 256u, 1, 1);
+  }
+  queue.clear();
+  // emit (shader write) -> predict (shader read/write) barrier.
+  vk::MemoryBarrier mb(
+      vk::AccessFlagBits::eShaderWrite,
+      vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite);
+  cmd.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,
+                      vk::PipelineStageFlagBits::eComputeShader,
+                      vk::DependencyFlags{}, mb, nullptr, nullptr);
+}
+
 void VgeExample::createComputeDescriptorSets() {
   vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
                                           *compute.descriptorSetLayout);
@@ -780,11 +871,10 @@ void VgeExample::updateComputeUbo() {
   compute.ubo.dt = frameDt / static_cast<float>(sub);
   compute.ubo.particleCount = numParticles;
   compute.ubo.gravity = gravity;
-  // Fluid domain box (collision walls): smaller than the canvas for the M4
-  // test.
+  // Fluid domain box (collision walls): the full canvas footprint in x,z.
   compute.ubo.canvasMin =
-      glm::vec4(-kFluidHalf, -kDomainHeight, -kFluidHalf, 0.f);
-  compute.ubo.canvasMax = glm::vec4(kFluidHalf, 0.f, kFluidHalf, 0.f);
+      glm::vec4(-kDomainHalf, -kDomainHeight, -kDomainHalf, 0.f);
+  compute.ubo.canvasMax = glm::vec4(kDomainHalf, 0.f, kDomainHalf, 0.f);
   // Live-tunable PBF params (grid dims / kernel constants fixed in prepare).
   compute.ubo.rho0 = rho0;
   compute.ubo.epsCFM = epsCFM;
@@ -832,6 +922,7 @@ void VgeExample::recordParticleReadbackCopy() {
 void VgeExample::consumeParticleReadback() {
   if (!readbackPending[currentFrameIndex]) return;
   readbackPending[currentFrameIndex] = 0;
+  if (numParticles == 0) return;
   const Particle* data = static_cast<const Particle*>(
       readbackBuffers[currentFrameIndex]->getMappedData());
   float minY = data[0].pos.y, maxY = data[0].pos.y;
@@ -860,6 +951,18 @@ void VgeExample::render() {
   if (restartRequested) {
     restartRequested = false;
     restartSimulation();
+  }
+
+  // Task 9 (M5): hardcoded auto-drop from a single fixed emitter to verify the
+  // emit pass before the spoid UI exists. Replaced by the spoid controller in
+  // Task 10.
+  if (autoEmit) {
+    autoEmitTimer += frameTimer;
+    if (autoEmitTimer >= autoEmitInterval) {
+      autoEmitTimer = 0.f;
+      enqueueDrop(glm::vec3(0.f, -2.5f, 0.f), 0.12f,
+                  glm::vec3(0.2f, 0.4f, 0.9f), 2.f, 1.f, 300);
+    }
   }
 
   updateGlobalUbo();
@@ -962,6 +1065,10 @@ void VgeExample::buildComputeCommandBuffers() {
         nullptr, bufBarrier, nullptr);
   }
   computeFirstUse[currentFrameIndex] = 0;
+
+  // Emit pending droplet bursts first so the new particles are part of this
+  // frame's solve (mirrors the per-frame order in the design spec).
+  recordEmit(compute.cmdBuffers[currentFrameIndex], currentFrameIndex);
 
   compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
       vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 0,
@@ -1169,8 +1276,16 @@ void VgeExample::onUpdateUIOverlay() {
     ImGui::Text("Camera pos : (%.2f, %.2f, %.2f)", camPos.x, camPos.y,
                 camPos.z);
 
-    ImGui::Text("Particles  : %u", numParticles);
+    ImGui::Text("Particles  : %u / %u", numParticles, kMaxParticles);
     ImGui::Checkbox("Show particles", &showParticles);
+    if (poolFull) {
+      ImGui::TextColored(ImVec4(1.f, 0.4f, 0.3f, 1.f),
+                         "particle pool full - drop rejected");
+    }
+
+    // --- emit (M5 Task 9: auto-drop) ---
+    ImGui::Checkbox("auto emit", &autoEmit);
+    ImGui::SliderFloat("auto interval (s)", &autoEmitInterval, 0.1f, 2.f);
 
     // --- sim params (M3) ---
     ImGui::SliderFloat("gravity (+Y)", &gravity, 0.f, 30.f);
