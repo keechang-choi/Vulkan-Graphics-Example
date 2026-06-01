@@ -52,9 +52,14 @@ void VgeExample::prepare() {
   graphics.queueFamilyIndex = queueFamilyIndices.graphics;
   compute.queueFamilyIndex = queueFamilyIndices.compute;
 
+  // One spoid above the canvas centre, driven by the keyboard (design §4).
+  spoids.push_back(Spoid{});
+  spoidController = std::make_unique<KeyboardSpoidController>();
+
   createVertexBuffer();
   createIndexBuffer();
   createParticleBuffers();
+  createMarkerBuffers();
   createUniformBuffers();
   createDescriptorSetLayout();
   createDescriptorPool();
@@ -260,6 +265,20 @@ void VgeExample::restartSimulation() {
   readbackPending.assign(MAX_CONCURRENT_FRAMES, 0);
   readbackTimer = 0.f;
   readbackRequest = false;
+}
+
+// Per-frame host-visible marker buffers (one Particle slot per spoid) drawn as
+// points with the particle pipeline. Host-written each frame; not part of the
+// compute<->graphics ping-pong.
+void VgeExample::createMarkerBuffers() {
+  markerBuffers.reserve(MAX_CONCURRENT_FRAMES);
+  for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    markerBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
+        globalAllocator->getAllocator(), sizeof(Particle), kMaxSpoids,
+        vk::BufferUsageFlagBits::eVertexBuffer, VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT));
+  }
 }
 
 void VgeExample::createUniformBuffers() {
@@ -794,6 +813,45 @@ void VgeExample::recordEmit(const vk::raii::CommandBuffer& cmd,
                       vk::DependencyFlags{}, mb, nullptr, nullptr);
 }
 
+// Read keyboard input, run the spoid controller, clamp spoids to the domain,
+// and turn this frame's emit triggers into droplet bursts. IJKL move spoids in
+// the canvas plane, U/O change height, Space releases a drop from each selected
+// spoid (WASD/arrows belong to the camera, so spoids use a separate key set).
+void VgeExample::updateSpoids() {
+  if (!spoidController) return;
+  GLFWwindow* w = vgeuWindow->getGLFWwindow();
+  InputState in;
+  glm::vec3 mv(0.f);
+  if (glfwGetKey(w, GLFW_KEY_L) == GLFW_PRESS) mv.x += 1.f;
+  if (glfwGetKey(w, GLFW_KEY_J) == GLFW_PRESS) mv.x -= 1.f;
+  if (glfwGetKey(w, GLFW_KEY_K) == GLFW_PRESS) mv.z += 1.f;
+  if (glfwGetKey(w, GLFW_KEY_I) == GLFW_PRESS) mv.z -= 1.f;
+  if (glfwGetKey(w, GLFW_KEY_O) == GLFW_PRESS)
+    mv.y += 1.f;  // lower toward floor
+  if (glfwGetKey(w, GLFW_KEY_U) == GLFW_PRESS) mv.y -= 1.f;  // raise
+  in.move = mv;
+  bool space = glfwGetKey(w, GLFW_KEY_SPACE) == GLFW_PRESS;
+  in.emit = space && !spaceWasDown;  // edge-triggered: one burst per press
+  spaceWasDown = space;
+
+  std::vector<int> emitDrops;
+  spoidController->update(frameTimer, spoids, in, emitDrops);
+
+  // Keep spoids inside the domain and above the floor (y < 0).
+  const float m = 0.05f;
+  for (auto& s : spoids) {
+    s.pos.x = glm::clamp(s.pos.x, -kDomainHalf + m, kDomainHalf - m);
+    s.pos.z = glm::clamp(s.pos.z, -kDomainHalf + m, kDomainHalf - m);
+    s.pos.y = glm::clamp(s.pos.y, -kDomainHeight + m, -0.1f);
+  }
+
+  for (int idx : emitDrops) {
+    const Spoid& s = spoids[idx];
+    enqueueDrop(s.pos, s.holeRadius, s.color, s.emissionVelocity,
+                s.concentration, s.amount);
+  }
+}
+
 void VgeExample::createComputeDescriptorSets() {
   vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
                                           *compute.descriptorSetLayout);
@@ -953,15 +1011,19 @@ void VgeExample::render() {
     restartSimulation();
   }
 
-  // Task 9 (M5): hardcoded auto-drop from a single fixed emitter to verify the
-  // emit pass before the spoid UI exists. Replaced by the spoid controller in
-  // Task 10.
-  if (autoEmit) {
+  // Spoid keyboard control + emit triggers (Task 10).
+  updateSpoids();
+
+  // Task 9 (M5): optional hardcoded auto-drop from the first spoid's position
+  // to exercise the emit pass hands-free (off by default; spoids drive
+  // emission).
+  if (autoEmit && !spoids.empty()) {
     autoEmitTimer += frameTimer;
     if (autoEmitTimer >= autoEmitInterval) {
       autoEmitTimer = 0.f;
-      enqueueDrop(glm::vec3(0.f, -2.5f, 0.f), 0.12f,
-                  glm::vec3(0.2f, 0.4f, 0.9f), 2.f, 1.f, 300);
+      const Spoid& s = spoids[0];
+      enqueueDrop(s.pos, s.holeRadius, s.color, s.emissionVelocity,
+                  s.concentration, s.amount);
     }
   }
 
@@ -1230,6 +1292,31 @@ void VgeExample::buildCommandBuffers() {
     drawCmdBuffers[currentFrameIndex].draw(numParticles, 1, 0, 0);
   }
 
+  // --- Spoid markers (M5): one point per spoid via the particle pipeline ---
+  if (showSpoids && !spoids.empty()) {
+    uint32_t n =
+        std::min<uint32_t>(static_cast<uint32_t>(spoids.size()), kMaxSpoids);
+    Particle* m = static_cast<Particle*>(
+        markerBuffers[currentFrameIndex]->getMappedData());
+    for (uint32_t i = 0; i < n; i++) {
+      m[i].pos = glm::vec4(spoids[i].pos, 1.f);
+      m[i].vel = glm::vec4(0.f);      // density-debug tint reads vel.w (=0)
+      m[i].predict = glm::vec4(0.f);  // unused by the renderer
+      // Selected spoids are highlighted white; others show their paint colour.
+      m[i].color =
+          spoids[i].selected ? glm::vec4(1.f) : glm::vec4(spoids[i].color, 1.f);
+    }
+    drawCmdBuffers[currentFrameIndex].bindPipeline(
+        vk::PipelineBindPoint::eGraphics, *particlePipeline);
+    drawCmdBuffers[currentFrameIndex].bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics, *pipelineLayout, 0,
+        {*descriptorSets[currentFrameIndex]}, nullptr);
+    vk::DeviceSize offset(0);
+    drawCmdBuffers[currentFrameIndex].bindVertexBuffers(
+        0, markerBuffers[currentFrameIndex]->getBuffer(), offset);
+    drawCmdBuffers[currentFrameIndex].draw(n, 1, 0, 0);
+  }
+
   // ImGui overlay
   drawUI(drawCmdBuffers[currentFrameIndex]);
 
@@ -1286,6 +1373,48 @@ void VgeExample::onUpdateUIOverlay() {
     // --- emit (M5 Task 9: auto-drop) ---
     ImGui::Checkbox("auto emit", &autoEmit);
     ImGui::SliderFloat("auto interval (s)", &autoEmitInterval, 0.1f, 2.f);
+
+    // --- Spoids (M5 Task 10) ---
+    if (ImGui::CollapsingHeader("Spoids", ImGuiTreeNodeFlags_DefaultOpen)) {
+      ImGui::TextWrapped(
+          "Keys: IJKL move, U/O height, Space = drop from selected");
+      ImGui::Checkbox("show spoids", &showSpoids);
+
+      for (int i = 0; i < static_cast<int>(spoids.size()); i++) {
+        ImGui::PushID(i);
+        ImGui::Checkbox("##sel", &spoids[i].selected);
+        ImGui::SameLine();
+        if (ImGui::RadioButton("edit", selectedSpoidUi == i)) {
+          selectedSpoidUi = i;
+        }
+        ImGui::SameLine();
+        ImGui::Text("#%d (%.2f, %.2f, %.2f)", i, spoids[i].pos.x,
+                    spoids[i].pos.y, spoids[i].pos.z);
+        ImGui::PopID();
+      }
+
+      if (uiOverlay->button("+ Add spoid") && spoids.size() < kMaxSpoids) {
+        spoids.push_back(Spoid{});
+      }
+      if (uiOverlay->button("- Remove spoid") && spoids.size() > 1) {
+        spoids.pop_back();
+        if (selectedSpoidUi >= static_cast<int>(spoids.size())) {
+          selectedSpoidUi = static_cast<int>(spoids.size()) - 1;
+        }
+      }
+
+      if (selectedSpoidUi >= 0 &&
+          selectedSpoidUi < static_cast<int>(spoids.size())) {
+        Spoid& s = spoids[selectedSpoidUi];
+        ImGui::Separator();
+        ImGui::Text("Editing spoid #%d", selectedSpoidUi);
+        ImGui::SliderFloat("hole radius", &s.holeRadius, 0.02f, 0.5f);
+        ImGui::SliderFloat("emission vel", &s.emissionVelocity, 0.f, 8.f);
+        ImGui::SliderInt("amount", &s.amount, 10, 2000);
+        ImGui::SliderFloat("concentration", &s.concentration, 0.f, 1.f);
+        ImGui::ColorEdit3("color", &s.color.x);
+      }
+    }
 
     // --- sim params (M3) ---
     ImGui::SliderFloat("gravity (+Y)", &gravity, 0.f, 30.f);

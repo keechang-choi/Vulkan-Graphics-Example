@@ -103,6 +103,41 @@ struct Spoid {
   bool selected = true;
 };
 
+// Per-frame keyboard intent, already mapped to world axes (GLFW reading lives
+// in the example so the controller stays input-source agnostic).
+struct InputState {
+  glm::vec3 move{0.f};  // world-space move direction (x,y,z), unnormalized
+  bool emit = false;  // edge-triggered: true only on the frame Space goes down
+};
+
+// SpoidController abstraction (design §4): Phase 1 = keyboard, Phase 2 will add
+// a pendulum-driven controller without touching the solver/emitter.
+struct SpoidController {
+  virtual ~SpoidController() = default;
+  // Move the selected spoids and append emit triggers (spoid indices) for this
+  // frame.
+  virtual void update(float dt, std::vector<Spoid>& spoids,
+                      const InputState& in, std::vector<int>& emitDrops) = 0;
+};
+
+// KeyboardSpoidController: moves every selected spoid together; Space releases
+// one droplet burst from each selected spoid.
+class KeyboardSpoidController : public SpoidController {
+public:
+  float moveSpeed = 1.5f;  // world units / second
+  void update(float dt, std::vector<Spoid>& spoids, const InputState& in,
+              std::vector<int>& emitDrops) override {
+    for (auto& s : spoids) {
+      if (s.selected) s.pos += in.move * (moveSpeed * dt);
+    }
+    if (in.emit) {
+      for (int i = 0; i < static_cast<int>(spoids.size()); i++) {
+        if (spoids[i].selected) emitDrops.push_back(i);
+      }
+    }
+  }
+};
+
 // Intentionally empty for M1; simulation/spoid knobs are added in later
 // milestones.
 struct Options {};
@@ -168,6 +203,12 @@ private:
   std::vector<std::vector<EmitPush>> emitQueues;
   uint32_t emitSeedCounter = 1u;  // varies the rng seed per burst
 
+  // ---- spoids (M5 Task 10) ----
+  void createMarkerBuffers();
+  // Read GLFW keys, run the spoid controller, and convert emit triggers into
+  // droplet bursts. Called once per frame from render().
+  void updateSpoids();
+
   // ---- debug readback (M3): print particle y min/max ~once per second ----
   // The particle SSBO participates in the compute<->graphics queue-ownership
   // ping-pong, so an out-of-band copy would break the release/acquire pairing.
@@ -228,9 +269,18 @@ private:
 
   // ---- emit / spoids (M5) ----
   std::vector<Spoid> spoids;
+  std::unique_ptr<SpoidController> spoidController;
+  static constexpr uint32_t kMaxSpoids = 16;
+  // Per-frame host-visible marker buffers (Particle stride) so the spoids can
+  // be drawn as points with the existing particle pipeline. Not part of the
+  // compute<->graphics ping-pong (host-written each frame).
+  std::vector<std::unique_ptr<vgeu::VgeuBuffer>> markerBuffers;
+  bool showSpoids = true;
+  bool spaceWasDown = false;  // edge-detect the emit key
+  int selectedSpoidUi = 0;    // which spoid the ImGui param sliders edit
   // Task 9: hardcoded auto-drop (a single fixed emitter) to verify the emit
-  // pass before the spoid UI exists; turned off once spoids drive emission.
-  bool autoEmit = true;
+  // pass before the spoid UI exists; off by default now that spoids drive it.
+  bool autoEmit = false;
   float autoEmitInterval = 0.6f;  // seconds between auto drops
   float autoEmitTimer = 0.f;
   // Particle pool exhaustion warning (set when a drop is rejected/clamped).
