@@ -1048,6 +1048,7 @@ void VgeExample::consumeParticleReadback() {
   double sumRho = 0.0, maxRho = 0.0;
   double sumSpeed = 0.0, maxSpeed = 0.0;  // vel.xyz magnitude (vel.w = density)
   uint32_t nearFloor = 0;                 // within 0.3 of the floor (y >= -0.3)
+  double pileSpeedSum = 0.0, pileSpeedMax = 0.0;  // jiggle of the settled pile
   for (uint32_t i = 0; i < numParticles; i++) {
     minY = std::min(minY, data[i].pos.y);
     maxY = std::max(maxY, data[i].pos.y);
@@ -1058,7 +1059,11 @@ void VgeExample::consumeParticleReadback() {
                           data[i].vel.z * data[i].vel.z);
     sumSpeed += sp;
     maxSpeed = std::max(maxSpeed, sp);
-    if (data[i].pos.y >= -0.3f) nearFloor++;
+    if (data[i].pos.y >= -0.3f) {
+      nearFloor++;
+      pileSpeedSum += sp;
+      pileSpeedMax = std::max(pileSpeedMax, sp);
+    }
   }
   std::cout << "[paint_splatter] y[" << minY << "," << maxY
             << "] | rho/rho0 mean=" << (sumRho / numParticles)
@@ -1066,7 +1071,9 @@ void VgeExample::consumeParticleReadback() {
             << " | speed mean=" << (sumSpeed / numParticles)
             << " max=" << maxSpeed
             << " | nearFloor%=" << (100.0 * nearFloor / numParticles)
-            << std::endl;
+            << " | PILE speed mean="
+            << (nearFloor ? pileSpeedSum / nearFloor : 0.0)
+            << " max=" << pileSpeedMax << std::endl;
 }
 
 // ---------------------------------------------------------------------------

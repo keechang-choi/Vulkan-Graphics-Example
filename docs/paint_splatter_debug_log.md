@@ -249,3 +249,61 @@ renders. Keyboard/Space interaction is the user's M5 gate.
   iters=4. speed mean 3.0→0.25, max 6(pinned)→~0.7 (brief falling-droplet spikes
   only), nearFloor 20%→78% — the fluid now pools calmly at the floor. The CFL
   clamp is kept only as an optional safety net (slider, 0 disables).
+
+### Spawn distribution + Jacobi under-relaxation (partial mitigations)
+- Spawn "explosion" partly from random-in-ball placing accidental close pairs →
+  switched emit to a **jittered cube lattice** (regular rest spacing + jitter <
+  spacing/2) so a minimum separation is guaranteed (`emit.comp`, `enqueueDrop`).
+- Pile "flicker"/oscillation partly Jacobi (parallel) solver overshoot →
+  **under-relaxation** `dp *= solverRelax` (0.3) in `pbf_delta` (Macklin 2013).
+  Helped but did NOT remove the floor jiggle (see below — the real cause).
+
+### THE flicker root cause: per-frame particle buffers DIVERGE (open / unfixed)
+- **Symptom (user):** piled particles (and to a lesser extent everything)
+  "flicker"/jitter, worst where many particles pile densely on the floor. None
+  of the solver tuning (relax, damp, iters, clamp, substeps) removed it.
+- **Decisive measurement:** added a one-shot debug that copies BOTH per-frame
+  particle SSBOs to the host and diffs them. After ~5 s with ~2400 particles:
+  **`DIVERGENCE buf0 vs buf1: max=1.30  mean=0.19` world units.** The two
+  per-frame buffers hold *completely different* fluid states (mean 0.19, max 1.3
+  ≈ a third of the canvas).
+- **Root cause (architecture, NOT the solver):** this example steps each
+  per-frame particle buffer **in place and independently** — `particleBuffers[cur]`
+  is read+written every frame with no cross-buffer coupling — so the two
+  `MAX_CONCURRENT_FRAMES` buffers are **two independent simulations**. They were
+  assumed identical ("deterministic, same seed"), but they diverge because the
+  neighbour build is **non-deterministic**: `grid_scatter` uses
+  `atomicAdd(cellOffset)` to place particle ids, so the intra-cell order in
+  `sortedIds` differs between the two buffers' builds. Float SPH sums are
+  non-associative → different rounding → exponential (chaotic) divergence over
+  steps. The renderer **alternates** which buffer it draws each frame, so the
+  screen flips between two different sims → flicker. Densest at the floor pile
+  where positions are most sensitive.
+- **Why the Jacobi solve itself needs no atomics (answer to a related Q):** in
+  Jacobi each thread writes **only its own** particle (`deltaP[i]`, `predict.w`,
+  `predict.xyz`), reading neighbours' positions from the same iteration's
+  snapshot, so there are no write conflicts and no atomics in lambda/delta/apply.
+  Atomics are used **only** in the grid build (count + scatter) where they are
+  needed — and the scatter's atomic *ordering* is exactly what makes the two
+  independent sims diverge.
+- **CORRECT FIX (matches `particle`/`cloth`): ping-pong, not single-buffer.**
+  `particle.cpp`/`cloth.cpp` run multi-buffer simulations correctly by **reading
+  the previous frame's buffer and writing the current** (`prevFrameIndex` →
+  `currentFrameIndex`) — ONE evolving chain that still pipelines across frames.
+  This example instead steps in place, which is the bug. Fix plan:
+  1. `predict` reads `particleBuffers[prevFrameIndex]`, writes
+     `particleBuffers[currentFrameIndex]` (the rest of the PBF passes stay
+     in-place on `cur`); emit appends new particles to `cur`.
+  2. `prevFrameIndex = (currentFrameIndex + MAX-1) % MAX`. The existing
+     compute↔graphics semaphore handshake already supports this (it's why
+     `particle.cpp` pairs `graphics.semaphores[cur]` the way it does).
+  3. Per-frame emit queues collapse to a single pending list (one chain, emit
+     once), and `numParticles` is a single global live count for the chain.
+  A single-buffer + serialize approach also works but needlessly gives up the
+  cross-frame pipelining that `particle`/`cloth` keep — so ping-pong is the
+  right design here.
+- **Status:** root cause confirmed and documented; fix (ping-pong) not yet
+  implemented. Solver-side mitigations (compression-only, relax, lattice) are
+  committed and correct on their own, but the visible flicker will only fully go
+  away once the two-independent-sims architecture is replaced by the ping-pong
+  chain.
