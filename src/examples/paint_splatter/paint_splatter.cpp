@@ -816,19 +816,22 @@ void VgeExample::enqueueDrop(const glm::vec3& origin, float holeRadius,
   uint32_t count = std::min(want, avail);
   if (count < want) poolFull = true;
 
-  // Size the spawn ball so the burst starts near REST density instead of
-  // over-packed: cramming `amount` particles into a tiny hole disk makes the
-  // initial density many times rho0, and PBF's density solve then violently
-  // blasts them apart (the "scatter"). A ball that holds `count` particles at
-  // the rest spacing avoids that. holeRadius is a lower bound (the user's
-  // droplet size), so a wider hole still makes a wider drop.
-  const float restVol = static_cast<float>(count) * kParticleSpacing *
-                        kParticleSpacing * kParticleSpacing;
-  const float ballR = std::cbrt(3.f * restVol / (4.f * glm::pi<float>()));
-  const float spawnR = std::max(holeRadius, ballR);
+  // Spawn on a JITTERED LATTICE at ~rest density, not random-in-a-ball. A
+  // regular grid + small jitter guarantees a minimum particle separation, so no
+  // two particles land on top of each other -- random sampling occasionally
+  // clumps pairs, and those overlaps pop apart on the first solve (spawn
+  // "explosion"). The shader lays `count` particles on a cube lattice of side
+  // `ceil(cbrt(count))` at this spacing; holeRadius widens the spacing (a
+  // bigger hole => a bigger, sparser drop) but never below the rest spacing.
+  const int side = std::max(
+      1, static_cast<int>(std::ceil(std::cbrt(static_cast<float>(count)))));
+  const float restSpacing = kParticleSpacing;
+  const float wantSpacing = (2.f * holeRadius) / static_cast<float>(side);
+  const float spacing = std::max(restSpacing, wantSpacing);
 
   EmitPush push{};
-  push.originRadius = glm::vec4(origin, spawnR);
+  // originRadius.w now carries the lattice spacing (see emit.comp).
+  push.originRadius = glm::vec4(origin, spacing);
   // Initial velocity is downward toward the floor (+Y in this engine's world).
   push.velConc = glm::vec4(0.f, emissionVel, 0.f, concentration);
   push.color = glm::vec4(color, 0.f);
@@ -998,6 +1001,7 @@ void VgeExample::updateComputeUbo() {
   compute.ubo.xsphC = xsphC;
   compute.ubo.velDamp = velDamp;
   compute.ubo.velClampFactor = velClampFactor;
+  compute.ubo.solverRelax = solverRelax;
   {
     float dq2 = compute.ubo.scorrDq * compute.ubo.scorrDq;
     float t = compute.ubo.h * compute.ubo.h - dq2;
@@ -1505,6 +1509,7 @@ void VgeExample::onUpdateUIOverlay() {
       ImGui::Text("rho0 (rest) : %.1f", rho0);
       ImGui::SliderInt("substeps", &substeps, 1, 16);
       ImGui::SliderInt("solverIters", &solverIters, 1, 6);
+      ImGui::SliderFloat("solver relax", &solverRelax, 0.05f, 1.f);
       ImGui::SliderFloat("epsCFM", &epsCFM, 1.f, 1000.f);
       ImGui::SliderFloat("scorrK", &scorrK, 0.f, 0.5f);
       ImGui::SliderFloat("scorrDq/h", &scorrDqRatio, 0.05f, 0.5f);

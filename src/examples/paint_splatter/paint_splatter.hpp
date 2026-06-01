@@ -70,7 +70,7 @@ struct ComputeUbo {
   float scorrDenom;        // -- 96 -- 1/W_poly6(scorrDq) precomputed
   float velDamp;           // -- 100 -- global velocity drag rate (per second)
   float velClampFactor;    // -- 104 -- CFL cap: maxSpeed = factor * h / dt
-  float _pad2;             // -- 108 --
+  float solverRelax;       // -- 108 -- Jacobi under-relaxation factor (0..1)
   // -- 112 --
 };
 static_assert(sizeof(ComputeUbo) == 112, "ComputeUbo std140 size");
@@ -352,6 +352,11 @@ private:
   // needed. Kept only as a coarse safety net for large dt.
   float velClampFactor =
       0.0f;  // off: compression-only constraint keeps it calm
+  // Jacobi under-relaxation: apply only this fraction of the SPH position
+  // correction per iteration. Damps the parallel-solver overshoot that makes
+  // close/piled particles oscillate ("flicker") and softens close-range
+  // popping.
+  float solverRelax = 0.3f;
   int substeps = 1;
   int solverIters = 4;
   bool colorByDensity = false;  // debug: tint particles by rho/rho0

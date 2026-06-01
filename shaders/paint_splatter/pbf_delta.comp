@@ -26,6 +26,9 @@ layout(std140, set = 0, binding = 1) uniform Ubo {
   float kPoly6;
   float kSpiky;
   float scorrDenom;
+  float velDamp;
+  float velClampFactor;
+  float solverRelax;
 }
 u;
 layout(std430, set = 0, binding = 3) buffer CellStart { uint cellStart[]; };
@@ -79,6 +82,12 @@ void main() {
         }
       }
   dp /= u.rho0;
+
+  // Jacobi under-relaxation: apply only a fraction of the constraint correction
+  // each iteration. The parallel (Jacobi) solver has every particle move
+  // simultaneously, so full corrections overshoot and oscillate when particles
+  // are close/piled ("flicker"); relaxing converges smoothly instead.
+  dp *= u.solverRelax;
 
   // Stability clamp (Macklin 2013 §5): bound the per-iteration position
   // correction so stiff constraints cannot overshoot and explode.
