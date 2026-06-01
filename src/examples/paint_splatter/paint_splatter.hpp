@@ -346,11 +346,12 @@ private:
   float scorrN = 4.f;
   float xsphC = 0.1f;    // XSPH viscosity (normalized)
   float velDamp = 8.0f;  // global velocity drag (per second) to settle bulk
-  // CFL speed cap maxSpeed = factor * h / dt. Lower = calmer/less bouncy (the
-  // dominant "splashiness" lever); higher = livelier splash but more energetic.
-  // The fluid saturates this cap (PBF velocity feedback), so it directly sets
-  // the visible motion speed. ceiling = factor * h / (frameDt/substeps).
-  float velClampFactor = 0.25f;
+  // CFL speed cap maxSpeed = factor * h / dt; <=0 disables it. The principled
+  // approach is XPBD "small steps" (many substeps, few iters): with small dt
+  // the velocity recovery v=(x*-x)/dt is already physical, so no clamp is
+  // needed. Kept only as a coarse safety net for large dt.
+  float velClampFactor =
+      0.0f;  // off: compression-only constraint keeps it calm
   int substeps = 1;
   int solverIters = 4;
   bool colorByDensity = false;  // debug: tint particles by rho/rho0

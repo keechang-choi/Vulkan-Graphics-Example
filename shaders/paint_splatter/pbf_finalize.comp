@@ -79,13 +79,14 @@ void main() {
   // relative velocity) so the fluid can settle into a pool instead of filling
   // the domain ballistically.
   vi *= max(0.0, 1.0 - u.velDamp * u.dt);
-  // CFL velocity clamp: a particle may not travel more than ~0.5 cells per
-  // substep. This bounds the position-correction -> velocity feedback that
-  // otherwise compounds into an explosion (corrections become huge velocity at
-  // small dt). maxSpeed = 0.5*h/dt.
-  float maxSpeed = u.velClampFactor * u.h / u.dt;
-  float sp = length(vi);
-  if (sp > maxSpeed) vi *= maxSpeed / sp;
+  // Optional CFL velocity clamp (velClampFactor<=0 disables it). With enough
+  // substeps the velocity recovery v=(x*-x)/dt is already physical, so the
+  // clamp is unnecessary; it's kept only as a coarse safety net for large dt.
+  if (u.velClampFactor > 0.0) {
+    float maxSpeed = u.velClampFactor * u.h / u.dt;
+    float sp = length(vi);
+    if (sp > maxSpeed) vi *= maxSpeed / sp;
+  }
   p[i].vel.xyz = vi;
   p[i].vel.w = rho / u.rho0;  // density ratio (debug visualization)
   p[i].pos.xyz = xi;

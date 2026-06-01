@@ -84,6 +84,12 @@ void main() {
       }
 
   sumGradC2 += dot(gradCi, gradCi);
-  float C = rho * invRho0 - 1.0;
+  // Compression-only constraint (standard for free-surface / sparse PBF):
+  // C = max(rho/rho0 - 1, 0). Under-dense particles (the sub-monolayer spread
+  // over the large canvas) then get NO density correction instead of being
+  // perpetually yanked together, which was the source of the velocity-feedback
+  // explosion. Droplet cohesion comes from scorr (surface tension), its proper
+  // role -- not from the density constraint pulling under-dense particles in.
+  float C = max(rho * invRho0 - 1.0, 0.0);
   p[i].predict.w = -C / (sumGradC2 + u.epsCFM);
 }

@@ -1058,7 +1058,8 @@ void VgeExample::consumeParticleReadback() {
   }
   std::cout << "[paint_splatter] y[" << minY << "," << maxY
             << "] | rho/rho0 mean=" << (sumRho / numParticles)
-            << " max=" << maxRho << " | speed mean=" << (sumSpeed / numParticles)
+            << " max=" << maxRho
+            << " | speed mean=" << (sumSpeed / numParticles)
             << " max=" << maxSpeed
             << " | nearFloor%=" << (100.0 * nearFloor / numParticles)
             << std::endl;
@@ -1502,14 +1503,14 @@ void VgeExample::onUpdateUIOverlay() {
     // --- PBF solver (M4) ---
     if (ImGui::CollapsingHeader("PBF solver", ImGuiTreeNodeFlags_DefaultOpen)) {
       ImGui::Text("rho0 (rest) : %.1f", rho0);
-      ImGui::SliderInt("substeps", &substeps, 1, 4);
+      ImGui::SliderInt("substeps", &substeps, 1, 16);
       ImGui::SliderInt("solverIters", &solverIters, 1, 6);
       ImGui::SliderFloat("epsCFM", &epsCFM, 1.f, 1000.f);
       ImGui::SliderFloat("scorrK", &scorrK, 0.f, 0.5f);
       ImGui::SliderFloat("scorrDq/h", &scorrDqRatio, 0.05f, 0.5f);
       ImGui::SliderFloat("xsphC", &xsphC, 0.f, 1.f);
       ImGui::SliderFloat("vel damping", &velDamp, 0.f, 20.f);
-      ImGui::SliderFloat("vel clamp (CFL)", &velClampFactor, 0.1f, 0.5f);
+      ImGui::SliderFloat("vel clamp (CFL, 0=off)", &velClampFactor, 0.f, 0.5f);
       ImGui::Checkbox("color by density", &colorByDensity);
     }
 
