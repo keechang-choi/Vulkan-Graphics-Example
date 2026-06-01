@@ -166,3 +166,51 @@ classic incompressible-water sanity test. The full-canvas domain returns for M5
 - **Fix:** do **not** reset `computeFirstUse` on restart — the buffers are already
   bootstrapped, so the compute should keep acquiring normally and consume the
   pending release. (Startup still sets the flag once in `prepareCompute`.)
+
+---
+
+## M5 — Emitter + keyboard spoid control
+
+No bugs hit during implementation; recording the key design decisions that kept
+it correct on the first build.
+
+### Append without a GPU counter (deferred to M6)
+The plan calls for a GPU `liveCount` atomic in M5, but M5 has **no compaction**
+(particles are never removed until M6), so the slot range is strictly
+append-only and the **host** already knows the next free index. `emit.comp`
+writes `particle[baseIndex + i]` directly — no `atomicAdd`, no indirect dispatch.
+The GPU counter arrives in M6 where concurrent removal actually needs it.
+
+### Per-frame emit queues keep the two sims in lockstep
+The two per-frame particle buffers are **independent-but-identical** sims (no
+ping-pong; kept identical by determinism — see M4 note). Emission would break
+that: a burst enqueued on frame F only touches the buffer rendered at F. Fix:
+`enqueueDrop` reserves the slot range **once** from the shared host `numParticles`
+(computing `baseIndex`) and pushes the *same* `EmitPush` onto **every** per-frame
+buffer's FIFO. Each buffer drains its queue (one emit dispatch per burst) at the
+**start** of its compute command buffer, before predict, so the new slots are
+written before any pass reads them. Because `baseIndex` is fixed at enqueue time
+and `emit.comp` jitters deterministically per slot, both buffers write identical
+particles into identical slots → no divergence/flicker.
+
+### Emit pipeline needs its own layout (push-constant incompatibility)
+`EmitPush` is a push constant, so the emit pipeline layout = compute descriptor
+set layout **+ a push-constant range**. That differs from the PBF passes' layout
+(no push constants), and the two are *not* compatible for descriptor binding, so
+`recordEmit` re-binds the particle SSBO via `emitPipelineLayout` before
+dispatching; the substep loop then re-binds via the PBF `pipelineLayout`.
+
+### Key bindings: spoids avoid the camera's keys
+The engine's free camera already owns **WASD/QE + arrows** (`vge_base.cpp`
+`cameraController.moveInPlaneXZ`). To avoid fighting it, the
+`KeyboardSpoidController` uses a separate set: **IJKL** (canvas plane), **U/O**
+(height), **Space** (edge-triggered drop from each selected spoid). GLFW reading
+lives in the example (`updateSpoids`); the controller takes a source-agnostic
+`InputState` so the Phase-2 pendulum controller can swap in.
+
+### M5 state / verification
+Domain widened from the M4 confined box (`kFluidHalf=1`) to the full canvas
+(`kDomainHalf=2`); sim starts empty. Task 9 auto-emit run: VL-CLEAN, droplets
+spawn near the ceiling, fall, splash on the floor (`nearFloor%` 0→55%, transient
+impact density bounded ~3, no explosion). Task 10 idle: VL-CLEAN, spoid marker
+renders. Keyboard/Space interaction is the user's M5 gate.
