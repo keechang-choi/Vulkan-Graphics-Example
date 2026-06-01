@@ -27,6 +27,7 @@ layout(std140, set = 0, binding = 1) uniform Ubo {
   float kSpiky;
   float scorrDenom;
   float velDamp;
+  float velClampFactor;
 }
 u;
 layout(std430, set = 0, binding = 3) buffer CellStart { uint cellStart[]; };
@@ -82,7 +83,7 @@ void main() {
   // substep. This bounds the position-correction -> velocity feedback that
   // otherwise compounds into an explosion (corrections become huge velocity at
   // small dt). maxSpeed = 0.5*h/dt.
-  float maxSpeed = 0.5 * u.h / u.dt;
+  float maxSpeed = u.velClampFactor * u.h / u.dt;
   float sp = length(vi);
   if (sp > maxSpeed) vi *= maxSpeed / sp;
   p[i].vel.xyz = vi;

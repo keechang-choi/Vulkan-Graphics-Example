@@ -997,6 +997,7 @@ void VgeExample::updateComputeUbo() {
   compute.ubo.scorrN = scorrN;
   compute.ubo.xsphC = xsphC;
   compute.ubo.velDamp = velDamp;
+  compute.ubo.velClampFactor = velClampFactor;
   {
     float dq2 = compute.ubo.scorrDq * compute.ubo.scorrDq;
     float t = compute.ubo.h * compute.ubo.h - dq2;
@@ -1041,17 +1042,24 @@ void VgeExample::consumeParticleReadback() {
       readbackBuffers[currentFrameIndex]->getMappedData());
   float minY = data[0].pos.y, maxY = data[0].pos.y;
   double sumRho = 0.0, maxRho = 0.0;
-  uint32_t nearFloor = 0;  // within 0.3 of the floor (y >= -0.3)
+  double sumSpeed = 0.0, maxSpeed = 0.0;  // vel.xyz magnitude (vel.w = density)
+  uint32_t nearFloor = 0;                 // within 0.3 of the floor (y >= -0.3)
   for (uint32_t i = 0; i < numParticles; i++) {
     minY = std::min(minY, data[i].pos.y);
     maxY = std::max(maxY, data[i].pos.y);
     sumRho += data[i].vel.w;  // finalize stored rho/rho0 here
     maxRho = std::max(maxRho, static_cast<double>(data[i].vel.w));
+    double sp = std::sqrt(data[i].vel.x * data[i].vel.x +
+                          data[i].vel.y * data[i].vel.y +
+                          data[i].vel.z * data[i].vel.z);
+    sumSpeed += sp;
+    maxSpeed = std::max(maxSpeed, sp);
     if (data[i].pos.y >= -0.3f) nearFloor++;
   }
   std::cout << "[paint_splatter] y[" << minY << "," << maxY
             << "] | rho/rho0 mean=" << (sumRho / numParticles)
-            << " max=" << maxRho
+            << " max=" << maxRho << " | speed mean=" << (sumSpeed / numParticles)
+            << " max=" << maxSpeed
             << " | nearFloor%=" << (100.0 * nearFloor / numParticles)
             << std::endl;
 }
@@ -1077,9 +1085,16 @@ void VgeExample::render() {
     autoEmitTimer += frameTimer;
     if (autoEmitTimer >= autoEmitInterval) {
       autoEmitTimer = 0.f;
-      const Spoid& s = spoids[0];
-      enqueueDrop(s.pos, s.holeRadius, s.color, s.emissionVelocity,
-                  s.concentration, s.amount);
+      // Drop from every selected spoid (matches the Space behaviour); if none
+      // are selected, fall back to all spoids so auto-emit always does
+      // something visible.
+      bool anySelected = false;
+      for (const Spoid& s : spoids) anySelected |= s.selected;
+      for (const Spoid& s : spoids) {
+        if (anySelected && !s.selected) continue;
+        enqueueDrop(s.pos, s.holeRadius, s.color, s.emissionVelocity,
+                    s.concentration, s.amount);
+      }
     }
   }
 
@@ -1493,7 +1508,8 @@ void VgeExample::onUpdateUIOverlay() {
       ImGui::SliderFloat("scorrK", &scorrK, 0.f, 0.5f);
       ImGui::SliderFloat("scorrDq/h", &scorrDqRatio, 0.05f, 0.5f);
       ImGui::SliderFloat("xsphC", &xsphC, 0.f, 1.f);
-      ImGui::SliderFloat("vel damping", &velDamp, 0.f, 10.f);
+      ImGui::SliderFloat("vel damping", &velDamp, 0.f, 20.f);
+      ImGui::SliderFloat("vel clamp (CFL)", &velClampFactor, 0.1f, 0.5f);
       ImGui::Checkbox("color by density", &colorByDensity);
     }
 

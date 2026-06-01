@@ -69,7 +69,7 @@ struct ComputeUbo {
   float kSpiky;            // -- 92 -- 45/(pi h^6) (gradient magnitude)
   float scorrDenom;        // -- 96 -- 1/W_poly6(scorrDq) precomputed
   float velDamp;           // -- 100 -- global velocity drag rate (per second)
-  float _pad1;             // -- 104 --
+  float velClampFactor;    // -- 104 -- CFL cap: maxSpeed = factor * h / dt
   float _pad2;             // -- 108 --
   // -- 112 --
 };
@@ -255,7 +255,7 @@ private:
   std::vector<uint8_t> computeFirstUse;
 
   // ---- sim params (M3) ----
-  float gravity = 9.8f;       // world units/s^2, +Y (down on screen)
+  float gravity = 6.0f;       // world units/s^2, +Y (down on screen)
   bool useFixedDt = true;     // fixed dt avoids frame-time spikes destabilizing
   float seedJitterXZ = 0.0f;  // random horizontal seed velocity (0 = clean dam)
   bool restartRequested = false;
@@ -345,7 +345,12 @@ private:
   float scorrDqRatio = 0.2f;  // scorrDq = ratio * h
   float scorrN = 4.f;
   float xsphC = 0.1f;    // XSPH viscosity (normalized)
-  float velDamp = 6.0f;  // global velocity drag (per second) to settle bulk
+  float velDamp = 8.0f;  // global velocity drag (per second) to settle bulk
+  // CFL speed cap maxSpeed = factor * h / dt. Lower = calmer/less bouncy (the
+  // dominant "splashiness" lever); higher = livelier splash but more energetic.
+  // The fluid saturates this cap (PBF velocity feedback), so it directly sets
+  // the visible motion speed. ceiling = factor * h / (frameDt/substeps).
+  float velClampFactor = 0.25f;
   int substeps = 1;
   int solverIters = 4;
   bool colorByDensity = false;  // debug: tint particles by rho/rho0
