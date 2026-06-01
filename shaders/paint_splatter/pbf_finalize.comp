@@ -1,0 +1,91 @@
+#version 450
+layout(local_size_x = 256) in;
+
+struct Particle {
+  vec4 pos;
+  vec4 vel;
+  vec4 predict;
+  vec4 color;
+};
+
+layout(std430, set = 0, binding = 0) buffer Particles { Particle p[]; };
+layout(std140, set = 0, binding = 1) uniform Ubo {
+  float dt;
+  uint count;
+  float gravity;
+  float h;
+  vec4 cmin;
+  vec4 cmax;
+  ivec4 gridDim;
+  float rho0;
+  float epsCFM;
+  float scorrK;
+  float scorrDq;
+  float scorrN;
+  float xsphC;
+  float kPoly6;
+  float kSpiky;
+  float scorrDenom;
+  float velDamp;
+}
+u;
+layout(std430, set = 0, binding = 3) buffer CellStart { uint cellStart[]; };
+layout(std430, set = 0, binding = 5) buffer SortedIds { uint sortedIds[]; };
+
+ivec3 cellCoord(vec3 x) {
+  return clamp(ivec3(floor((x - u.cmin.xyz) / u.h)), ivec3(0), u.gridDim.xyz - 1);
+}
+float poly6(float r2) {
+  if (r2 >= u.h * u.h) return 0.0;
+  float t = u.h * u.h - r2;
+  return u.kPoly6 * t * t * t;
+}
+
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  if (i >= u.count) return;
+  vec3 xi = p[i].predict.xyz;
+  vec3 vi = (xi - p[i].pos.xyz) / u.dt;
+  ivec3 ci = cellCoord(xi);
+
+  vec3 xsph = vec3(0.0);
+  float rho = 0.0;
+  for (int dz = -1; dz <= 1; dz++)
+    for (int dy = -1; dy <= 1; dy++)
+      for (int dx = -1; dx <= 1; dx++) {
+        ivec3 c = ci + ivec3(dx, dy, dz);
+        if (any(lessThan(c, ivec3(0))) ||
+            any(greaterThanEqual(c, u.gridDim.xyz)))
+          continue;
+        uint cell = uint((c.z * u.gridDim.y + c.y) * u.gridDim.x + c.x);
+        uint s = cellStart[cell];
+        uint e = cellStart[cell + 1u];
+        for (uint k = s; k < e; k++) {
+          uint j = sortedIds[k];
+          vec3 rij = xi - p[j].predict.xyz;
+          float r2 = dot(rij, rij);
+          if (r2 >= u.h * u.h) continue;
+          float w = poly6(r2);
+          rho += w;
+          if (j != i) xsph += (p[j].vel.xyz - vi) * w;
+        }
+      }
+
+  // XSPH viscosity (Eq. 17). Normalize by rho0: sum poly6 over neighbors is
+  // ~rho0, so dividing makes this a proper density-weighted velocity average.
+  vi += u.xsphC * xsph / u.rho0;
+  // Global velocity drag: dissipate bulk kinetic energy (XSPH only damps
+  // relative velocity) so the fluid can settle into a pool instead of filling
+  // the domain ballistically.
+  vi *= max(0.0, 1.0 - u.velDamp * u.dt);
+  // CFL velocity clamp: a particle may not travel more than ~0.5 cells per
+  // substep. This bounds the position-correction -> velocity feedback that
+  // otherwise compounds into an explosion (corrections become huge velocity at
+  // small dt). maxSpeed = 0.5*h/dt.
+  float maxSpeed = 0.5 * u.h / u.dt;
+  float sp = length(vi);
+  if (sp > maxSpeed) vi *= maxSpeed / sp;
+  p[i].vel.xyz = vi;
+  p[i].vel.w = rho / u.rho0;  // density ratio (debug visualization)
+  p[i].pos.xyz = xi;
+}

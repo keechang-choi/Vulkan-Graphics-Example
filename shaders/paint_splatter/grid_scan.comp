@@ -1,0 +1,41 @@
+#version 450
+// v1 prefix scan: a single invocation walks all cells serially.
+// Correct and simple; the documented ceiling is ~1e6 cells (our domain uses
+// ~48k). Upgrade path: Blelloch / multi-workgroup scan if numCells grows.
+layout(local_size_x = 1) in;
+
+layout(std140, set = 0, binding = 1) uniform Ubo {
+  float dt;
+  uint count;
+  float gravity;
+  float h;
+  vec4 cmin;
+  vec4 cmax;
+  ivec4 gridDim;
+  float rho0;
+  float epsCFM;
+  float scorrK;
+  float scorrDq;
+  float scorrN;
+  float xsphC;
+  float kPoly6;
+  float kSpiky;
+  float scorrDenom;
+}
+u;
+layout(std430, set = 0, binding = 2) buffer CellCount { uint cellCount[]; };
+layout(std430, set = 0, binding = 3) buffer CellStart { uint cellStart[]; };
+layout(std430, set = 0, binding = 4) buffer CellOffset { uint cellOffset[]; };
+
+void main() {
+  if (gl_GlobalInvocationID.x != 0u) return;
+  uint numCells = uint(u.gridDim.w);
+  uint running = 0u;
+  for (uint c = 0u; c < numCells; c++) {
+    cellStart[c] = running;
+    cellOffset[c] = running;  // mutable copy advanced during scatter
+    running += cellCount[c];
+  }
+  cellStart[numCells] = running;   // total == particle count
+  cellOffset[numCells] = running;
+}

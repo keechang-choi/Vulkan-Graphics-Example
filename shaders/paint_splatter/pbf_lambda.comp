@@ -1,0 +1,89 @@
+#version 450
+layout(local_size_x = 256) in;
+
+struct Particle {
+  vec4 pos;
+  vec4 vel;
+  vec4 predict;
+  vec4 color;
+};
+
+layout(std430, set = 0, binding = 0) buffer Particles { Particle p[]; };
+layout(std140, set = 0, binding = 1) uniform Ubo {
+  float dt;
+  uint count;
+  float gravity;
+  float h;
+  vec4 cmin;
+  vec4 cmax;
+  ivec4 gridDim;
+  float rho0;
+  float epsCFM;
+  float scorrK;
+  float scorrDq;
+  float scorrN;
+  float xsphC;
+  float kPoly6;
+  float kSpiky;
+  float scorrDenom;
+}
+u;
+layout(std430, set = 0, binding = 3) buffer CellStart { uint cellStart[]; };
+layout(std430, set = 0, binding = 5) buffer SortedIds { uint sortedIds[]; };
+
+ivec3 cellCoord(vec3 x) {
+  return clamp(ivec3(floor((x - u.cmin.xyz) / u.h)), ivec3(0), u.gridDim.xyz - 1);
+}
+
+float poly6(float r2) {
+  if (r2 >= u.h * u.h) return 0.0;
+  float t = u.h * u.h - r2;
+  return u.kPoly6 * t * t * t;
+}
+// gradient of Spiky kernel: dW/dr = -kSpiky*(h-r)^2, along rij/r (rij = pi - pj)
+vec3 spikyGrad(vec3 rij, float r) {
+  if (r >= u.h || r <= 1e-6) return vec3(0.0);
+  float t = u.h - r;
+  return -u.kSpiky * t * t * (rij / r);
+}
+
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  if (i >= u.count) return;
+  vec3 xi = p[i].predict.xyz;
+  ivec3 ci = cellCoord(xi);
+
+  float rho = 0.0;
+  vec3 gradCi = vec3(0.0);   // grad of C_i w.r.t. particle i
+  float sumGradC2 = 0.0;     // sum over neighbors j of |grad_j C_i|^2
+  float invRho0 = 1.0 / u.rho0;
+
+  for (int dz = -1; dz <= 1; dz++)
+    for (int dy = -1; dy <= 1; dy++)
+      for (int dx = -1; dx <= 1; dx++) {
+        ivec3 c = ci + ivec3(dx, dy, dz);
+        if (any(lessThan(c, ivec3(0))) ||
+            any(greaterThanEqual(c, u.gridDim.xyz)))
+          continue;
+        uint cell = uint((c.z * u.gridDim.y + c.y) * u.gridDim.x + c.x);
+        uint s = cellStart[cell];
+        uint e = cellStart[cell + 1u];
+        for (uint k = s; k < e; k++) {
+          uint j = sortedIds[k];
+          vec3 rij = xi - p[j].predict.xyz;
+          float r2 = dot(rij, rij);
+          if (r2 >= u.h * u.h) continue;
+          rho += poly6(r2);
+          if (j != i) {
+            float r = sqrt(max(r2, 1e-12));
+            vec3 grad = spikyGrad(rij, r) * invRho0;
+            gradCi += grad;
+            sumGradC2 += dot(grad, grad);
+          }
+        }
+      }
+
+  sumGradC2 += dot(gradCi, gradCi);
+  float C = rho * invRho0 - 1.0;
+  p[i].predict.w = -C / (sumGradC2 + u.epsCFM);
+}

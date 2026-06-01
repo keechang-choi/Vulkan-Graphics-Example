@@ -1,0 +1,92 @@
+#version 450
+layout(local_size_x = 256) in;
+
+struct Particle {
+  vec4 pos;
+  vec4 vel;
+  vec4 predict;
+  vec4 color;
+};
+
+layout(std430, set = 0, binding = 0) buffer Particles { Particle p[]; };
+layout(std140, set = 0, binding = 1) uniform Ubo {
+  float dt;
+  uint count;
+  float gravity;
+  float h;
+  vec4 cmin;
+  vec4 cmax;
+  ivec4 gridDim;
+  float rho0;
+  float epsCFM;
+  float scorrK;
+  float scorrDq;
+  float scorrN;
+  float xsphC;
+  float kPoly6;
+  float kSpiky;
+  float scorrDenom;
+}
+u;
+layout(std430, set = 0, binding = 3) buffer CellStart { uint cellStart[]; };
+layout(std430, set = 0, binding = 5) buffer SortedIds { uint sortedIds[]; };
+layout(std430, set = 0, binding = 6) buffer DeltaP { vec4 deltaP[]; };
+
+ivec3 cellCoord(vec3 x) {
+  return clamp(ivec3(floor((x - u.cmin.xyz) / u.h)), ivec3(0), u.gridDim.xyz - 1);
+}
+float poly6(float r2) {
+  if (r2 >= u.h * u.h) return 0.0;
+  float t = u.h * u.h - r2;
+  return u.kPoly6 * t * t * t;
+}
+vec3 spikyGrad(vec3 rij, float r) {
+  if (r >= u.h || r <= 1e-6) return vec3(0.0);
+  float t = u.h - r;
+  // dW_spiky/dr = -kSpiky (h-r)^2; gradient along rij/r (rij = pi - pj).
+  return -u.kSpiky * t * t * (rij / r);
+}
+
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  if (i >= u.count) return;
+  vec3 xi = p[i].predict.xyz;
+  float li = p[i].predict.w;
+  ivec3 ci = cellCoord(xi);
+
+  vec3 dp = vec3(0.0);
+  for (int dz = -1; dz <= 1; dz++)
+    for (int dy = -1; dy <= 1; dy++)
+      for (int dx = -1; dx <= 1; dx++) {
+        ivec3 c = ci + ivec3(dx, dy, dz);
+        if (any(lessThan(c, ivec3(0))) ||
+            any(greaterThanEqual(c, u.gridDim.xyz)))
+          continue;
+        uint cell = uint((c.z * u.gridDim.y + c.y) * u.gridDim.x + c.x);
+        uint s = cellStart[cell];
+        uint e = cellStart[cell + 1u];
+        for (uint k = s; k < e; k++) {
+          uint j = sortedIds[k];
+          if (j == i) continue;
+          vec3 rij = xi - p[j].predict.xyz;
+          float r2 = dot(rij, rij);
+          if (r2 >= u.h * u.h) continue;
+          float r = sqrt(max(r2, 1e-12));
+          // artificial pressure scorr (Eq. 13): surface tension / anti-cluster
+          float wq = poly6(r2) * u.scorrDenom;
+          float scorr = -u.scorrK * pow(max(wq, 0.0), u.scorrN);
+          dp += (li + p[j].predict.w + scorr) * spikyGrad(rij, r);
+        }
+      }
+  dp /= u.rho0;
+
+  // Stability clamp (Macklin 2013 §5): bound the per-iteration position
+  // correction so stiff constraints cannot overshoot and explode.
+  float maxDp = 0.2 * u.h;
+  float dl = length(dp);
+  if (dl > maxDp) dp *= maxDp / dl;
+
+  // Collision: clamp the candidate into the domain box (floor at cmax.y=0).
+  vec3 candidate = clamp(xi + dp, u.cmin.xyz, u.cmax.xyz);
+  deltaP[i].xyz = candidate - xi;
+}

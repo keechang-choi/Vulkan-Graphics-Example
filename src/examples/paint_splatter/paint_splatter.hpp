@@ -50,24 +50,30 @@ struct Particle {
 };
 static_assert(sizeof(Particle) == 64, "Particle std430 size");
 
-// ComputeUbo: std140, 48 bytes
-//   dt            float  -- 0
-//   particleCount uint   -- 4
-//   gravity       float  -- 8
-//   _pad0         float  -- 12
-//   canvasMin     vec4   -- 16
-//   canvasMax     vec4   -- 32
-//                           48
+// ComputeUbo: std140, 112 bytes. Shared by every PBF compute pass.
 struct ComputeUbo {
-  float dt;                // -- 0 --
-  uint32_t particleCount;  // -- 4 --
-  float gravity;           // -- 8 --
-  float _pad0;             // -- 12 --
-  glm::vec4 canvasMin;  // -- 16 -- xyz world-min of fluid domain, w=cell size h
-  glm::vec4 canvasMax;  // -- 32 -- xyz world-max, w unused
-  // -- 48 --
+  float dt;                // -- 0  -- substep dt
+  uint32_t particleCount;  // -- 4  --
+  float gravity;           // -- 8  -- +Y (down on screen)
+  float h;                 // -- 12 -- smoothing radius == grid cell size
+  glm::vec4 canvasMin;     // -- 16 -- xyz domain min, w unused
+  glm::vec4 canvasMax;     // -- 32 -- xyz domain max (floor at y=cmax.y=0)
+  glm::ivec4 gridDim;      // -- 48 -- xyz grid dims, w = numCells
+  float rho0;              // -- 64 -- rest density
+  float epsCFM;            // -- 68 -- constraint relaxation (Eq. 11)
+  float scorrK;            // -- 72 -- artificial pressure strength (Eq. 13)
+  float scorrDq;           // -- 76 -- scorr reference distance (= ratio*h)
+  float scorrN;            // -- 80 -- scorr exponent
+  float xsphC;             // -- 84 -- XSPH viscosity coefficient (Eq. 17)
+  float kPoly6;            // -- 88 -- 315/(64 pi h^9)
+  float kSpiky;            // -- 92 -- 45/(pi h^6) (gradient magnitude)
+  float scorrDenom;        // -- 96 -- 1/W_poly6(scorrDq) precomputed
+  float velDamp;           // -- 100 -- global velocity drag rate (per second)
+  float _pad1;             // -- 104 --
+  float _pad2;             // -- 108 --
+  // -- 112 --
 };
-static_assert(sizeof(ComputeUbo) == 48, "ComputeUbo std140 size");
+static_assert(sizeof(ComputeUbo) == 112, "ComputeUbo std140 size");
 
 // Intentionally empty for M1; simulation/spoid knobs are added in later
 // milestones.
@@ -112,11 +118,14 @@ private:
 
   // ---- compute helpers ----
   void prepareCompute();
+  void createGridBuffers();
   void createComputeDescriptorSetLayout();
   void createComputeDescriptorSets();
-  void createComputePipeline();
+  void createComputePipeline();  // builds all PBF compute pipelines
   void updateComputeUbo();
   void buildComputeCommandBuffers();
+  // Records one full PBF substep (predict -> grid -> solve iters -> finalize).
+  void recordPbfSubstep(const vk::raii::CommandBuffer& cmd, uint32_t frame);
 
   // ---- debug readback (M3): print particle y min/max ~once per second ----
   // The particle SSBO participates in the compute<->graphics queue-ownership
@@ -163,11 +172,15 @@ private:
 
   // ---- sim params (M3) ----
   float gravity = 9.8f;       // world units/s^2, +Y (down on screen)
-  bool useFixedDt = false;    // false -> frameTimer; true -> kFixedDt
-  float seedJitterXZ = 1.0f;  // max random horizontal initial speed at seed
+  bool useFixedDt = true;     // fixed dt avoids frame-time spikes destabilizing
+  float seedJitterXZ = 0.0f;  // random horizontal seed velocity (0 = clean dam)
   bool restartRequested = false;
   static constexpr float kFixedDt = 1.0f / 120.0f;
   static constexpr float kDomainHeight = 3.0f;  // floor y=0 .. cmin.y=-height
+  // M4 test: confine the fluid (collision walls + neighbor grid) to a small box
+  // in x,z so a dam-break forms a dense, visible pool. Widened to the canvas in
+  // M5 for droplets. The canvas quad itself stays kCanvasWorld.
+  static constexpr float kFluidHalf = 1.0f;
 
   // ---- graphics sync semaphores (signalled by graphics, waited by compute)
   // ----
@@ -191,8 +204,42 @@ private:
     vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
     std::vector<vk::raii::DescriptorSet> descriptorSets;
     vk::raii::PipelineLayout pipelineLayout = nullptr;
-    vk::raii::Pipeline pipeline = nullptr;
+    // PBF pipeline stages (all share descriptorSetLayout/pipelineLayout)
+    vk::raii::Pipeline pipeline = nullptr;  // predict
+    vk::raii::Pipeline gridCount = nullptr;
+    vk::raii::Pipeline gridScan = nullptr;
+    vk::raii::Pipeline gridScatter = nullptr;
+    vk::raii::Pipeline lambda = nullptr;
+    vk::raii::Pipeline delta = nullptr;
+    vk::raii::Pipeline apply = nullptr;
+    vk::raii::Pipeline finalize = nullptr;
   } compute;
+
+  // ---- neighbor grid (per-frame; rebuilt every substep) ----
+  // cellCount[numCells], cellStart[numCells+1] (exclusive prefix sum),
+  // cellOffset[numCells+1] (mutable copy advanced during scatter),
+  // sortedIds[kMaxParticles], deltaP[kMaxParticles] (PBF position correction).
+  std::vector<std::unique_ptr<vgeu::VgeuBuffer>> cellCountBuffers;
+  std::vector<std::unique_ptr<vgeu::VgeuBuffer>> cellStartBuffers;
+  std::vector<std::unique_ptr<vgeu::VgeuBuffer>> cellOffsetBuffers;
+  std::vector<std::unique_ptr<vgeu::VgeuBuffer>> sortedIdBuffers;
+  std::vector<std::unique_ptr<vgeu::VgeuBuffer>> deltaPBuffers;
+  glm::ivec3 gridDim{0};
+  uint32_t numCells = 0;
+
+  // ---- PBF tunables (M4) ----
+  static constexpr float kSmoothingRadius = 0.1f;   // h (fixes grid size)
+  static constexpr float kParticleSpacing = 0.05f;  // ~0.5h
+  float rho0 = 0.f;           // computed from the rest lattice in prepare()
+  float epsCFM = 100.f;       // CFM relaxation
+  float scorrK = 0.1f;        // artificial pressure strength
+  float scorrDqRatio = 0.2f;  // scorrDq = ratio * h
+  float scorrN = 4.f;
+  float xsphC = 0.1f;    // XSPH viscosity (normalized)
+  float velDamp = 6.0f;  // global velocity drag (per second) to settle bulk
+  int substeps = 1;
+  int solverIters = 4;
+  bool colorByDensity = false;  // debug: tint particles by rho/rho0
 
   static constexpr float kCanvasWorld = 4.0f;
 };

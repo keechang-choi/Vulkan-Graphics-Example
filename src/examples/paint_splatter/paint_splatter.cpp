@@ -4,6 +4,7 @@
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
+#include <glm/gtc/constants.hpp>
 
 // std
 #include <algorithm>
@@ -171,34 +172,39 @@ void VgeExample::createParticleBuffers() {
 // a random horizontal (xz) initial velocity so the falling block spreads out
 // instead of dropping as a rigid column (debug visualization aid).
 void VgeExample::seedParticles() {
-  const int N = 16;
-  const float spacing = 0.05f;
-  // Seed the block high above the floor (~0.7 of domain height) so it falls
-  // onto the canvas at y=0. Domain spans y in [-kDomainHeight, 0].
-  const float centerY = -kDomainHeight * 0.7f;  // world -Y = up
+  const float spacing = kParticleSpacing;
+  // Dam-break column: a tall, narrow slab of water resting on the floor (y=0)
+  // against the -x wall of the fluid box. On release it collapses in +x and
+  // sloshes, forming a dense pool (reaches rho0). Box is x,z in [-kFluidHalf,
+  // kFluidHalf], floor at y=0, fluid at y<0.
+  const float xlo = -kFluidHalf + spacing, xhi = -kFluidHalf + 0.7f;
+  const float zlo = -kFluidHalf + spacing, zhi = kFluidHalf - spacing;
+  const float yhi = -spacing;                  // top sits just below the floor
+  const float ylo = -kDomainHeight + spacing;  // tall column up to the ceiling
+  const int nx = std::max(1, static_cast<int>((xhi - xlo) / spacing));
+  const int nz = std::max(1, static_cast<int>((zhi - zlo) / spacing));
+  const int ny = std::max(1, static_cast<int>((yhi - ylo) / spacing));
 
   std::mt19937 rng(1337u);
   std::uniform_real_distribution<float> angle(0.f, 6.2831853f);
   std::uniform_real_distribution<float> speed(0.f, seedJitterXZ);
 
   std::vector<Particle> cpuParticles;
-  cpuParticles.reserve(static_cast<size_t>(N * N * N));
+  cpuParticles.reserve(static_cast<size_t>(nx * ny * nz));
 
-  for (int ix = 0; ix < N; ix++) {
-    for (int iy = 0; iy < N; iy++) {
-      for (int iz = 0; iz < N; iz++) {
+  for (int ix = 0; ix < nx; ix++) {
+    for (int iy = 0; iy < ny; iy++) {
+      for (int iz = 0; iz < nz; iz++) {
         Particle p{};
-        p.pos =
-            glm::vec4((ix - N / 2) * spacing, centerY + (iy - N / 2) * spacing,
-                      (iz - N / 2) * spacing, 1.f);
-        // Random xz-direction initial velocity (y = 0; gravity does the rest).
+        p.pos = glm::vec4(xlo + ix * spacing, ylo + iy * spacing,
+                          zlo + iz * spacing, 1.f);
+        // Small random xz velocity (gravity provides the collapse).
         float a = angle(rng), s = speed(rng);
         p.vel = glm::vec4(std::cos(a) * s, 0.f, std::sin(a) * s, 0.f);
         p.predict = glm::vec4(0.f);
-        // Color varies by position for visual distinction
-        p.color =
-            glm::vec4(static_cast<float>(ix) / N, static_cast<float>(iy) / N,
-                      static_cast<float>(iz) / N, 1.f);
+        // Color varies with height so the slosh/mixing is visible.
+        float t = static_cast<float>(iy) / ny;
+        p.color = glm::vec4(0.2f + 0.6f * t, 0.4f, 0.9f - 0.5f * t, 1.f);
         cpuParticles.push_back(p);
       }
     }
@@ -238,7 +244,10 @@ void VgeExample::seedParticles() {
 void VgeExample::restartSimulation() {
   device.waitIdle();
   seedParticles();
-  computeFirstUse.assign(MAX_CONCURRENT_FRAMES, 1);
+  // Do NOT reset computeFirstUse here: unlike startup, the buffers are already
+  // mid-ping-pong with a pending graphics->compute release. Skipping the next
+  // compute acquire would leave that release unconsumed and the following
+  // graphics release would duplicate it (VkBufferMemoryBarrier-buffer-00003).
   readbackPending.assign(MAX_CONCURRENT_FRAMES, 0);
   readbackTimer = 0.f;
   readbackRequest = false;
@@ -277,8 +286,10 @@ void VgeExample::createDescriptorPool() {
   std::vector<vk::DescriptorPoolSize> poolSizes;
   poolSizes.emplace_back(vk::DescriptorType::eUniformBuffer,
                          MAX_CONCURRENT_FRAMES * 2u);
+  // Compute set: 6 storage buffers per frame (particles, cellCount, cellStart,
+  // cellOffset, sortedIds, deltaP).
   poolSizes.emplace_back(vk::DescriptorType::eStorageBuffer,
-                         MAX_CONCURRENT_FRAMES);
+                         MAX_CONCURRENT_FRAMES * 6u);
   vk::DescriptorPoolCreateInfo descriptorPoolCI(
       vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
       MAX_CONCURRENT_FRAMES * 2u, poolSizes);
@@ -493,18 +504,99 @@ void VgeExample::createParticlePipeline() {
 // ---------------------------------------------------------------------------
 // Compute setup: mirrors particle.cpp prepareGraphics / prepareCompute
 // ---------------------------------------------------------------------------
+// Per-frame neighbor-grid buffers (device-local). Rebuilt every substep.
+void VgeExample::createGridBuffers() {
+  auto makeBuf = [&](uint32_t count, bool transferDst) {
+    vk::BufferUsageFlags usage = vk::BufferUsageFlagBits::eStorageBuffer;
+    if (transferDst) usage |= vk::BufferUsageFlagBits::eTransferDst;
+    return std::make_unique<vgeu::VgeuBuffer>(
+        globalAllocator->getAllocator(), sizeof(uint32_t), count, usage,
+        VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, 0);
+  };
+  cellCountBuffers.reserve(MAX_CONCURRENT_FRAMES);
+  cellStartBuffers.reserve(MAX_CONCURRENT_FRAMES);
+  cellOffsetBuffers.reserve(MAX_CONCURRENT_FRAMES);
+  sortedIdBuffers.reserve(MAX_CONCURRENT_FRAMES);
+  deltaPBuffers.reserve(MAX_CONCURRENT_FRAMES);
+  for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    cellCountBuffers.push_back(
+        makeBuf(numCells, true));  // zeroed via fillBuffer
+    cellStartBuffers.push_back(makeBuf(numCells + 1u, false));
+    cellOffsetBuffers.push_back(makeBuf(numCells + 1u, false));
+    sortedIdBuffers.push_back(makeBuf(kMaxParticles, false));
+    // deltaP: one vec4 per particle
+    deltaPBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
+        globalAllocator->getAllocator(), sizeof(glm::vec4), kMaxParticles,
+        vk::BufferUsageFlagBits::eStorageBuffer,
+        VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, 0));
+  }
+}
+
+// Kernel normalization constants (3D), precomputed on host (avoid per-thread
+// pow). poly6: 315/(64 pi h^9); spiky gradient magnitude: 45/(pi h^6).
+static float kPoly6Const(float h) {
+  return 315.f / (64.f * glm::pi<float>() * std::pow(h, 9.f));
+}
+static float kSpikyConst(float h) {
+  return 45.f / (glm::pi<float>() * std::pow(h, 6.f));
+}
+
 void VgeExample::prepareCompute() {
-  // --- 1. Create per-frame compute uniform buffers ---
   computeFirstUse.assign(MAX_CONCURRENT_FRAMES, 1);
 
+  // --- Grid dimensions from the fluid domain + smoothing radius ---
+  const float half = kFluidHalf;  // fluid box half-extent in x,z
+  const float h = kSmoothingRadius;
+  gridDim = glm::ivec3(static_cast<int>(std::ceil((2.f * half) / h)),
+                       static_cast<int>(std::ceil(kDomainHeight / h)),
+                       static_cast<int>(std::ceil((2.f * half) / h)));
+  numCells = static_cast<uint32_t>(gridDim.x) * gridDim.y * gridDim.z;
+  std::cout << "[paint_splatter] gridDim=(" << gridDim.x << "," << gridDim.y
+            << "," << gridDim.z << ")  numCells=" << numCells << std::endl;
+
+  // --- Rest density from the seed lattice (mass = 1, so rho0 = sum poly6) ---
+  {
+    const float s = kParticleSpacing;
+    const float kp = kPoly6Const(h);
+    float restRho = 0.f;
+    int reach = static_cast<int>(std::ceil(h / s)) + 1;
+    for (int dx = -reach; dx <= reach; dx++)
+      for (int dy = -reach; dy <= reach; dy++)
+        for (int dz = -reach; dz <= reach; dz++) {
+          float r2 = (dx * dx + dy * dy + dz * dz) * s * s;
+          if (r2 < h * h) {
+            float t = h * h - r2;
+            restRho += kp * t * t * t;
+          }
+        }
+    rho0 = restRho;
+    std::cout << "[paint_splatter] rho0 (rest density) = " << rho0 << std::endl;
+  }
+
+  createGridBuffers();
+
+  // --- Initialize the compute UBO (per-frame copies filled below) ---
+  compute.ubo = ComputeUbo{};
   compute.ubo.dt = kFixedDt;
   compute.ubo.particleCount = numParticles;
   compute.ubo.gravity = gravity;
-  compute.ubo._pad0 = 0.f;
+  compute.ubo.h = h;
+  compute.ubo.canvasMin = glm::vec4(-half, -kDomainHeight, -half, 0.f);
+  compute.ubo.canvasMax = glm::vec4(half, 0.f, half, 0.f);
+  compute.ubo.gridDim = glm::ivec4(gridDim, static_cast<int>(numCells));
+  compute.ubo.rho0 = rho0;
+  compute.ubo.epsCFM = epsCFM;
+  compute.ubo.scorrK = scorrK;
+  compute.ubo.scorrDq = scorrDqRatio * h;
+  compute.ubo.scorrN = scorrN;
+  compute.ubo.xsphC = xsphC;
+  compute.ubo.kPoly6 = kPoly6Const(h);
+  compute.ubo.kSpiky = kSpikyConst(h);
   {
-    const float half = kCanvasWorld * 0.5f;
-    compute.ubo.canvasMin = glm::vec4(-half, -kDomainHeight, -half, 0.05f);
-    compute.ubo.canvasMax = glm::vec4(half, 0.f, half, 0.f);
+    float dq2 = compute.ubo.scorrDq * compute.ubo.scorrDq;
+    float t = h * h - dq2;
+    float wq = compute.ubo.kPoly6 * t * t * t;
+    compute.ubo.scorrDenom = (wq > 0.f) ? 1.f / wq : 0.f;
   }
 
   compute.uniformBuffers.reserve(MAX_CONCURRENT_FRAMES);
@@ -570,12 +662,16 @@ void VgeExample::prepareCompute() {
 
 void VgeExample::createComputeDescriptorSetLayout() {
   std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
-  // binding 0: particle SSBO
+  // 0 particle SSBO, 1 ComputeUbo, 2 cellCount, 3 cellStart, 4 cellOffset,
+  // 5 sortedIds, 6 deltaP. All visible to every PBF compute stage.
   layoutBindings.emplace_back(0, vk::DescriptorType::eStorageBuffer, 1,
                               vk::ShaderStageFlagBits::eCompute);
-  // binding 1: ComputeUbo
   layoutBindings.emplace_back(1, vk::DescriptorType::eUniformBuffer, 1,
                               vk::ShaderStageFlagBits::eCompute);
+  for (uint32_t b = 2; b <= 6; b++) {
+    layoutBindings.emplace_back(b, vk::DescriptorType::eStorageBuffer, 1,
+                                vk::ShaderStageFlagBits::eCompute);
+  }
 
   vk::DescriptorSetLayoutCreateInfo layoutCI({}, layoutBindings);
   compute.descriptorSetLayout = vk::raii::DescriptorSetLayout(device, layoutCI);
@@ -586,18 +682,25 @@ void VgeExample::createComputeDescriptorSetLayout() {
 }
 
 void VgeExample::createComputePipeline() {
-  auto compCode =
-      vgeu::readFile(getShadersPath() + "/paint_splatter/pbf_predict.comp.spv");
-  vk::raii::ShaderModule compShaderModule =
-      vgeu::createShaderModule(device, compCode);
-
-  vk::PipelineShaderStageCreateInfo shaderStageCI(
-      vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eCompute,
-      *compShaderModule, "main", nullptr);
-
-  vk::ComputePipelineCreateInfo pipelineCI(
-      vk::PipelineCreateFlags(), shaderStageCI, *compute.pipelineLayout);
-  compute.pipeline = vk::raii::Pipeline(device, pipelineCache, pipelineCI);
+  auto makePipeline = [&](const std::string& name) {
+    auto code = vgeu::readFile(getShadersPath() + "/paint_splatter/" + name +
+                               ".comp.spv");
+    vk::raii::ShaderModule module = vgeu::createShaderModule(device, code);
+    vk::PipelineShaderStageCreateInfo stageCI(
+        vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eCompute,
+        *module, "main", nullptr);
+    vk::ComputePipelineCreateInfo pipelineCI(vk::PipelineCreateFlags(), stageCI,
+                                             *compute.pipelineLayout);
+    return vk::raii::Pipeline(device, pipelineCache, pipelineCI);
+  };
+  compute.pipeline = makePipeline("pbf_predict");
+  compute.gridCount = makePipeline("grid_count");
+  compute.gridScan = makePipeline("grid_scan");
+  compute.gridScatter = makePipeline("grid_scatter");
+  compute.lambda = makePipeline("pbf_lambda");
+  compute.delta = makePipeline("pbf_delta");
+  compute.apply = makePipeline("pbf_apply");
+  compute.finalize = makePipeline("pbf_finalize");
 }
 
 void VgeExample::createComputeDescriptorSets() {
@@ -614,14 +717,42 @@ void VgeExample::createComputeDescriptorSets() {
                                       particleBuffers[i]->getBufferSize());
     vk::DescriptorBufferInfo uboInfo =
         compute.uniformBuffers[i]->descriptorInfo();
+    vk::DescriptorBufferInfo cellCountInfo(
+        cellCountBuffers[i]->getBuffer(), 0,
+        cellCountBuffers[i]->getBufferSize());
+    vk::DescriptorBufferInfo cellStartInfo(
+        cellStartBuffers[i]->getBuffer(), 0,
+        cellStartBuffers[i]->getBufferSize());
+    vk::DescriptorBufferInfo cellOffsetInfo(
+        cellOffsetBuffers[i]->getBuffer(), 0,
+        cellOffsetBuffers[i]->getBufferSize());
+    vk::DescriptorBufferInfo sortedInfo(sortedIdBuffers[i]->getBuffer(), 0,
+                                        sortedIdBuffers[i]->getBufferSize());
+    vk::DescriptorBufferInfo deltaInfo(deltaPBuffers[i]->getBuffer(), 0,
+                                       deltaPBuffers[i]->getBufferSize());
 
-    std::array<vk::WriteDescriptorSet, 2> writes{
+    std::array<vk::WriteDescriptorSet, 7> writes{
         vk::WriteDescriptorSet(*compute.descriptorSets[i], 0, 0,
                                vk::DescriptorType::eStorageBuffer, nullptr,
                                ssboInfo),
         vk::WriteDescriptorSet(*compute.descriptorSets[i], 1, 0,
                                vk::DescriptorType::eUniformBuffer, nullptr,
                                uboInfo),
+        vk::WriteDescriptorSet(*compute.descriptorSets[i], 2, 0,
+                               vk::DescriptorType::eStorageBuffer, nullptr,
+                               cellCountInfo),
+        vk::WriteDescriptorSet(*compute.descriptorSets[i], 3, 0,
+                               vk::DescriptorType::eStorageBuffer, nullptr,
+                               cellStartInfo),
+        vk::WriteDescriptorSet(*compute.descriptorSets[i], 4, 0,
+                               vk::DescriptorType::eStorageBuffer, nullptr,
+                               cellOffsetInfo),
+        vk::WriteDescriptorSet(*compute.descriptorSets[i], 5, 0,
+                               vk::DescriptorType::eStorageBuffer, nullptr,
+                               sortedInfo),
+        vk::WriteDescriptorSet(*compute.descriptorSets[i], 6, 0,
+                               vk::DescriptorType::eStorageBuffer, nullptr,
+                               deltaInfo),
     };
     device.updateDescriptorSets(writes, nullptr);
   }
@@ -634,24 +765,40 @@ void VgeExample::updateGlobalUbo() {
   globalUbo.projection = camera.getProjection();
   globalUbo.view = camera.getView();
   globalUbo.inverseView = camera.getInverseView();
-  globalUbo.canvasInfo =
-      glm::vec4(kCanvasWorld * 0.5f, kCanvasWorld * 0.5f, kCanvasWorld, 0.f);
+  // canvasInfo.w doubles as the density-debug-color flag for particle.vert.
+  globalUbo.canvasInfo = glm::vec4(kCanvasWorld * 0.5f, kCanvasWorld * 0.5f,
+                                   kCanvasWorld, colorByDensity ? 1.f : 0.f);
   std::memcpy(uniformBuffers[currentFrameIndex]->getMappedData(), &globalUbo,
               sizeof(GlobalUbo));
 }
 
 void VgeExample::updateComputeUbo() {
-  // dt: frameTimer by default, optional fixed dt for stable stepping.
-  compute.ubo.dt = useFixedDt ? kFixedDt : frameTimer;
+  // Substep dt: split the frame into `substeps` smaller PBF steps for
+  // stability.
+  float frameDt = useFixedDt ? kFixedDt : frameTimer;
+  int sub = std::max(1, substeps);
+  compute.ubo.dt = frameDt / static_cast<float>(sub);
   compute.ubo.particleCount = numParticles;
-  // gravity = +Y pulls particles down on screen (toward the floor at y=0).
   compute.ubo.gravity = gravity;
-  compute.ubo._pad0 = 0.f;
-  // Domain box: floor at cmax.y=0, extends upward (screen) to cmin.y=-height.
-  const float half = kCanvasWorld * 0.5f;
-  const float h = 0.05f;  // cell size / particle spacing (used in M4)
-  compute.ubo.canvasMin = glm::vec4(-half, -kDomainHeight, -half, h);
-  compute.ubo.canvasMax = glm::vec4(half, 0.f, half, 0.f);
+  // Fluid domain box (collision walls): smaller than the canvas for the M4
+  // test.
+  compute.ubo.canvasMin =
+      glm::vec4(-kFluidHalf, -kDomainHeight, -kFluidHalf, 0.f);
+  compute.ubo.canvasMax = glm::vec4(kFluidHalf, 0.f, kFluidHalf, 0.f);
+  // Live-tunable PBF params (grid dims / kernel constants fixed in prepare).
+  compute.ubo.rho0 = rho0;
+  compute.ubo.epsCFM = epsCFM;
+  compute.ubo.scorrK = scorrK;
+  compute.ubo.scorrDq = scorrDqRatio * compute.ubo.h;
+  compute.ubo.scorrN = scorrN;
+  compute.ubo.xsphC = xsphC;
+  compute.ubo.velDamp = velDamp;
+  {
+    float dq2 = compute.ubo.scorrDq * compute.ubo.scorrDq;
+    float t = compute.ubo.h * compute.ubo.h - dq2;
+    float wq = compute.ubo.kPoly6 * t * t * t;
+    compute.ubo.scorrDenom = (wq > 0.f) ? 1.f / wq : 0.f;
+  }
   std::memcpy(compute.uniformBuffers[currentFrameIndex]->getMappedData(),
               &compute.ubo, sizeof(ComputeUbo));
 }
@@ -688,12 +835,20 @@ void VgeExample::consumeParticleReadback() {
   const Particle* data = static_cast<const Particle*>(
       readbackBuffers[currentFrameIndex]->getMappedData());
   float minY = data[0].pos.y, maxY = data[0].pos.y;
-  for (uint32_t i = 1; i < numParticles; i++) {
+  double sumRho = 0.0, maxRho = 0.0;
+  uint32_t nearFloor = 0;  // within 0.3 of the floor (y >= -0.3)
+  for (uint32_t i = 0; i < numParticles; i++) {
     minY = std::min(minY, data[i].pos.y);
     maxY = std::max(maxY, data[i].pos.y);
+    sumRho += data[i].vel.w;  // finalize stored rho/rho0 here
+    maxRho = std::max(maxRho, static_cast<double>(data[i].vel.w));
+    if (data[i].pos.y >= -0.3f) nearFloor++;
   }
-  std::cout << "[paint_splatter] particle y range: min=" << minY
-            << " max=" << maxY << " (floor at y=0)" << std::endl;
+  std::cout << "[paint_splatter] y[" << minY << "," << maxY
+            << "] | rho/rho0 mean=" << (sumRho / numParticles)
+            << " max=" << maxRho
+            << " | nearFloor%=" << (100.0 * nearFloor / numParticles)
+            << std::endl;
 }
 
 // ---------------------------------------------------------------------------
@@ -808,16 +963,14 @@ void VgeExample::buildComputeCommandBuffers() {
   }
   computeFirstUse[currentFrameIndex] = 0;
 
-  // Bind predict pipeline + descriptor set for this frame
-  compute.cmdBuffers[currentFrameIndex].bindPipeline(
-      vk::PipelineBindPoint::eCompute, *compute.pipeline);
   compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
       vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 0,
       *compute.descriptorSets[currentFrameIndex], nullptr);
 
-  // Dispatch: ceil(numParticles / 256)
-  uint32_t groupCount = (numParticles + 255u) / 256u;
-  compute.cmdBuffers[currentFrameIndex].dispatch(groupCount, 1, 1);
+  // Run the PBF solver, substepping the frame for stability.
+  for (int s = 0; s < std::max(1, substeps); s++) {
+    recordPbfSubstep(compute.cmdBuffers[currentFrameIndex], currentFrameIndex);
+  }
 
   // Release barrier compute -> graphics (if different queue families)
   // Mirrors particle.cpp:1621-1639
@@ -835,6 +988,69 @@ void VgeExample::buildComputeCommandBuffers() {
   }
 
   compute.cmdBuffers[currentFrameIndex].end();
+}
+
+// One PBF substep: predict -> build neighbor grid -> {lambda, delta, apply} x
+// solverIters -> finalize. A compute->compute buffer barrier separates every
+// dispatch so each pass sees the previous one's writes (mirrors the multi-pass
+// barrier structure of particle.cpp:1568-1619).
+void VgeExample::recordPbfSubstep(const vk::raii::CommandBuffer& cmd,
+                                  uint32_t frame) {
+  const uint32_t groupCount = (numParticles + 255u) / 256u;
+  const uint32_t cellGroups = (numCells + 255u) / 256u;
+
+  // Generic compute->compute SSBO barrier (shader write -> shader read/write).
+  auto barrier = [&]() {
+    vk::MemoryBarrier mb(
+        vk::AccessFlagBits::eShaderWrite,
+        vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite);
+    cmd.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,
+                        vk::PipelineStageFlagBits::eComputeShader,
+                        vk::DependencyFlags{}, mb, nullptr, nullptr);
+  };
+  auto dispatchParticles = [&](const vk::raii::Pipeline& pipe) {
+    cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *pipe);
+    cmd.dispatch(groupCount, 1, 1);
+  };
+
+  // 1. predict
+  dispatchParticles(compute.pipeline);
+  barrier();
+
+  // 2. build neighbor grid: clear counts -> count -> scan -> scatter
+  cmd.fillBuffer(cellCountBuffers[frame]->getBuffer(), 0,
+                 cellCountBuffers[frame]->getBufferSize(), 0u);
+  // transfer-write (fill) -> shader-read barrier
+  {
+    vk::MemoryBarrier mb(
+        vk::AccessFlagBits::eTransferWrite,
+        vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite);
+    cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                        vk::PipelineStageFlagBits::eComputeShader,
+                        vk::DependencyFlags{}, mb, nullptr, nullptr);
+  }
+  dispatchParticles(compute.gridCount);
+  barrier();
+  cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *compute.gridScan);
+  cmd.dispatch(1, 1, 1);  // single-invocation serial scan
+  barrier();
+  dispatchParticles(compute.gridScatter);
+  barrier();
+
+  // 3. solve: Jacobi iterations of {lambda -> delta -> apply}
+  for (int it = 0; it < std::max(1, solverIters); it++) {
+    dispatchParticles(compute.lambda);
+    barrier();
+    dispatchParticles(compute.delta);
+    barrier();
+    dispatchParticles(compute.apply);
+    barrier();
+  }
+
+  // 4. finalize: velocity update + XSPH + commit position
+  dispatchParticles(compute.finalize);
+  barrier();
+  (void)cellGroups;  // grid clear uses fillBuffer, not a dispatch
 }
 
 // ---------------------------------------------------------------------------
@@ -962,6 +1178,19 @@ void VgeExample::onUpdateUIOverlay() {
     ImGui::SliderFloat("seed jitter xz", &seedJitterXZ, 0.f, 5.f);
     if (uiOverlay->button("Restart")) {
       restartRequested = true;
+    }
+
+    // --- PBF solver (M4) ---
+    if (ImGui::CollapsingHeader("PBF solver", ImGuiTreeNodeFlags_DefaultOpen)) {
+      ImGui::Text("rho0 (rest) : %.1f", rho0);
+      ImGui::SliderInt("substeps", &substeps, 1, 4);
+      ImGui::SliderInt("solverIters", &solverIters, 1, 6);
+      ImGui::SliderFloat("epsCFM", &epsCFM, 1.f, 1000.f);
+      ImGui::SliderFloat("scorrK", &scorrK, 0.f, 0.5f);
+      ImGui::SliderFloat("scorrDq/h", &scorrDqRatio, 0.05f, 0.5f);
+      ImGui::SliderFloat("xsphC", &xsphC, 0.f, 1.f);
+      ImGui::SliderFloat("vel damping", &velDamp, 0.f, 10.f);
+      ImGui::Checkbox("color by density", &colorByDensity);
     }
 
     if (uiOverlay->button("Save (no-op)")) {
