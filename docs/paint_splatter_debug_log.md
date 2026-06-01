@@ -214,3 +214,38 @@ Domain widened from the M4 confined box (`kFluidHalf=1`) to the full canvas
 spawn near the ceiling, fall, splash on the floor (`nearFloor%` 0→55%, transient
 impact density bounded ~3, no explosion). Task 10 idle: VL-CLEAN, spoid marker
 renders. Keyboard/Space interaction is the user's M5 gate.
+
+### Bug: droplet over-packing → explosive emit (scatter)
+- **Symptom:** dropped droplets exploded into spray on emit.
+- **Root cause:** `amount` (300) particles spawned into a thin hole disk packed
+  ~7× rest density; the density solve blasted the over-compressed blob apart.
+- **Fix:** size the spawn volume to `amount` at rest density — emit uniformly in
+  a 3D ball of host-computed radius `max(holeRadius, cbrt(3·amount·spacing³/4π))`.
+  Impact density peaked ~3.0 → ~0.9. (`enqueueDrop` + `emit.comp` ball sampling.)
+
+### THE big one: velocity-feedback explosion was the UNCLAMPED density constraint
+- **Symptom (user):** even after the over-packing fix, particles "boil" — too
+  much repulsion, bouncing around the whole domain. Measured: max particle speed
+  pinned at *exactly* the CFL clamp ceiling (`velClampFactor·h/dt`) every frame,
+  independent of gravity; lowering the ceiling just re-pinned there; **removing**
+  the clamp and adding substeps made it far WORSE (speed ~140).
+- **Why substeps backfired:** the per-substep position correction stays ~one
+  particle spacing (driven by the constraint residual, not motion), so the
+  velocity recovery `v=(x*−x)/dt` *grows* as dt shrinks. Small-steps only helps
+  when the fluid is near its constraint manifold (corrections → 0); ours never is.
+- **Root cause:** `pbf_lambda` used `C = rho/rho0 − 1` **unclamped**. In the
+  sub-monolayer regime (sparse fluid over the 4×4 canvas, mean rho ≈ 0.4·rho0)
+  almost every particle is under-dense → `C<0` → `λ>0` → the density constraint
+  perpetually **pulls under-dense particles together**. Those corrections ÷ dt
+  became the velocity that flung particles into neighbours → chain reaction. The
+  CFL clamp only masked the symptom.
+- **Fix:** compression-only constraint `C = max(rho/rho0 − 1, 0)` (standard
+  free-surface PBF). Under-dense → no density correction; only real overlaps are
+  resolved; droplet cohesion is left to **scorr (surface tension)**, its proper
+  role. (M4 had tried this and reverted it for "lost cohesion" — but that reveals
+  the cohesion was coming from the *unstable* under-density pull; scorr is the
+  correct mechanism.)
+- **Result:** stable with **NO velocity clamp** (`velClampFactor=0`), substeps=1,
+  iters=4. speed mean 3.0→0.25, max 6(pinned)→~0.7 (brief falling-droplet spikes
+  only), nearFloor 20%→78% — the fluid now pools calmly at the floor. The CFL
+  clamp is kept only as an optional safety net (slider, 0 disables).
