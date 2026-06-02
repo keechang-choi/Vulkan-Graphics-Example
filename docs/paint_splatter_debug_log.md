@@ -339,14 +339,19 @@ ping-pong so the two `MAX_CONCURRENT_FRAMES` buffers form ONE evolving sim.
   pile), no NaN / device-loss. On-screen flicker disappearance is the user's
   visual gate. autoEmit defaulted ON so the scene is alive on launch.
 
-### Spawn distribution update: lattice -> ball (rest-density sized)
-Reverted the jittered cube lattice back to **uniform-ball** sampling per user
-choice (option B). The over-packing explosion is avoided the same way the
-lattice avoided it — by sizing the spawn volume to rest density: the host
-(`enqueueDrop`) now passes a ball radius `max(holeRadius, cbrt(3*count*spacing^3
-/ 4pi))` in `originRadius.w`, and `emit.comp` samples uniformly inside that ball.
-(The earlier broken state had the ball shader reading a *lattice spacing* as the
-radius, which over-packed ~100x; fixed by making the host pass a real radius.)
+### Spawn distribution: lattice -> ball -> back to lattice
+Briefly switched the jittered cube lattice to **uniform-ball** sampling (option
+B), with the host (`enqueueDrop`) passing a rest-density-sized ball radius
+`max(holeRadius, cbrt(3*count*spacing^3 / 4pi))` so the ball volume is not
+over-packed. (The earlier broken state had the ball shader reading a *lattice
+spacing* as the radius, over-packing ~100x; fixed by passing a real radius.)
+**Then reverted to the jittered lattice again:** even a rest-density-sized ball
+uses *random* placement, which still produces occasional close pairs whose local
+over-density pops on the first solve (a likely cause of the "emit explosion" the
+user suspected). The lattice guarantees a minimum separation by construction, so
+no spawn pop — at the cost of a grid-shaped (vs round) initial droplet. Spacing
+(`kParticleSpacing = 0.05 = 0.5h`) is the PBF-standard rest spacing (~33
+neighbours within h); not the over-packing culprit.
 
 ### Reference for a future hybrid direction (not implemented)
 Chentanez, Müller, Kim, *Coupling 3D Eulerian, Heightfield and Particle Methods*

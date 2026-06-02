@@ -822,20 +822,23 @@ void VgeExample::enqueueDrop(const glm::vec3& origin, float holeRadius,
   uint32_t count = std::min(want, avail);
   if (count < want) poolFull = true;
 
-  // Spawn uniformly inside a 3D ball sized so `count` particles sit at ~rest
-  // density (radius = cbrt(3*count*spacing^3 / 4pi)); holeRadius is a lower
-  // bound (a bigger hole => at least that wide). Sizing the volume to rest
-  // density is what prevents the "spawn explosion": a too-small ball over-packs
-  // the blob and the density solve blasts it apart on the first step.
+  // Spawn on a JITTERED LATTICE at ~rest density (not random-in-a-ball). A
+  // regular grid + small jitter guarantees a minimum particle separation, so no
+  // two particles land on top of each other -- random sampling occasionally
+  // clumps pairs, and those overlaps pop apart on the first solve (spawn
+  // "explosion"). The shader lays `count` particles on a cube lattice of side
+  // `ceil(cbrt(count))` at this spacing; holeRadius widens the spacing (a
+  // bigger hole => a bigger, sparser drop) but never below the rest spacing.
+  const int side = std::max(
+      1, static_cast<int>(std::ceil(std::cbrt(static_cast<float>(count)))));
   const float restSpacing = kParticleSpacing;
-  const float restBallR =
-      std::cbrt(3.f * static_cast<float>(count) * restSpacing * restSpacing *
-                restSpacing / (4.f * glm::pi<float>()));
-  const float radius = std::max(holeRadius, restBallR);
+  const float wantSpacing = (2.f * holeRadius) / static_cast<float>(side);
+  const float spacing = std::max(restSpacing, wantSpacing);
 
   EmitPush push{};
-  // originRadius.w carries the spawn ball radius (see emit.comp ball sampling).
-  push.originRadius = glm::vec4(origin, radius);
+  // originRadius.w carries the lattice spacing (see emit.comp lattice
+  // sampling).
+  push.originRadius = glm::vec4(origin, spacing);
   // Initial velocity is downward toward the floor (+Y in this engine's world).
   push.velConc = glm::vec4(0.f, emissionVel, 0.f, concentration);
   push.color = glm::vec4(color, 0.f);

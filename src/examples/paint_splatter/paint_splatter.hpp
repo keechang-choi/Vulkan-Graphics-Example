@@ -83,8 +83,7 @@ static_assert(sizeof(ComputeUbo) == 128, "ComputeUbo std140 size");
 // burst; the host computes baseIndex (append-only live count) so no GPU atomic
 // counter is needed until compaction lands in M6.
 struct EmitPush {
-  glm::vec4
-      originRadius;    // -- 0  -- xyz spoid origin (y<0), w spawn ball radius
+  glm::vec4 originRadius;  // -- 0  -- xyz spoid origin (y<0), w lattice spacing
   glm::vec4 velConc;   // -- 16 -- xyz initial velocity (+Y), w concentration
   glm::vec4 color;     // -- 32 -- rgb paint color, a unused
   uint32_t baseIndex;  // -- 48 -- first particle slot written
