@@ -1,0 +1,83 @@
+#version 450
+layout(local_size_x = 256) in;
+
+// Deposit pass (M6): every particle near the canvas floor stamps its colour into
+// the accumulation image with alpha-over. Dispatched on the GRAPHICS queue (the
+// canvas image is graphics-owned), after the compute->graphics acquire of the
+// particle buffer and before the render pass. Read-only on the particles in
+// M6-B; drying + compaction arrive in M6-C.
+
+struct Particle {
+  vec4 pos;      // xyz position, w = wetness (M6-C)
+  vec4 vel;      // xyz velocity, w = density ratio (debug)
+  vec4 predict;  // xyz predicted x*, w = lambda
+  vec4 color;    // rgb paint colour, a = concentration
+};
+
+layout(std430, set = 0, binding = 0) buffer Particles { Particle p[]; };
+layout(std140, set = 0, binding = 1) uniform Ubo {
+  float dt;
+  uint count;
+  float gravity;
+  float h;
+  vec4 cmin;
+  vec4 cmax;
+  ivec4 gridDim;
+  float rho0;
+  float epsCFM;
+  float scorrK;
+  float scorrDq;
+  float scorrN;
+  float xsphC;
+  float kPoly6;
+  float kSpiky;
+  float scorrDenom;
+  float velDamp;
+  float velClampFactor;
+  float solverRelax;
+  uint prevCount;
+  float dryRate;
+  float depositStrength;
+  float depositHeight;
+}
+u;
+layout(set = 0, binding = 8, rgba8) uniform image2D canvasImg;
+
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  if (i >= u.count) return;
+  vec3 x = p[i].pos.xyz;
+  // Floor is the X-Z plane at y=0; particles approach from below (y<0). Deposit
+  // only when within depositHeight of the floor.
+  if (x.y < -u.depositHeight) return;
+
+  // World (x,z) -> canvas UV in [0,1] over the domain footprint.
+  vec2 uv = vec2((x.x - u.cmin.x) / (u.cmax.x - u.cmin.x),
+                 (x.z - u.cmin.z) / (u.cmax.z - u.cmin.z));
+  if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return;
+
+  ivec2 size = imageSize(canvasImg);
+  ivec2 center = clamp(ivec2(uv * vec2(size)), ivec2(0), size - 1);
+
+  // Stamp a small disk so a sparse particle still leaves a visible mark. Radius
+  // ~= the rest spacing in texels (clamped to a sane range).
+  float texelWorld = (u.cmax.x - u.cmin.x) / float(size.x);
+  int rad = clamp(int(u.h * 0.5 / texelWorld), 1, 24);
+
+  float a = clamp(p[i].color.a * u.depositStrength, 0.0, 1.0);
+  vec3 paint = p[i].color.rgb;
+  int r2max = rad * rad;
+  for (int dy = -rad; dy <= rad; dy++) {
+    for (int dx = -rad; dx <= rad; dx++) {
+      if (dx * dx + dy * dy > r2max) continue;
+      ivec2 texel = clamp(center + ivec2(dx, dy), ivec2(0), size - 1);
+      // Plain load/store alpha-over. Races between particles hitting the same
+      // texel in a frame are visually negligible on an accumulation canvas
+      // (atomic/packed upgrade noted as a follow-up).
+      vec4 dst = imageLoad(canvasImg, texel);
+      vec3 outRgb = paint * a + dst.rgb * (1.0 - a);
+      float outA = a + dst.a * (1.0 - a);
+      imageStore(canvasImg, texel, vec4(outRgb, outA));
+    }
+  }
+}

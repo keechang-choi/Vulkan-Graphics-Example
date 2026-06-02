@@ -351,6 +351,12 @@ private:
     // Emit (M5): separate pipeline layout = compute set layout + push constant.
     vk::raii::PipelineLayout emitPipelineLayout = nullptr;
     vk::raii::Pipeline emit = nullptr;
+    // Deposit (M6): stamps near-floor particle colour into the canvas image.
+    // Uses the shared compute pipelineLayout (binding 8 = canvas storage
+    // image). DISPATCHED ON THE GRAPHICS QUEUE (in buildCommandBuffers) so the
+    // canvas image stays graphics-owned -- no cross-queue ownership transfer
+    // needed.
+    vk::raii::Pipeline deposit = nullptr;
   } compute;
 
   // ---- neighbor grid (per-frame; rebuilt every substep) ----

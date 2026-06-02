@@ -394,6 +394,9 @@ void VgeExample::createDescriptorPool() {
   // Canvas texture sampler (one per graphics descriptor set).
   poolSizes.emplace_back(vk::DescriptorType::eCombinedImageSampler,
                          MAX_CONCURRENT_FRAMES);
+  // Canvas storage image (one per compute descriptor set, deposit pass).
+  poolSizes.emplace_back(vk::DescriptorType::eStorageImage,
+                         MAX_CONCURRENT_FRAMES);
   vk::DescriptorPoolCreateInfo descriptorPoolCI(
       vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
       MAX_CONCURRENT_FRAMES * 2u, poolSizes);
@@ -816,6 +819,10 @@ void VgeExample::createComputeDescriptorSetLayout() {
   }
   layoutBindings.emplace_back(7, vk::DescriptorType::eStorageBuffer, 1,
                               vk::ShaderStageFlagBits::eCompute);
+  // 8 = canvas accumulation image (storage), written by deposit.comp (M6).
+  // Bound in every compute set; only the deposit pass reads it.
+  layoutBindings.emplace_back(8, vk::DescriptorType::eStorageImage, 1,
+                              vk::ShaderStageFlagBits::eCompute);
 
   vk::DescriptorSetLayoutCreateInfo layoutCI({}, layoutBindings);
   compute.descriptorSetLayout = vk::raii::DescriptorSetLayout(device, layoutCI);
@@ -845,6 +852,9 @@ void VgeExample::createComputePipeline() {
   compute.delta = makePipeline("pbf_delta");
   compute.apply = makePipeline("pbf_apply");
   compute.finalize = makePipeline("pbf_finalize");
+  // Deposit shares the PBF pipeline layout (binding 8 = canvas image). Built
+  // here but dispatched on the GRAPHICS queue (see buildCommandBuffers).
+  compute.deposit = makePipeline("deposit");
 }
 
 // Emit pipeline (M5): its own layout = the compute descriptor-set layout (so it
@@ -1038,8 +1048,11 @@ void VgeExample::createComputeDescriptorSets() {
                                         sortedIdBuffers[i]->getBufferSize());
     vk::DescriptorBufferInfo deltaInfo(deltaPBuffers[i]->getBuffer(), 0,
                                        deltaPBuffers[i]->getBufferSize());
+    // Canvas as a storage image (no sampler) in GENERAL layout for deposit.
+    vk::DescriptorImageInfo canvasStoreInfo(
+        nullptr, *canvasImage->getImageView(), vk::ImageLayout::eGeneral);
 
-    std::array<vk::WriteDescriptorSet, 8> writes{
+    std::array<vk::WriteDescriptorSet, 9> writes{
         vk::WriteDescriptorSet(*compute.descriptorSets[i], 0, 0,
                                vk::DescriptorType::eStorageBuffer, nullptr,
                                ssboInfo),
@@ -1064,6 +1077,9 @@ void VgeExample::createComputeDescriptorSets() {
         vk::WriteDescriptorSet(*compute.descriptorSets[i], 7, 0,
                                vk::DescriptorType::eStorageBuffer, nullptr,
                                prevInfo),
+        vk::WriteDescriptorSet(*compute.descriptorSets[i], 8, 0,
+                               vk::DescriptorType::eStorageImage,
+                               canvasStoreInfo),
     };
     device.updateDescriptorSets(writes, nullptr);
   }
@@ -1108,6 +1124,9 @@ void VgeExample::updateComputeUbo() {
   compute.ubo.velDamp = velDamp;
   compute.ubo.velClampFactor = velClampFactor;
   compute.ubo.solverRelax = solverRelax;
+  compute.ubo.dryRate = dryRate;  // used by deposit (M6-C drying)
+  compute.ubo.depositStrength = depositStrength;
+  compute.ubo.depositHeight = depositHeight;
   {
     float dq2 = compute.ubo.scorrDq * compute.ubo.scorrDq;
     float t = compute.ubo.h * compute.ubo.h - dq2;
@@ -1424,18 +1443,47 @@ void VgeExample::buildCommandBuffers() {
   drawCmdBuffers[currentFrameIndex].begin({});
 
   // Acquire barrier compute -> graphics (if different queue families)
-  // Mirrors particle.cpp:1413-1431
+  // Mirrors particle.cpp:1413-1431. The particle buffer is read both by the
+  // deposit compute dispatch (shader read) below and the vertex stage, so the
+  // acquire covers both stages/accesses.
   if (graphics.queueFamilyIndex != compute.queueFamilyIndex) {
     vk::BufferMemoryBarrier bufBarrier(
-        vk::AccessFlags{}, vk::AccessFlagBits::eVertexAttributeRead,
+        vk::AccessFlags{},
+        vk::AccessFlagBits::eVertexAttributeRead |
+            vk::AccessFlagBits::eShaderRead,
         compute.queueFamilyIndex, graphics.queueFamilyIndex,
         particleBuffers[currentFrameIndex]->getBuffer(), 0ull,
         particleBuffers[currentFrameIndex]->getBufferSize());
 
     drawCmdBuffers[currentFrameIndex].pipelineBarrier(
         vk::PipelineStageFlagBits::eTopOfPipe,
-        vk::PipelineStageFlagBits::eVertexInput, vk::DependencyFlags{}, nullptr,
-        bufBarrier, nullptr);
+        vk::PipelineStageFlagBits::eVertexInput |
+            vk::PipelineStageFlagBits::eComputeShader,
+        vk::DependencyFlags{}, nullptr, bufBarrier, nullptr);
+  }
+
+  // --- Deposit (M6): stamp near-floor particles into the canvas. Run as a
+  //     compute dispatch ON THE GRAPHICS QUEUE (canvas image is graphics-owned,
+  //     so no cross-queue ownership transfer), before the render pass; an image
+  //     barrier then makes the writes visible to the fragment sample. ---
+  if (numParticles > 0) {
+    drawCmdBuffers[currentFrameIndex].bindPipeline(
+        vk::PipelineBindPoint::eCompute, *compute.deposit);
+    drawCmdBuffers[currentFrameIndex].bindDescriptorSets(
+        vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 0,
+        *compute.descriptorSets[currentFrameIndex], nullptr);
+    drawCmdBuffers[currentFrameIndex].dispatch((numParticles + 255u) / 256u, 1,
+                                               1);
+    vk::ImageMemoryBarrier canvasBarrier(
+        vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eShaderRead,
+        vk::ImageLayout::eGeneral, vk::ImageLayout::eGeneral,
+        VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+        canvasImage->getImage(),
+        vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+    drawCmdBuffers[currentFrameIndex].pipelineBarrier(
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::PipelineStageFlagBits::eFragmentShader, vk::DependencyFlags{},
+        nullptr, nullptr, canvasBarrier);
   }
 
   // Mid-gray clear
