@@ -352,8 +352,14 @@ private:
   uint32_t numCells = 0;
 
   // ---- PBF tunables (M4) ----
-  static constexpr float kSmoothingRadius = 0.1f;   // h (fixes grid size)
-  static constexpr float kParticleSpacing = 0.05f;  // ~0.5h
+  // h = smoothing radius == grid CELL size. numCells ~= (domain/h)^3, so do NOT
+  // shrink h (h=0.01 -> 400^3 = 48M cells -> GB buffers + serial scan stall).
+  static constexpr float kSmoothingRadius = 0.1f;  // h (fixes grid size)
+  // Rest particle spacing: the distance below which particles count as
+  // over-packed and repel. Kept SMALL (0.05h) so particles can pack closer
+  // without the density constraint exploding when they collide/accumulate.
+  // (Independent of h; only affects rho0 + emit lattice, not the grid.)
+  static constexpr float kParticleSpacing = 0.005f;
   float rho0 = 0.f;           // computed from the rest lattice in prepare()
   float epsCFM = 100.f;       // CFM relaxation
   float scorrK = 0.1f;        // artificial pressure strength

@@ -822,17 +822,17 @@ void VgeExample::enqueueDrop(const glm::vec3& origin, float holeRadius,
   uint32_t count = std::min(want, avail);
   if (count < want) poolFull = true;
 
-  // Spawn on a JITTERED LATTICE at ~rest density (not random-in-a-ball). A
-  // regular grid + small jitter guarantees a minimum particle separation, so no
-  // two particles land on top of each other -- random sampling occasionally
-  // clumps pairs, and those overlaps pop apart on the first solve (spawn
-  // "explosion"). The shader lays `count` particles on a cube lattice of side
-  // `ceil(cbrt(count))` at this spacing; holeRadius widens the spacing (a
-  // bigger hole => a bigger, sparser drop) but never below the rest spacing.
+  // Spawn on a JITTERED LATTICE (not random-in-a-ball): a regular grid + small
+  // jitter guarantees a minimum particle separation, so no two particles land
+  // on top of each other (random sampling clumps pairs that pop on the first
+  // solve). `count` particles fill a cube of side ceil(cbrt(count)) at this
+  // spacing -> droplet diameter ~= side*spacing. The lattice is sized to
+  // `holeRadius/side` (a dense drop ~holeRadius wide), clamped below by the
+  // rest spacing. Lowering the numerator packs the droplet tighter.
   const int side = std::max(
       1, static_cast<int>(std::ceil(std::cbrt(static_cast<float>(count)))));
   const float restSpacing = kParticleSpacing;
-  const float wantSpacing = (2.f * holeRadius) / static_cast<float>(side);
+  const float wantSpacing = holeRadius / static_cast<float>(side);
   const float spacing = std::max(restSpacing, wantSpacing);
 
   EmitPush push{};

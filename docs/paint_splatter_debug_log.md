@@ -353,6 +353,29 @@ no spawn pop — at the cost of a grid-shaped (vs round) initial droplet. Spacin
 (`kParticleSpacing = 0.05 = 0.5h`) is the PBF-standard rest spacing (~33
 neighbours within h); not the over-packing culprit.
 
+### Close-encounter explosion fixed by shrinking rest spacing (h kept fixed)
+User observed particles still "pop" not only on spawn but **whenever they get
+close** during the sim, and found that dropping `kParticleSpacing` to 0.005 made
+it go away. Confirmed and reasoned out:
+- **`kParticleSpacing` is the rest separation** — the distance below which
+  particles read as over-packed and repel. Explosions happen when particles get
+  much closer than spacing (collision/accumulation) → local density spikes → λ
+  spikes → Δp/dt becomes a large velocity. Smaller spacing means a given close
+  distance is no longer "over-packed", so no repulsion → no pop.
+- **`kSmoothingRadius` (h) is the GRID CELL size; do NOT shrink it.** The user's
+  attempted `h = 0.01` blew `numCells` from 40³=48k to 400³=48M → multi-GB
+  cell buffers + a single-invocation serial prefix scan over 48M cells → stall /
+  error. h is independent of the explosion; only spacing matters there.
+- **Set h=0.1 (grid unchanged, 48k cells), spacing=0.005 independently.**
+  Measured (auto-emit, 12 s, VL-CLEAN, no perf drop): speed max 6.3→**1.9**
+  (pop gone), nearFloor ~87%. rho0 8078→**8e6**, so rho/rho0 ~**0.001**: the
+  compression-only density constraint is now effectively OFF — that is *why*
+  there is no pop (no density repulsion), with cohesion left to scorr +
+  collision. Trade-off: ~no incompressible-pool behaviour; fine for a paint
+  splatter demo, tune spacing up (0.01–0.02) if droplets look too dispersed.
+  Note emit lattice spacing = max(restSpacing, 2*holeRadius/side), so droplet
+  size still follows holeRadius; restSpacing only sets rho0 / the repel floor.
+
 ### Reference for a future hybrid direction (not implemented)
 Chentanez, Müller, Kim, *Coupling 3D Eulerian, Heightfield and Particle Methods*
 (SCA 2014) — couples PBF/SPH particles + a 3D Eulerian grid + an SWE height
