@@ -931,7 +931,7 @@ void VgeExample::arrangeSpoidsCircle() {
     spoids[0].pos.z = 0.f;
     return;
   }
-  const float radius = kDomainHalf * 0.6f;  // inside the domain walls
+  const float radius = kDomainHalf * 0.3f;  // compact circle near the centre
   for (int i = 0; i < n; i++) {
     const float ang =
         glm::two_pi<float>() * static_cast<float>(i) / static_cast<float>(n);
