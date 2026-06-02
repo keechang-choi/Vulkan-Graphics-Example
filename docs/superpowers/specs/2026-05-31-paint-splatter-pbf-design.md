@@ -196,6 +196,14 @@ SpoidController → Spoid[] (positions, emit triggers)
 - **Phase 2 (follow-up spec)**: continuous stream emission (B),
   `PendulumSpoidController`, top-down view toggle, optional watercolor bleed
   (deposition method C / subtractive mixing).
+- **Phase 3 candidate (research, not committed)**: hybrid particle + grid +
+  height-field coupling à la Chentanez, Müller & Kim 2014 (`hybridsim`). The
+  PBF-only solver cannot make a sparse spread of particles reach rest density
+  over the large canvas footprint (the M4 "sub-monolayer / gas-like dispersal"
+  limitation — particles alone are an expensive, poor representation of bulk
+  liquid). A height-field for the thin canvas paint film coupled to PBF
+  particles for the airborne splash would model this far more naturally and
+  cheaply. Large architectural change; deferred behind Phase 2.
 
 ---
 
@@ -255,6 +263,9 @@ Each milestone is a stop-and-verify gate, not just an internal checkpoint.
 - Macklin, Müller. *Position Based Fluids.* ACM TOG 32(4), 2013.
   (`pbf_sig_preprint.pdf`) — core solver.
 - Müller et al. *Position Based Dynamics.* 2007 — PBD framework underneath PBF.
+- Chentanez, Müller, Kim. *Coupling 3D Eulerian, Heightfield and Particle
+  Methods for Interactive Simulation of Large Scale Liquid Phenomena.* SCA 2014
+  (`hybridsim_preprinted.pdf`) — Phase 3 hybrid-coupling reference (§6).
 - Ten Minute Physics #18, FLIP fluid (`18-flip.html`) — conceptual background and
   the uniform-grid partial-sum neighbor-search pattern (shared with `pbd`).
 - Project precedents: `src/examples/particle` (GPU compute multi-pipeline +

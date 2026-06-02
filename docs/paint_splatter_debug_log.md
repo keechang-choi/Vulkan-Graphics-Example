@@ -302,8 +302,58 @@ renders. Keyboard/Space interaction is the user's M5 gate.
   A single-buffer + serialize approach also works but needlessly gives up the
   cross-frame pipelining that `particle`/`cloth` keep — so ping-pong is the
   right design here.
-- **Status:** root cause confirmed and documented; fix (ping-pong) not yet
-  implemented. Solver-side mitigations (compression-only, relax, lattice) are
-  committed and correct on their own, but the visible flicker will only fully go
-  away once the two-independent-sims architecture is replaced by the ping-pong
-  chain.
+- **Status:** root cause confirmed and documented; fix (ping-pong) now
+  IMPLEMENTED (see below). Solver-side mitigations (compression-only, relax) are
+  committed and correct on their own; the lattice spawn was later reverted to
+  ball sampling (see "Spawn distribution" update below).
+
+### FIX IMPLEMENTED: ping-pong chain (read prev, write cur)
+Replaced the in-place per-buffer stepping with the `particle.cpp`/`cloth.cpp`
+ping-pong so the two `MAX_CONCURRENT_FRAMES` buffers form ONE evolving sim.
+- **Descriptor layout:** added compute SSBO binding **7 = particlesPrev**
+  (read-only). Descriptor set `i` binds binding 0 -> `particleBuffers[i]` (cur,
+  written) and binding 7 -> `particleBuffers[(i-1+N)%N]` (prev, read) — mirrors
+  `particle.cpp:252-261` (`prevFrameIdx` -> in, `i` -> out). Pool bumped to
+  `MAX*7` storage buffers.
+- **`pbf_predict.comp`:** reads `pprev[i]` (binding 7), writes the full `p[i]`
+  (binding 0): carries `pos`/`color`/wetness forward and integrates
+  `vel`/`predict`. The remaining PBF passes (grid, lambda, delta, apply,
+  finalize) stay in place on `cur`. finalize commits `pos = predict` on `cur`,
+  which next frame is read as `prev`.
+- **Emit as one chain:** per-frame `emitQueues` collapsed to a single
+  `pendingEmits` list, drained+cleared once per frame into `cur`'s
+  `[prevCount, numParticles)` slots. `numParticles` is the single global live
+  count; `prevParticleCount` tracks the count at the end of the previous frame
+  (== what the prev buffer holds) and is fed to the shader as `ComputeUbo.prevCount`.
+- **predict skips freshly-spawned slots:** `if (i >= prevCount) return;` — those
+  `[prevCount, numParticles)` particles were just written into `cur` by
+  `emit.comp` this frame, so predict must not clobber them with stale `prev` data.
+- **Barriers unchanged:** QFOT acquire/release still only on `cur`
+  (`particleBuffers[currentFrameIndex]`); prev is read without an extra acquire,
+  exactly as `particle.cpp` does (validated reference).
+- **ComputeUbo:** `prevCount` (uint) added at offset 112 + 3 pad uints; size
+  assert bumped 112 -> 128.
+- **Verification (autoEmit on, 10 s):** VL-CLEAN (zero validation/STDERR),
+  `rho/rho0` mean 0.19->0.37 (no explosion, max ~0.57), speed mean 0.13-0.7
+  (occasional ~6 = falling-droplet spikes), `nearFloor%` 0->88% (calm floor
+  pile), no NaN / device-loss. On-screen flicker disappearance is the user's
+  visual gate. autoEmit defaulted ON so the scene is alive on launch.
+
+### Spawn distribution update: lattice -> ball (rest-density sized)
+Reverted the jittered cube lattice back to **uniform-ball** sampling per user
+choice (option B). The over-packing explosion is avoided the same way the
+lattice avoided it — by sizing the spawn volume to rest density: the host
+(`enqueueDrop`) now passes a ball radius `max(holeRadius, cbrt(3*count*spacing^3
+/ 4pi))` in `originRadius.w`, and `emit.comp` samples uniformly inside that ball.
+(The earlier broken state had the ball shader reading a *lattice spacing* as the
+radius, which over-packed ~100x; fixed by making the host pass a real radius.)
+
+### Reference for a future hybrid direction (not implemented)
+Chentanez, Müller, Kim, *Coupling 3D Eulerian, Heightfield and Particle Methods*
+(SCA 2014) — couples PBF/SPH particles + a 3D Eulerian grid + an SWE height
+field via a shared density field (grid `g` + particle `rho_p` = combined `c`).
+Directly addresses our M4 "sub-monolayer / gas-like dispersal" limitation:
+*particles alone are a poor way to represent bulk liquid*. A natural fit for a
+later phase of paint_splatter — thin canvas paint film as a height field,
+splash droplets as PBF particles — but a large architecture change, out of scope
+for Phase 1. Recorded as a Phase 3 candidate in the design spec.

@@ -16,7 +16,7 @@ struct Particle {
 layout(std430, set = 0, binding = 0) buffer Particles { Particle p[]; };
 
 layout(push_constant) uniform Push {
-  vec4 originRadius;  // xyz = spoid origin (y<0), w = lattice spacing
+  vec4 originRadius;  // xyz = spoid origin (y<0), w = spawn ball radius
   vec4 velConc;       // xyz = initial velocity (+Y = down on screen), w = conc
   vec4 color;         // rgb = paint color, a unused
   uint baseIndex;     // first particle slot to write
@@ -45,18 +45,15 @@ void main() {
   uint idx = pc.baseIndex + i;
 
   uint s = pc.seed + i * 9781u;
-  // Jittered cube lattice: place particle i on a regular grid of side
-  // ceil(cbrt(count)) at spacing originRadius.w, then add jitter < spacing/2 so
-  // a minimum separation is guaranteed (no accidental overlaps -> no spawn pop).
-  float spacing = pc.originRadius.w;
-  uint side = uint(ceil(pow(float(pc.count), 1.0 / 3.0)));
-  if (side < 1u) side = 1u;
-  uint ix = i % side;
-  uint iy = (i / side) % side;
-  uint iz = i / (side * side);
-  vec3 grid = (vec3(ix, iy, iz) - 0.5 * (float(side) - 1.0)) * spacing;
-  vec3 jit = (vec3(rnd(s), rnd(s + 1u), rnd(s + 2u)) - 0.5) * (0.4 * spacing);
-  vec3 x = pc.originRadius.xyz + grid + jit;
+  // Uniform sample inside a 3D ball of radius originRadius.w (host-sized to rest
+  // density). Radius via cube root for uniform volume density; direction via a
+  // uniformly-sampled sphere.
+  float rad = pc.originRadius.w * pow(rnd(s), 1.0 / 3.0);
+  float zc = rnd(s + 1u) * 2.0 - 1.0;
+  float phi = 6.2831853 * rnd(s + 2u);
+  float rxy = sqrt(max(0.0, 1.0 - zc * zc));
+  vec3 off = vec3(rxy * cos(phi), zc, rxy * sin(phi)) * rad;
+  vec3 x = pc.originRadius.xyz + off;
   p[idx].pos = vec4(x, 1.0);
   p[idx].vel = vec4(pc.velConc.xyz, 1.0);  // w = wetness = 1 (consumed in M6)
   p[idx].predict = vec4(x, 0.0);

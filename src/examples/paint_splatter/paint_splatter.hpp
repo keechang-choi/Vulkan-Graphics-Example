@@ -71,15 +71,20 @@ struct ComputeUbo {
   float velDamp;           // -- 100 -- global velocity drag rate (per second)
   float velClampFactor;    // -- 104 -- CFL cap: maxSpeed = factor * h / dt
   float solverRelax;       // -- 108 -- Jacobi under-relaxation factor (0..1)
-  // -- 112 --
+  uint32_t prevCount;      // -- 112 -- ping-pong: # particles carried from prev
+  uint32_t _pad1;          // -- 116 --
+  uint32_t _pad2;          // -- 120 --
+  uint32_t _pad3;          // -- 124 --
+  // -- 128 --
 };
-static_assert(sizeof(ComputeUbo) == 112, "ComputeUbo std140 size");
+static_assert(sizeof(ComputeUbo) == 128, "ComputeUbo std140 size");
 
 // EmitPush: push constant for the emit pass (M5). One dispatch per droplet
 // burst; the host computes baseIndex (append-only live count) so no GPU atomic
 // counter is needed until compaction lands in M6.
 struct EmitPush {
-  glm::vec4 originRadius;  // -- 0  -- xyz spoid origin (y<0), w hole radius
+  glm::vec4
+      originRadius;    // -- 0  -- xyz spoid origin (y<0), w spawn ball radius
   glm::vec4 velConc;   // -- 16 -- xyz initial velocity (+Y), w concentration
   glm::vec4 color;     // -- 32 -- rgb paint color, a unused
   uint32_t baseIndex;  // -- 48 -- first particle slot written
@@ -192,15 +197,16 @@ private:
 
   // ---- emit (M5) ----
   void createEmitPipeline();
-  // Append one droplet burst: reserves a contiguous slot range from the shared
-  // host live count and enqueues the same EmitPush to every per-frame buffer so
-  // the two independent-but-identical sims stay in lockstep.
+  // Append one droplet burst: reserves a contiguous slot range from the single
+  // global live count (ping-pong chain) and enqueues one EmitPush. Drained once
+  // per frame into the current buffer; the predict pass carries it forward.
   void enqueueDrop(const glm::vec3& origin, float holeRadius,
                    const glm::vec3& color, float emissionVel,
                    float concentration, int amount);
   void recordEmit(const vk::raii::CommandBuffer& cmd, uint32_t frame);
-  // Per-frame FIFO of pending bursts (drained in buildComputeCommandBuffers).
-  std::vector<std::vector<EmitPush>> emitQueues;
+  // Single FIFO of pending bursts (one evolving chain; drained + cleared once
+  // per frame in buildComputeCommandBuffers, written into the current buffer).
+  std::vector<EmitPush> pendingEmits;
   uint32_t emitSeedCounter = 1u;  // varies the rng seed per burst
 
   // ---- spoids (M5 Task 10) ----
@@ -208,6 +214,10 @@ private:
   // Read GLFW keys, run the spoid controller, and convert emit triggers into
   // droplet bursts. Called once per frame from render().
   void updateSpoids();
+  // Lay the spoids out evenly on a circle in the X-Z plane (n-way split).
+  // Called whenever a spoid is added/removed so they stay arranged; heights (y)
+  // are preserved so the user can still raise/lower them.
+  void arrangeSpoidsCircle();
 
   // ---- debug readback (M3): print particle y min/max ~once per second ----
   // The particle SSBO participates in the compute<->graphics queue-ownership
@@ -240,7 +250,13 @@ private:
   // ---- particle SSBO ----
   static constexpr uint32_t kMaxParticles = 1u << 16;  // 65536
   uint32_t numParticles = 0;
-  // per-frame device-local SSBOs (written by compute, read as vertex buffer)
+  // Ping-pong chain: live count at the END of the previous frame == # particles
+  // the prev buffer holds. predict carries [0, prevParticleCount) from prev to
+  // cur; emit writes the freshly-spawned [prevParticleCount, numParticles).
+  uint32_t prevParticleCount = 0;
+  // per-frame device-local SSBOs (written by compute, read as vertex buffer).
+  // Stepped as a ping-pong chain (read prev, write cur) like particle.cpp, so
+  // the two in-flight buffers form ONE evolving sim (no per-buffer divergence).
   std::vector<std::unique_ptr<vgeu::VgeuBuffer>> particleBuffers;
 
   // particle debug renderer (point list)
@@ -282,7 +298,7 @@ private:
   int selectedSpoidUi = 0;    // which spoid the ImGui param sliders edit
   // Task 9: hardcoded auto-drop (a single fixed emitter) to verify the emit
   // pass before the spoid UI exists; off by default now that spoids drive it.
-  bool autoEmit = false;
+  bool autoEmit = true;  // default-on: spoids auto-drop so the scene is alive
   float autoEmitInterval = 0.6f;  // seconds between auto drops
   float autoEmitTimer = 0.f;
   // Particle pool exhaustion warning (set when a drop is rejected/clamped).

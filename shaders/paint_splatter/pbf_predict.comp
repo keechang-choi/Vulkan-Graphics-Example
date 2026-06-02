@@ -8,7 +8,15 @@ struct Particle {
   vec4 color;    // rgba paint color
 };
 
+// Ping-pong: read the PREVIOUS frame's committed state from binding 7, write
+// this frame's working buffer at binding 0. All later PBF passes (grid, lambda,
+// delta, apply, finalize) operate in place on binding 0 (cur). This makes the
+// two in-flight buffers ONE evolving chain (mirrors particle.cpp), so the
+// non-deterministic grid-scatter order can no longer fork two divergent sims.
 layout(std430, set = 0, binding = 0) buffer Particles { Particle p[]; };
+layout(std430, set = 0, binding = 7) readonly buffer ParticlesPrev {
+  Particle pprev[];
+};
 
 layout(std140, set = 0, binding = 1) uniform Ubo {
   float dt;
@@ -27,16 +35,29 @@ layout(std140, set = 0, binding = 1) uniform Ubo {
   float kPoly6;
   float kSpiky;
   float scorrDenom;
+  float velDamp;
+  float velClampFactor;
+  float solverRelax;
+  uint prevCount;  // # particles carried from the prev buffer this frame
 }
 u;
 
 void main() {
   uint i = gl_GlobalInvocationID.x;
   if (i >= u.count) return;
+  // Particles in [prevCount, count) were just spawned by emit.comp directly
+  // into the current (cur) buffer this frame, so leave them untouched here.
+  if (i >= u.prevCount) return;
+
   // PBF Algorithm 1: apply external force, predict x*. Collision + constraint
   // are resolved in the solver passes; velocity is recomputed in finalize.
   // gravity = +Y (down on screen in engine world convention).
-  vec3 v = p[i].vel.xyz + vec3(0.0, u.gravity, 0.0) * u.dt;
-  p[i].vel.xyz = v;
-  p[i].predict.xyz = p[i].pos.xyz + v * u.dt;
+  Particle src = pprev[i];
+  vec3 v = src.vel.xyz + vec3(0.0, u.gravity, 0.0) * u.dt;
+  // Carry committed position / paint colour / wetness forward; finalize will
+  // overwrite pos with the solved predict, and lambda fills predict.w.
+  p[i].pos = src.pos;
+  p[i].vel = vec4(v, src.vel.w);
+  p[i].predict = vec4(src.pos.xyz + v * u.dt, 0.0);
+  p[i].color = src.color;
 }

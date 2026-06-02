@@ -190,12 +190,13 @@ void VgeExample::createParticleBuffers() {
             VMA_ALLOCATION_CREATE_MAPPED_BIT));
   }
 
-  // Per-frame emit queues (one FIFO of pending bursts per particle buffer).
-  emitQueues.assign(MAX_CONCURRENT_FRAMES, {});
+  // Single pending-burst FIFO (one ping-pong chain).
+  pendingEmits.clear();
 
   // M5: start empty — droplets are spawned by the emit pass, not a seed block.
   // (seedParticles() remains available as an M4 dam-break debug aid.)
   numParticles = 0;
+  prevParticleCount = 0;
 }
 
 // Fill all per-frame particle SSBOs with the lattice block. Each particle gets
@@ -276,7 +277,8 @@ void VgeExample::restartSimulation() {
   // M5: clear the canvas of live fluid (emit will repopulate). The SSBO slots
   // are simply abandoned by setting the live count to 0; no reseed needed.
   numParticles = 0;
-  for (auto& q : emitQueues) q.clear();
+  prevParticleCount = 0;
+  pendingEmits.clear();
   poolFull = false;
   // Do NOT reset computeFirstUse here: unlike startup, the buffers are already
   // mid-ping-pong with a pending graphics->compute release. Skipping the next
@@ -334,10 +336,10 @@ void VgeExample::createDescriptorPool() {
   std::vector<vk::DescriptorPoolSize> poolSizes;
   poolSizes.emplace_back(vk::DescriptorType::eUniformBuffer,
                          MAX_CONCURRENT_FRAMES * 2u);
-  // Compute set: 6 storage buffers per frame (particles, cellCount, cellStart,
-  // cellOffset, sortedIds, deltaP).
+  // Compute set: 7 storage buffers per frame (particles, cellCount, cellStart,
+  // cellOffset, sortedIds, deltaP, particlesPrev for the ping-pong predict).
   poolSizes.emplace_back(vk::DescriptorType::eStorageBuffer,
-                         MAX_CONCURRENT_FRAMES * 6u);
+                         MAX_CONCURRENT_FRAMES * 7u);
   vk::DescriptorPoolCreateInfo descriptorPoolCI(
       vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
       MAX_CONCURRENT_FRAMES * 2u, poolSizes);
@@ -737,8 +739,10 @@ void VgeExample::prepareCompute() {
 
 void VgeExample::createComputeDescriptorSetLayout() {
   std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
-  // 0 particle SSBO, 1 ComputeUbo, 2 cellCount, 3 cellStart, 4 cellOffset,
-  // 5 sortedIds, 6 deltaP. All visible to every PBF compute stage.
+  // 0 particle SSBO (cur), 1 ComputeUbo, 2 cellCount, 3 cellStart,
+  // 4 cellOffset, 5 sortedIds, 6 deltaP, 7 particlesPrev (read-only, prev
+  // buffer of the ping-pong chain; used by pbf_predict). All visible to every
+  // PBF compute stage.
   layoutBindings.emplace_back(0, vk::DescriptorType::eStorageBuffer, 1,
                               vk::ShaderStageFlagBits::eCompute);
   layoutBindings.emplace_back(1, vk::DescriptorType::eUniformBuffer, 1,
@@ -747,6 +751,8 @@ void VgeExample::createComputeDescriptorSetLayout() {
     layoutBindings.emplace_back(b, vk::DescriptorType::eStorageBuffer, 1,
                                 vk::ShaderStageFlagBits::eCompute);
   }
+  layoutBindings.emplace_back(7, vk::DescriptorType::eStorageBuffer, 1,
+                              vk::ShaderStageFlagBits::eCompute);
 
   vk::DescriptorSetLayoutCreateInfo layoutCI({}, layoutBindings);
   compute.descriptorSetLayout = vk::raii::DescriptorSetLayout(device, layoutCI);
@@ -799,10 +805,10 @@ void VgeExample::createEmitPipeline() {
   compute.emit = vk::raii::Pipeline(device, pipelineCache, pipelineCI);
 }
 
-// Reserve a contiguous slot range from the shared host live count and enqueue
-// the same burst to every per-frame buffer. baseIndex is computed once here so
-// both independent-but-identical sims write the same particle into the same
-// slot when each drains its queue. Append-only (no compaction until M6).
+// Reserve a contiguous slot range from the single global live count and enqueue
+// one burst. With the ping-pong chain there is ONE evolving sim, so the burst
+// is queued once (not per buffer) and drained into the current buffer; the
+// predict pass then carries it forward. Append-only (no compaction until M6).
 void VgeExample::enqueueDrop(const glm::vec3& origin, float holeRadius,
                              const glm::vec3& color, float emissionVel,
                              float concentration, int amount) {
@@ -816,22 +822,20 @@ void VgeExample::enqueueDrop(const glm::vec3& origin, float holeRadius,
   uint32_t count = std::min(want, avail);
   if (count < want) poolFull = true;
 
-  // Spawn on a JITTERED LATTICE at ~rest density, not random-in-a-ball. A
-  // regular grid + small jitter guarantees a minimum particle separation, so no
-  // two particles land on top of each other -- random sampling occasionally
-  // clumps pairs, and those overlaps pop apart on the first solve (spawn
-  // "explosion"). The shader lays `count` particles on a cube lattice of side
-  // `ceil(cbrt(count))` at this spacing; holeRadius widens the spacing (a
-  // bigger hole => a bigger, sparser drop) but never below the rest spacing.
-  const int side = std::max(
-      1, static_cast<int>(std::ceil(std::cbrt(static_cast<float>(count)))));
+  // Spawn uniformly inside a 3D ball sized so `count` particles sit at ~rest
+  // density (radius = cbrt(3*count*spacing^3 / 4pi)); holeRadius is a lower
+  // bound (a bigger hole => at least that wide). Sizing the volume to rest
+  // density is what prevents the "spawn explosion": a too-small ball over-packs
+  // the blob and the density solve blasts it apart on the first step.
   const float restSpacing = kParticleSpacing;
-  const float wantSpacing = (2.f * holeRadius) / static_cast<float>(side);
-  const float spacing = std::max(restSpacing, wantSpacing);
+  const float restBallR =
+      std::cbrt(3.f * static_cast<float>(count) * restSpacing * restSpacing *
+                restSpacing / (4.f * glm::pi<float>()));
+  const float radius = std::max(holeRadius, restBallR);
 
   EmitPush push{};
-  // originRadius.w now carries the lattice spacing (see emit.comp).
-  push.originRadius = glm::vec4(origin, spacing);
+  // originRadius.w carries the spawn ball radius (see emit.comp ball sampling).
+  push.originRadius = glm::vec4(origin, radius);
   // Initial velocity is downward toward the floor (+Y in this engine's world).
   push.velConc = glm::vec4(0.f, emissionVel, 0.f, concentration);
   push.color = glm::vec4(color, 0.f);
@@ -841,28 +845,29 @@ void VgeExample::enqueueDrop(const glm::vec3& origin, float holeRadius,
   push._pad = 0u;
 
   numParticles += count;
-  for (auto& q : emitQueues) q.push_back(push);
+  pendingEmits.push_back(push);
 }
 
-// Drain this buffer's pending bursts: one emit dispatch per burst, each writing
-// into its reserved [baseIndex, baseIndex+count) slot range. Runs before the
-// PBF solver so predict/grid see the new particles this same frame.
+// Drain the pending bursts into the CURRENT buffer (ping-pong chain): one emit
+// dispatch per burst, each writing its reserved [baseIndex, baseIndex+count)
+// slot range. Runs before predict so the solver sees the new particles this
+// frame; predict skips these slots (i >= prevCount) and carries the rest from
+// the prev buffer. Drained once per frame -- the chain propagates them onward.
 void VgeExample::recordEmit(const vk::raii::CommandBuffer& cmd,
                             uint32_t frame) {
-  auto& queue = emitQueues[frame];
-  if (queue.empty()) return;
+  if (pendingEmits.empty()) return;
   // Bind the particle SSBO via the emit layout (its push-constant range makes
   // it a distinct, incompatible layout from the PBF passes' layout).
   cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
                          *compute.emitPipelineLayout, 0,
                          *compute.descriptorSets[frame], nullptr);
   cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *compute.emit);
-  for (const EmitPush& push : queue) {
+  for (const EmitPush& push : pendingEmits) {
     cmd.pushConstants<EmitPush>(*compute.emitPipelineLayout,
                                 vk::ShaderStageFlagBits::eCompute, 0, push);
     cmd.dispatch((push.count + 255u) / 256u, 1, 1);
   }
-  queue.clear();
+  pendingEmits.clear();
   // emit (shader write) -> predict (shader read/write) barrier.
   vk::MemoryBarrier mb(
       vk::AccessFlagBits::eShaderWrite,
@@ -911,6 +916,27 @@ void VgeExample::updateSpoids() {
   }
 }
 
+// Arrange the spoids evenly on a circle in the X-Z plane (n-way angular split).
+// A single spoid sits at the centre; >=2 spread around a circle whose radius
+// fits inside the domain. Heights (pos.y) are preserved so vertical keyboard
+// control still works.
+void VgeExample::arrangeSpoidsCircle() {
+  const int n = static_cast<int>(spoids.size());
+  if (n == 0) return;
+  if (n == 1) {
+    spoids[0].pos.x = 0.f;
+    spoids[0].pos.z = 0.f;
+    return;
+  }
+  const float radius = kDomainHalf * 0.6f;  // inside the domain walls
+  for (int i = 0; i < n; i++) {
+    const float ang =
+        glm::two_pi<float>() * static_cast<float>(i) / static_cast<float>(n);
+    spoids[i].pos.x = radius * std::cos(ang);
+    spoids[i].pos.z = radius * std::sin(ang);
+  }
+}
+
 void VgeExample::createComputeDescriptorSets() {
   vk::DescriptorSetAllocateInfo allocInfo(*descriptorPool,
                                           *compute.descriptorSetLayout);
@@ -921,8 +947,16 @@ void VgeExample::createComputeDescriptorSets() {
   }
 
   for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    // Ping-pong: binding 0 = this frame's buffer (cur, written), binding 7 =
+    // the previous frame's buffer (prev, read by pbf_predict). Mirrors
+    // particle.cpp:252-261 (prevFrameIdx -> in, i -> out).
+    const uint32_t prevIdx =
+        (i + MAX_CONCURRENT_FRAMES - 1u) % MAX_CONCURRENT_FRAMES;
     vk::DescriptorBufferInfo ssboInfo(particleBuffers[i]->getBuffer(), 0,
                                       particleBuffers[i]->getBufferSize());
+    vk::DescriptorBufferInfo prevInfo(
+        particleBuffers[prevIdx]->getBuffer(), 0,
+        particleBuffers[prevIdx]->getBufferSize());
     vk::DescriptorBufferInfo uboInfo =
         compute.uniformBuffers[i]->descriptorInfo();
     vk::DescriptorBufferInfo cellCountInfo(
@@ -939,7 +973,7 @@ void VgeExample::createComputeDescriptorSets() {
     vk::DescriptorBufferInfo deltaInfo(deltaPBuffers[i]->getBuffer(), 0,
                                        deltaPBuffers[i]->getBufferSize());
 
-    std::array<vk::WriteDescriptorSet, 7> writes{
+    std::array<vk::WriteDescriptorSet, 8> writes{
         vk::WriteDescriptorSet(*compute.descriptorSets[i], 0, 0,
                                vk::DescriptorType::eStorageBuffer, nullptr,
                                ssboInfo),
@@ -961,6 +995,9 @@ void VgeExample::createComputeDescriptorSets() {
         vk::WriteDescriptorSet(*compute.descriptorSets[i], 6, 0,
                                vk::DescriptorType::eStorageBuffer, nullptr,
                                deltaInfo),
+        vk::WriteDescriptorSet(*compute.descriptorSets[i], 7, 0,
+                               vk::DescriptorType::eStorageBuffer, nullptr,
+                               prevInfo),
     };
     device.updateDescriptorSets(writes, nullptr);
   }
@@ -987,6 +1024,9 @@ void VgeExample::updateComputeUbo() {
   int sub = std::max(1, substeps);
   compute.ubo.dt = frameDt / static_cast<float>(sub);
   compute.ubo.particleCount = numParticles;
+  // Ping-pong: predict carries [0, prevCount) from the prev buffer; emit wrote
+  // the freshly-spawned [prevCount, numParticles) into cur this frame.
+  compute.ubo.prevCount = prevParticleCount;
   compute.ubo.gravity = gravity;
   // Fluid domain box (collision walls): the full canvas footprint in x,z.
   compute.ubo.canvasMin =
@@ -1240,6 +1280,11 @@ void VgeExample::buildComputeCommandBuffers() {
   }
 
   compute.cmdBuffers[currentFrameIndex].end();
+
+  // The current buffer now holds the full live state [0, numParticles). Next
+  // frame it becomes the prev buffer, so its live count is what predict must
+  // carry forward (ping-pong chain).
+  prevParticleCount = numParticles;
 }
 
 // One PBF substep: predict -> build neighbor grid -> {lambda, delta, apply} x
@@ -1478,16 +1523,16 @@ void VgeExample::onUpdateUIOverlay() {
       if (uiOverlay->button("+ Add spoid") && spoids.size() < kMaxSpoids) {
         Spoid s{};
         s.color = spoidPalette(static_cast<int>(spoids.size()));
-        // Offset new spoids so they don't stack on the existing one.
-        s.pos.x = glm::clamp(-0.8f + 0.4f * static_cast<float>(spoids.size()),
-                             -kDomainHalf + 0.1f, kDomainHalf - 0.1f);
         spoids.push_back(s);
+        // Re-spread all spoids evenly on a circle in the X-Z plane.
+        arrangeSpoidsCircle();
       }
       if (uiOverlay->button("- Remove spoid") && spoids.size() > 1) {
         spoids.pop_back();
         if (selectedSpoidUi >= static_cast<int>(spoids.size())) {
           selectedSpoidUi = static_cast<int>(spoids.size()) - 1;
         }
+        arrangeSpoidsCircle();
       }
 
       if (selectedSpoidUi >= 0 &&
