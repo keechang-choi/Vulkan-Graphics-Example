@@ -391,6 +391,91 @@ an impact-time momentum-redistribution heuristic (convert floor-normal velocity
 into radial v.xz on contact). Recorded in design spec §6. Deferred to a tuning
 milestone after M6 (deposition).
 
+그리고 이런 파이프라인으로 렌더까지 이어지게 할 수 있는지도 검토 필요.
+네가 처음 이야기한
+
+종이에 떨어진 물방울
+
+은 사실 일반 물 렌더링과 다르다.
+
+중요한 건
+
+얇은 액체막
++
+젖은 종이
+
+이다.
+
+그래서 나는 오히려
+
+PBF↓
+Surface Thickness Texture↓
+Wetness Map↓
+Paper Shader
+
+를 추천한다.
+
+물방울이 살아있는 동안만 PBF를 쓰고
+
+충돌 후에는
+
+wetness
+absorption
+capillary diffusion
+
+로 넘어가는 구조.
+
+실제로 네가 언리얼이나 Vulkan에서 직접 만든다면 현재 그래픽스 업계에서 가장 흔한 구조는:
+
+PBF / FLIP Particles↓
+Particle Depth Rendering↓
+Gaussian Blur↓
+Normal Reconstruction↓
+Thickness Buffer↓
+Fresnel↓
+Screen Space Refraction↓
+Final Composite
+
+이다.
+
+오프라인 VFX는 "메쉬 생성 후 렌더", 실시간은 "스크린 스페이스 유체 렌더링"이라고 생각하면 거의 맞다. 특히 작은 물방울 수천~수만 개를 실시간으로 다룰 때는 메쉬 생성 비용 때문에 스크린 스페이스 접근이 훨씬 많이 사용된다.
+
+## M6-C-2 — Compaction design (blueprint, implementing next)
+Goal: remove dried-out particles (pos.w<=0) so the live count stays bounded; the
+"droplet absorbed into the canvas and gone" behaviour. The hard part: the live
+count becomes a GPU-dynamic value, but the solver currently dispatches/guards on
+the host's fixed `numParticles`. Chosen design (ping-pong-compatible):
+
+- **`liveCountBuffers[frame]`**: a `uint[1]` storage buffer, compute set binding
+  9. Reset to 0 (vkCmdFillBuffer) at the top of each frame's compute cmd buffer.
+- **predict becomes the compaction step.** Dispatch `prevCount` threads
+  (`ComputeUbo.prevCount` = host's previous live count, readback-delayed one
+  frame). Each: `if (i>=prevCount) return; Particle s=pprev[i]; if (s.pos.w<=0)
+  return;` (drop dead) `uint d=atomicAdd(liveCount,1); ...; p[d]=integrated(s);`.
+  So cur is packed [0,liveCount) with only survivors, carried from prev.
+- **emit appends after predict via the same atomic.** Each spawned particle:
+  `uint d=atomicAdd(liveCount,1); if (d>=kMax) return; p[d]=spawn;`. No host
+  baseIndex anymore (the host counter can't know the post-compaction index).
+- **All other passes guard on `liveCount[0]`, not `u.count`.** grid_count,
+  grid_scatter, pbf_lambda/delta/apply, pbf_finalize, deposit read binding 9 and
+  `if (gid >= liveCount[0]) return;`. They are dispatched on a host UPPER BOUND
+  (prevCount + emittedThisFrame, <= kMax); the guard trims the slack. grid_scan
+  is unchanged (works over numCells).
+- **Host**: `numParticles` stops being the exact count and becomes the dispatch
+  upper bound; a one-frame-delayed readback of `liveCount` gives the real count
+  for ImGui, pool-full checks, and next frame's `prevCount`. Reuse the existing
+  in-graphics-cmd readback pattern (a tiny uint copy) to avoid breaking the QFOT
+  ping-pong.
+- Barriers: fill(0)->predict (transfer->compute), predict->emit, emit->grid, as
+  today; liveCount is written by predict+emit (atomic) and read by every later
+  pass, so a compute->compute barrier already covers it.
+
+Risk notes: predict's atomicAdd reorders particles (intra-frame nondeterminism)
+but that's fine now — ping-pong made it ONE chain, so reordering doesn't fork two
+sims. dispatch upper bound must never under-count (would drop live particles), so
+host tracks prevCount conservatively (use last readback; on the very first frames
+liveCount=0).
+
 ### Reference for a future hybrid direction (not implemented)
 Chentanez, Müller, Kim, *Coupling 3D Eulerian, Heightfield and Particle Methods*
 (SCA 2014) — couples PBF/SPH particles + a 3D Eulerian grid + an SWE height
