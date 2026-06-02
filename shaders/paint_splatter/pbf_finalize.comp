@@ -28,6 +28,11 @@ layout(std140, set = 0, binding = 1) uniform Ubo {
   float scorrDenom;
   float velDamp;
   float velClampFactor;
+  float solverRelax;
+  uint prevCount;
+  float dryRate;
+  float depositStrength;
+  float depositHeight;
 }
 u;
 layout(std430, set = 0, binding = 3) buffer CellStart { uint cellStart[]; };
@@ -90,4 +95,12 @@ void main() {
   p[i].vel.xyz = vi;
   p[i].vel.w = rho / u.rho0;  // density ratio (debug visualization)
   p[i].pos.xyz = xi;
+  // Drying (M6): a particle near the floor spends its wetness (pos.w, =1 at
+  // emit) while it deposits. When wetness hits 0 it has given up all its paint
+  // and is "absorbed" -- removed later by compaction (M6-C-2). deposit.comp
+  // stops stamping once pos.w <= 0, so the mark stops darkening (concentration
+  // effect: alpha-over accumulates only while wet).
+  if (xi.y >= -u.depositHeight && p[i].pos.w > 0.0) {
+    p[i].pos.w = max(0.0, p[i].pos.w - u.dryRate * u.dt);
+  }
 }

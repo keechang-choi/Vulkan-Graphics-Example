@@ -50,6 +50,9 @@ void main() {
   // Floor is the X-Z plane at y=0; particles approach from below (y<0). Deposit
   // only when within depositHeight of the floor.
   if (x.y < -u.depositHeight) return;
+  // pos.w = wetness (M6). A dried-out particle has spent its paint -> stop
+  // stamping (this is what bounds how dark a mark gets).
+  if (p[i].pos.w <= 0.0) return;
 
   // World (x,z) -> canvas UV in [0,1] over the domain footprint.
   vec2 uv = vec2((x.x - u.cmin.x) / (u.cmax.x - u.cmin.x),

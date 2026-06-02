@@ -281,6 +281,17 @@ void VgeExample::restartSimulation() {
   prevParticleCount = 0;
   pendingEmits.clear();
   poolFull = false;
+  // Clear the painting back to blank white paper (canvas stays in GENERAL).
+  {
+    vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0,
+                                    1);
+    vgeu::oneTimeSubmit(
+        device, commandPool, queue, [&](const vk::raii::CommandBuffer& cmd) {
+          vk::ClearColorValue white(std::array<float, 4>{1.f, 1.f, 1.f, 1.f});
+          cmd.clearColorImage(canvasImage->getImage(),
+                              vk::ImageLayout::eGeneral, white, range);
+        });
+  }
   // Do NOT reset computeFirstUse here: unlike startup, the buffers are already
   // mid-ping-pong with a pending graphics->compute release. Skipping the next
   // compute acquire would leave that release unconsumed and the following
