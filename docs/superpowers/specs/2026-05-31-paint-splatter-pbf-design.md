@@ -196,6 +196,22 @@ SpoidController → Spoid[] (positions, emit triggers)
 - **Phase 2 (follow-up spec)**: continuous stream emission (B),
   `PendulumSpoidController`, top-down view toggle, optional watercolor bleed
   (deposition method C / subtractive mixing).
+- **KNOWN LIMITATION — crown splash / satellite droplets are weak (needs future
+  work).** Phase 1 acceptance calls for an impacting droplet to splash with
+  visible satellite droplets (a radial crown), but the current PBF-only solver
+  does not produce a convincing crown. Root tension: the stability fix that
+  removed the "close-encounter explosion" (`kParticleSpacing = 0.005`, which
+  drives `rho/rho0 ≈ 0` and effectively disables the compression-only density
+  constraint) is exactly what a crown needs — strong incompressible rebound at
+  impact to throw a radial sheet upward. With the constraint off, impacting
+  particles just stop/pass at the floor. A real crown additionally wants higher
+  particle resolution, higher emission velocity, and lower `velDamp`. **No new
+  theory is strictly required** (PBF + surface tension + collision is enough in
+  principle), but a dedicated splash-tuning pass is needed — restore partial
+  incompressibility (mid `spacing` + `velClamp`/Δp-clamp to bound the pop) and/or
+  add an impact-time momentum-redistribution heuristic (convert part of the
+  floor-normal velocity into radial velocity on contact). Deferred to a tuning
+  milestone after deposition (M6).
 - **Phase 3 candidate (research, not committed)**: hybrid particle + grid +
   height-field coupling à la Chentanez, Müller & Kim 2014 (`hybridsim`). The
   PBF-only solver cannot make a sparse spread of particles reach rest density

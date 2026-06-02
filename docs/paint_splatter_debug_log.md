@@ -376,6 +376,21 @@ it go away. Confirmed and reasoned out:
   Note emit lattice spacing = max(restSpacing, 2*holeRadius/side), so droplet
   size still follows holeRadius; restSpacing only sets rho0 / the repel floor.
 
+### OPEN ISSUE: crown splash / satellite droplets not happening (future tuning)
+User expectation: a droplet hitting the floor (or a wall) should throw up a
+radial crown + satellite droplets, which the current build does NOT do. This is
+a direct consequence of the close-encounter fix above: `kParticleSpacing=0.005`
+makes `rho/rho0≈0` so the compression-only density constraint is effectively
+off, and a crown needs the opposite — strong incompressible rebound at impact to
+launch a radial sheet. So stability (no pop) and crown expressiveness are in
+tension here. No new theory is strictly required (PBF + scorr + collision can
+produce it in principle), but a dedicated splash-tuning pass is needed: restore
+partial incompressibility (mid spacing ~0.02 + velClamp/Δp-clamp to bound the
+pop) + higher emissionVelocity + lower velDamp + more particle resolution, and/or
+an impact-time momentum-redistribution heuristic (convert floor-normal velocity
+into radial v.xz on contact). Recorded in design spec §6. Deferred to a tuning
+milestone after M6 (deposition).
+
 ### Reference for a future hybrid direction (not implemented)
 Chentanez, Müller, Kim, *Coupling 3D Eulerian, Heightfield and Particle Methods*
 (SCA 2014) — couples PBF/SPH particles + a 3D Eulerian grid + an SWE height
