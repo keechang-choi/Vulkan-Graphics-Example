@@ -1010,17 +1010,19 @@ void VgeExample::updateSpoids() {
 void VgeExample::arrangeSpoidsCircle() {
   const int n = static_cast<int>(spoids.size());
   if (n == 0) return;
+  // Re-level every spoid to the default spawn height (y) too, so
+  // adding/removing a spoid resets the whole set to a clean starting layout.
+  const float y = -2.5f;  // matches Spoid::pos default
   if (n == 1) {
-    spoids[0].pos.x = 0.f;
-    spoids[0].pos.z = 0.f;
+    spoids[0].pos = glm::vec3(0.f, y, 0.f);
     return;
   }
   const float radius = kDomainHalf * 0.3f;  // compact circle near the centre
   for (int i = 0; i < n; i++) {
     const float ang =
         glm::two_pi<float>() * static_cast<float>(i) / static_cast<float>(n);
-    spoids[i].pos.x = radius * std::cos(ang);
-    spoids[i].pos.z = radius * std::sin(ang);
+    spoids[i].pos =
+        glm::vec3(radius * std::cos(ang), y, radius * std::sin(ang));
   }
 }
 
@@ -1646,10 +1648,17 @@ void VgeExample::onUpdateUIOverlay() {
       }
 
       if (uiOverlay->button("+ Add spoid") && spoids.size() < kMaxSpoids) {
-        Spoid s{};
+        // Inherit the currently-edited spoid's params (amount, holeRadius, ...)
+        // so a freshly added spoid matches your latest tuning; only the colour
+        // is assigned fresh from the palette.
+        Spoid s = (selectedSpoidUi >= 0 &&
+                   selectedSpoidUi < static_cast<int>(spoids.size()))
+                      ? spoids[selectedSpoidUi]
+                      : Spoid{};
         s.color = spoidPalette(static_cast<int>(spoids.size()));
+        s.selected = true;
         spoids.push_back(s);
-        // Re-spread all spoids evenly on a circle in the X-Z plane.
+        // Re-spread all spoids evenly on a circle in the X-Z plane (+ reset y).
         arrangeSpoidsCircle();
       }
       if (uiOverlay->button("- Remove spoid") && spoids.size() > 1) {
@@ -1667,7 +1676,7 @@ void VgeExample::onUpdateUIOverlay() {
         ImGui::Text("Editing spoid #%d", selectedSpoidUi);
         ImGui::SliderFloat("hole radius", &s.holeRadius, 0.02f, 0.5f);
         ImGui::SliderFloat("emission vel", &s.emissionVelocity, 0.f, 8.f);
-        ImGui::SliderInt("amount", &s.amount, 10, 2000);
+        ImGui::SliderInt("amount", &s.amount, 0, 2000);
         ImGui::SliderFloat("concentration", &s.concentration, 0.f, 1.f);
         ImGui::ColorEdit3("color", &s.color.x);
       }
@@ -1694,6 +1703,16 @@ void VgeExample::onUpdateUIOverlay() {
       ImGui::SliderFloat("vel damping", &velDamp, 0.f, 20.f);
       ImGui::SliderFloat("vel clamp (CFL, 0=off)", &velClampFactor, 0.f, 0.5f);
       ImGui::Checkbox("color by density", &colorByDensity);
+    }
+
+    // --- Canvas deposit (M6) ---
+    if (ImGui::CollapsingHeader("Canvas deposit",
+                                ImGuiTreeNodeFlags_DefaultOpen)) {
+      // Stamp alpha = concentration * depositStrength. Raise depositStrength
+      // (or depositHeight to catch more particles) if marks look too faint.
+      ImGui::SliderFloat("deposit strength", &depositStrength, 0.f, 1.f);
+      ImGui::SliderFloat("dry rate (/s)", &dryRate, 0.f, 5.f);
+      ImGui::SliderFloat("deposit height", &depositHeight, 0.01f, 0.5f);
     }
 
     if (uiOverlay->button("Save (no-op)")) {
