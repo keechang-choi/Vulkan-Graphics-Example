@@ -4,8 +4,8 @@ layout(location = 0) in vec2 vUv;
 
 layout(location = 0) out vec4 outColor;
 
-void main() {
-  vec2 g = step(0.5, fract(vUv * 8.0));
-  float c = abs(g.x - g.y);
-  outColor = vec4(mix(vec3(0.85), vec3(0.25), c), 1.0);
-}
+// Canvas accumulation texture (M6): the permanent painting, written by the
+// deposit compute pass and sampled here. Bound in GENERAL layout.
+layout(set = 0, binding = 1) uniform sampler2D canvasTex;
+
+void main() { outColor = texture(canvasTex, vUv); }

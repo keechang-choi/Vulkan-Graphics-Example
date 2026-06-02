@@ -81,6 +81,7 @@ void VgeExample::prepare() {
   createParticleBuffers();
   createMarkerBuffers();
   createUniformBuffers();
+  createCanvasImage();
   createDescriptorSetLayout();
   createDescriptorPool();
   createDescriptorSets();
@@ -303,6 +304,49 @@ void VgeExample::createMarkerBuffers() {
   }
 }
 
+// Canvas accumulation texture (M6): a single RGBA8 image, the permanent
+// painting. Created in GENERAL layout (valid for both the compute imageStore in
+// M6-B and the fragment sample) and cleared to opaque white (blank paper).
+void VgeExample::createCanvasImage() {
+  vk::Extent2D extent(kCanvasTexRes, kCanvasTexRes);
+  canvasImage = std::make_unique<vgeu::VgeuImage>(
+      device, globalAllocator->getAllocator(), vk::Format::eR8G8B8A8Unorm,
+      extent, vk::ImageTiling::eOptimal,
+      vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled |
+          vk::ImageUsageFlagBits::eTransferDst |
+          vk::ImageUsageFlagBits::eTransferSrc,
+      vk::ImageLayout::eUndefined, VMA_MEMORY_USAGE_AUTO,
+      VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
+      vk::ImageAspectFlagBits::eColor, 1);
+
+  canvasSampler = vk::raii::Sampler(
+      device,
+      vk::SamplerCreateInfo({}, vk::Filter::eLinear, vk::Filter::eLinear,
+                            vk::SamplerMipmapMode::eNearest,
+                            vk::SamplerAddressMode::eClampToEdge,
+                            vk::SamplerAddressMode::eClampToEdge,
+                            vk::SamplerAddressMode::eClampToEdge, 0.f, false,
+                            1.f, false, vk::CompareOp::eAlways, 0.f, 0.f,
+                            vk::BorderColor::eFloatOpaqueWhite, false));
+
+  // Undefined -> General, then clear to opaque white (blank canvas).
+  vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+  vgeu::oneTimeSubmit(
+      device, commandPool, queue, [&](const vk::raii::CommandBuffer& cmd) {
+        vk::ImageMemoryBarrier toGeneral(
+            vk::AccessFlags{}, vk::AccessFlagBits::eTransferWrite,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral,
+            VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+            canvasImage->getImage(), range);
+        cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                            vk::PipelineStageFlagBits::eTransfer,
+                            vk::DependencyFlags{}, nullptr, nullptr, toGeneral);
+        vk::ClearColorValue white(std::array<float, 4>{1.f, 1.f, 1.f, 1.f});
+        cmd.clearColorImage(canvasImage->getImage(), vk::ImageLayout::eGeneral,
+                            white, range);
+      });
+}
+
 void VgeExample::createUniformBuffers() {
   uniformBuffers.reserve(MAX_CONCURRENT_FRAMES);
   for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
@@ -319,10 +363,17 @@ void VgeExample::createUniformBuffers() {
 
 void VgeExample::createDescriptorSetLayout() {
   // set=0, binding=0: GlobalUbo (vertex stage)
-  vk::DescriptorSetLayoutBinding layoutBinding(
-      0, vk::DescriptorType::eUniformBuffer, 1,
-      vk::ShaderStageFlagBits::eVertex);
-  vk::DescriptorSetLayoutCreateInfo layoutCI({}, 1, &layoutBinding);
+  // set=0, binding=1: canvas accumulation texture (fragment stage, sampled by
+  // canvas.frag). The particle/marker pipelines share this layout but don't
+  // read binding 1 (a bound-but-unused sampler is valid).
+  std::array<vk::DescriptorSetLayoutBinding, 2> bindings{
+      vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eUniformBuffer, 1,
+                                     vk::ShaderStageFlagBits::eVertex),
+      vk::DescriptorSetLayoutBinding(1,
+                                     vk::DescriptorType::eCombinedImageSampler,
+                                     1, vk::ShaderStageFlagBits::eFragment),
+  };
+  vk::DescriptorSetLayoutCreateInfo layoutCI({}, bindings);
   descriptorSetLayout = vk::raii::DescriptorSetLayout(device, layoutCI);
 
   vk::PipelineLayoutCreateInfo pipelineLayoutCI({}, *descriptorSetLayout);
@@ -340,6 +391,9 @@ void VgeExample::createDescriptorPool() {
   // cellOffset, sortedIds, deltaP, particlesPrev for the ping-pong predict).
   poolSizes.emplace_back(vk::DescriptorType::eStorageBuffer,
                          MAX_CONCURRENT_FRAMES * 7u);
+  // Canvas texture sampler (one per graphics descriptor set).
+  poolSizes.emplace_back(vk::DescriptorType::eCombinedImageSampler,
+                         MAX_CONCURRENT_FRAMES);
   vk::DescriptorPoolCreateInfo descriptorPoolCI(
       vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
       MAX_CONCURRENT_FRAMES * 2u, poolSizes);
@@ -357,14 +411,23 @@ void VgeExample::createDescriptorSets() {
 
   std::vector<vk::DescriptorBufferInfo> bufferInfos;
   bufferInfos.reserve(uniformBuffers.size());
+  // The canvas image is sampled in GENERAL layout (it's also a compute storage
+  // image in M6-B); descriptorImageInfo is stable so build it once per set.
+  std::vector<vk::DescriptorImageInfo> imageInfos;
+  imageInfos.reserve(uniformBuffers.size());
   std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
-  writeDescriptorSets.reserve(uniformBuffers.size());
+  writeDescriptorSets.reserve(uniformBuffers.size() * 2u);
 
   for (uint32_t i = 0; i < static_cast<uint32_t>(uniformBuffers.size()); i++) {
     bufferInfos.push_back(uniformBuffers[i]->descriptorInfo());
     writeDescriptorSets.emplace_back(*descriptorSets[i], 0, 0,
                                      vk::DescriptorType::eUniformBuffer,
                                      nullptr, bufferInfos.back());
+    imageInfos.push_back(canvasImage->descriptorImageInfo(
+        *canvasSampler, vk::ImageLayout::eGeneral));
+    writeDescriptorSets.emplace_back(*descriptorSets[i], 1, 0,
+                                     vk::DescriptorType::eCombinedImageSampler,
+                                     imageInfos.back());
   }
   device.updateDescriptorSets(writeDescriptorSets, nullptr);
 }

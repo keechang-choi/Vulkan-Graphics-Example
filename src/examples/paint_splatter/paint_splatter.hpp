@@ -72,9 +72,9 @@ struct ComputeUbo {
   float velClampFactor;    // -- 104 -- CFL cap: maxSpeed = factor * h / dt
   float solverRelax;       // -- 108 -- Jacobi under-relaxation factor (0..1)
   uint32_t prevCount;      // -- 112 -- ping-pong: # particles carried from prev
-  uint32_t _pad1;          // -- 116 --
-  uint32_t _pad2;          // -- 120 --
-  uint32_t _pad3;          // -- 124 --
+  float dryRate;           // -- 116 -- wetness lost/sec while depositing (M6)
+  float depositStrength;   // -- 120 -- stamp alpha = concentration*this (M6)
+  float depositHeight;     // -- 124 -- deposit when pos.y >= -this (near floor)
   // -- 128 --
 };
 static_assert(sizeof(ComputeUbo) == 128, "ComputeUbo std140 size");
@@ -245,6 +245,20 @@ private:
 
   // pipeline (canvas quad)
   vk::raii::Pipeline pipeline = nullptr;
+
+  // ---- canvas accumulation texture (M6) ----
+  // Single RGBA8 image (the permanent painting): written by the deposit compute
+  // pass (M6-B) and sampled by canvas.frag. Kept in GENERAL layout so both the
+  // compute imageStore and the fragment sample are valid without per-use layout
+  // transitions.
+  void createCanvasImage();
+  std::unique_ptr<vgeu::VgeuImage> canvasImage;
+  vk::raii::Sampler canvasSampler = nullptr;
+  static constexpr uint32_t kCanvasTexRes = 2048;
+  // deposit params (M6-B); live in ComputeUbo pads.
+  float dryRate = 0.5f;          // wetness lost per second while depositing
+  float depositStrength = 0.5f;  // stamp alpha = concentration * this
+  float depositHeight = 0.08f;   // deposit when pos.y >= -this (near floor y=0)
 
   // ---- particle SSBO ----
   static constexpr uint32_t kMaxParticles = 1u << 16;  // 65536
