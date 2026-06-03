@@ -14,6 +14,7 @@ C++ (Vulkan-hpp RAII), CMake, MinGW-w64 환경에서 개발되었으며 Windows 
 | 5 | [pbd](../src/examples/pbd) | CPU PBD, Soft Body, Spatial Hash, 다중 시나리오 | [05_pbd.md](05_pbd.md) |
 | 6 | [cloth](../src/examples/cloth) | GPU PBD Cloth, Jacobi/Gauss-Seidel, Geometry Shader | [06_cloth.md](06_cloth.md) |
 | 7 | [deferred](../src/examples/deferred) | Deferred Shading, G-Buffer MRT, 다중 조명 | [07_deferred.md](07_deferred.md) |
+| 8 | [paint_splatter](../src/examples/paint_splatter) | GPU PBF 유체, 물감 퇴적/건조, 스포이드 분사(응집·크라운·연속 stream) | [09_paint_splatter.md](09_paint_splatter.md) |
 
 ## 공통 기반 구조 (`src/base/`)
 
@@ -37,7 +38,8 @@ triangle
         └─► animation (스키닝 + Dynamic UBO)
               ├─► particle (Compute + GPU 스키닝)
               ├─► pbd (CPU 물리 + 다중 시뮬레이션)
-              └─► cloth (GPU PBD + Geometry Shader)
+              ├─► cloth (GPU PBD + Geometry Shader)
+              └─► paint_splatter (GPU PBF 유체 + 물감 퇴적)
 
 deferred (독립적 렌더링 기법 — MRT + 조명)
 ```
