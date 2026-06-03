@@ -26,6 +26,16 @@ layout(std140, set = 0, binding = 1) uniform Ubo {
   float kPoly6;
   float kSpiky;
   float scorrDenom;
+  float velDamp;
+  float velClampFactor;
+  float solverRelax;
+  uint prevCount;
+  float dryRate;
+  float depositStrength;
+  float depositHeight;
+  float depositRadius;
+  float drySettle;
+  float cohesionFloor;  // -- 136 --
 }
 u;
 layout(std430, set = 0, binding = 3) buffer CellStart { uint cellStart[]; };
@@ -87,12 +97,13 @@ void main() {
       }
 
   sumGradC2 += dot(gradCi, gradCi);
-  // Compression-only constraint (standard for free-surface / sparse PBF):
-  // C = max(rho/rho0 - 1, 0). Under-dense particles (the sub-monolayer spread
-  // over the large canvas) then get NO density correction instead of being
-  // perpetually yanked together, which was the source of the velocity-feedback
-  // explosion. Droplet cohesion comes from scorr (surface tension), its proper
-  // role -- not from the density constraint pulling under-dense particles in.
-  float C = max(rho * invRho0 - 1.0, 0.0);
+  // Bounded signed constraint (M8): allow a BOUNDED negative C so under-dense
+  // (stretched) particles are pulled back toward rest density = in-flight
+  // cohesion, while the -cohesionFloor clamp caps the attractive pull so a
+  // perpetually under-dense sub-monolayer cannot run away (the M4 explosion).
+  // cohesionFloor==0 reduces to the old compression-only behaviour (no
+  // cohesion). Over-dense (C>0) still repels -> incompressible impact rebound
+  // (crown). scorr (surface tension) stays a secondary surface-sharpening term.
+  float C = max(rho * invRho0 - 1.0, -u.cohesionFloor);
   p[i].predict.w = -C / (sumGradC2 + u.epsCFM);
 }

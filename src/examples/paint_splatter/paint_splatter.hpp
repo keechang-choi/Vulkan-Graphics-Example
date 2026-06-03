@@ -78,9 +78,11 @@ struct ComputeUbo {
   float depositStrength;   // -- 120 -- stamp alpha = concentration*this (M6)
   float depositHeight;     // -- 124 -- deposit when pos.y >= -this (near floor)
   float depositRadius;     // -- 128 -- canvas stamp radius in WORLD units (M6)
-  float drySettle;  // -- 132 -- 0..1: how much drying freezes motion (M6)
-  float pad0;       // -- 136 --
-  float pad1;       // -- 140 --
+  float drySettle;      // -- 132 -- 0..1: how much drying freezes motion (M6)
+  float cohesionFloor;  // -- 136 -- bounded signed constraint: C = max(rho/rho0
+                        // -1, -cohesionFloor). 0 = compression-only (no
+                        // cohesion); ~0.3-0.5 = cohesive droplet (M8)
+  float pad1;           // -- 140 --
   // -- 144 --
 };
 static_assert(sizeof(ComputeUbo) == 144, "ComputeUbo std140 size");
@@ -439,8 +441,13 @@ private:
   // made rho0 ~8e6 >> a droplet's actual density -> both density pressure and
   // scorr evaluated to ~0 -> no cohesion, no crown (see the M8 design spec).
   static constexpr float kParticleSpacing = 0.05f;
-  float rho0 = 0.f;           // computed from the rest lattice in prepare()
-  float epsCFM = 100.f;       // CFM relaxation
+  float rho0 = 0.f;      // computed from the rest lattice in prepare()
+  float epsCFM = 100.f;  // CFM relaxation
+  // Bounded signed density constraint (M8): under-dense particles get a bounded
+  // attractive pull (cohesion) toward rest density; the floor caps it so a
+  // sub-monolayer cannot run away (the M4 "THE big one" explosion). 0 =
+  // compression-only. This is the PRIMARY in-flight cohesion knob.
+  float cohesionFloor = 0.1f;
   float scorrK = 0.1f;        // artificial pressure strength
   float scorrDqRatio = 0.2f;  // scorrDq = ratio * h
   float scorrN = 4.f;

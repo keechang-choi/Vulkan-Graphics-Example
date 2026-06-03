@@ -884,6 +884,7 @@ void VgeExample::prepareCompute() {
   compute.ubo.gridDim = glm::ivec4(gridDim, static_cast<int>(numCells));
   compute.ubo.rho0 = rho0;
   compute.ubo.epsCFM = epsCFM;
+  compute.ubo.cohesionFloor = cohesionFloor;  // M8 bounded cohesion
   compute.ubo.scorrK = scorrK;
   compute.ubo.scorrDq = scorrDqRatio * h;
   compute.ubo.scorrN = scorrN;
@@ -1327,6 +1328,7 @@ void VgeExample::updateComputeUbo() {
   compute.ubo.depositHeight = depositHeight;
   compute.ubo.depositRadius = depositRadius;  // canvas stamp size (world units)
   compute.ubo.drySettle = drySettle;  // drying freezes near-floor motion
+  compute.ubo.cohesionFloor = cohesionFloor;  // M8: bounded cohesion pull
   {
     float dq2 = compute.ubo.scorrDq * compute.ubo.scorrDq;
     float t = compute.ubo.h * compute.ubo.h - dq2;
@@ -1370,6 +1372,9 @@ void VgeExample::consumeParticleReadback() {
   const Particle* data = static_cast<const Particle*>(
       readbackBuffers[currentFrameIndex]->getMappedData());
   float minY = 1e30f, maxY = -1e30f;
+  // Horizontal bounding-box extent (M8 cohesion check): a cohesive droplet
+  // keeps a small x/z extent while falling; a dispersing cloud grows it.
+  float minX = 1e30f, maxX = -1e30f, minZ = 1e30f, maxZ = -1e30f;
   double sumRho = 0.0, maxRho = 0.0;
   double sumSpeed = 0.0, maxSpeed = 0.0;  // vel.xyz magnitude (vel.w = density)
   uint32_t nearFloor = 0;                 // within 0.3 of the floor (y >= -0.3)
@@ -1380,6 +1385,10 @@ void VgeExample::consumeParticleReadback() {
     nValid++;
     minY = std::min(minY, data[i].pos.y);
     maxY = std::max(maxY, data[i].pos.y);
+    minX = std::min(minX, data[i].pos.x);
+    maxX = std::max(maxX, data[i].pos.x);
+    minZ = std::min(minZ, data[i].pos.z);
+    maxZ = std::max(maxZ, data[i].pos.z);
     sumRho += data[i].vel.w;  // finalize stored rho/rho0 here
     maxRho = std::max(maxRho, static_cast<double>(data[i].vel.w));
     double sp = std::sqrt(data[i].vel.x * data[i].vel.x +
@@ -1399,6 +1408,7 @@ void VgeExample::consumeParticleReadback() {
             << "] | rho/rho0 mean=" << (sumRho / nValid) << " max=" << maxRho
             << " | speed mean=" << (sumSpeed / nValid) << " max=" << maxSpeed
             << " | nearFloor%=" << (100.0 * nearFloor / nValid)
+            << " | ext x=" << (maxX - minX) << " z=" << (maxZ - minZ)
             << " | PILE speed mean="
             << (nearFloor ? pileSpeedSum / nearFloor : 0.0)
             << " max=" << pileSpeedMax << std::endl;
