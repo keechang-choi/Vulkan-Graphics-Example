@@ -1049,7 +1049,8 @@ void VgeExample::createEmitPipeline() {
 // predict pass then carries it forward. Append-only (no compaction until M6).
 void VgeExample::enqueueDrop(const glm::vec3& origin, float holeRadius,
                              const glm::vec3& color, float emissionVel,
-                             float concentration, int amount) {
+                             float concentration, int amount,
+                             const glm::vec3& segPrev) {
   if (amount <= 0) return;
   uint32_t count = static_cast<uint32_t>(amount);
   // M6-C-2: slots are now assigned by a GPU atomic (no host baseIndex). Clamp
@@ -1093,6 +1094,10 @@ void VgeExample::enqueueDrop(const glm::vec3& origin, float holeRadius,
   push.count = count;
   push.seed = emitSeedCounter++;
   push._pad = 0u;
+  // Ball sweep start: ignored by the lattice mode; for the ball mode it sweeps
+  // the spawn along [segPrev -> origin] (a moving stream). A static burst
+  // passes segPrev == origin so the sweep collapses to a point.
+  push.segPrev = glm::vec4(segPrev, 0.f);
 
   emittedThisFrame += count;
   cumEmitted += count;
@@ -1162,8 +1167,9 @@ void VgeExample::updateSpoids() {
 
   for (int idx : emitDrops) {
     const Spoid& s = spoids[idx];
+    // Space / keyboard drop = a static burst (segPrev == origin).
     enqueueDrop(s.pos, s.holeRadius, s.color, s.emissionVelocity,
-                s.concentration, s.amount);
+                s.concentration, s.amount, s.pos);
   }
 }
 
@@ -1455,25 +1461,44 @@ void VgeExample::render() {
   // Spoid keyboard control + emit triggers (Task 10).
   updateSpoids();
 
-  // Task 9 (M5): optional hardcoded auto-drop from the first spoid's position
-  // to exercise the emit pass hands-free (off by default; spoids drive
-  // emission).
-  if (autoEmit && !spoids.empty()) {
+  // Emission: continuous STREAM (M8) takes precedence over the discrete
+  // auto-burst. Both drop from the selected spoids (or all, if none selected).
+  bool anySelected = false;
+  for (const Spoid& s : spoids) anySelected |= s.selected;
+  auto isEmitter = [&](const Spoid& s) { return !anySelected || s.selected; };
+
+  if (streamMode && !spoids.empty()) {
+    // Continuous stream: each frame emit streamRate*dt particles from every
+    // emitting spoid, swept along its motion this frame ([prevPos -> pos]) so a
+    // fast stroke stays connected. A fractional accumulator carries the
+    // sub-particle remainder so low rates still emit evenly.
+    const float dt = frameTimer;
+    for (Spoid& s : spoids) {
+      if (!isEmitter(s)) continue;
+      s.emitAccum += streamRate * dt;
+      int n = static_cast<int>(s.emitAccum);
+      if (n > 0) {
+        s.emitAccum -= static_cast<float>(n);
+        enqueueDrop(s.pos, s.holeRadius, s.color, s.emissionVelocity,
+                    s.concentration, n, s.prevPos);
+      }
+    }
+  } else if (autoEmit && !spoids.empty()) {
+    // Discrete auto-burst on a timer (M5): a static ball/lattice per interval.
     autoEmitTimer += frameTimer;
     if (autoEmitTimer >= autoEmitInterval) {
       autoEmitTimer = 0.f;
-      // Drop from every selected spoid (matches the Space behaviour); if none
-      // are selected, fall back to all spoids so auto-emit always does
-      // something visible.
-      bool anySelected = false;
-      for (const Spoid& s : spoids) anySelected |= s.selected;
       for (const Spoid& s : spoids) {
-        if (anySelected && !s.selected) continue;
+        if (!isEmitter(s)) continue;
         enqueueDrop(s.pos, s.holeRadius, s.color, s.emissionVelocity,
-                    s.concentration, s.amount);
+                    s.concentration, s.amount, s.pos);
       }
     }
   }
+
+  // Remember each spoid's position for next frame's stream sweep (do this AFTER
+  // emitting so the stream spans the motion just taken).
+  for (Spoid& s : spoids) s.prevPos = s.pos;
 
   updateGlobalUbo();
   updateComputeUbo();
@@ -1920,8 +1945,13 @@ void VgeExample::onUpdateUIOverlay() {
 
     // --- emit (M5 Task 9: auto-drop) ---
     ImGui::Checkbox("auto emit", &autoEmit);
-    ImGui::DragFloat("auto interval (s)", &autoEmitInterval, 0.01f, 0.05f, 5.f,
-                     "%.2f");
+    ImGui::DragFloat("auto interval (s)", &autoEmitInterval, 0.002f, 0.f, 5.f,
+                     "%.3f");
+    // M8: continuous stream (overrides auto burst). streamRate particles/s per
+    // spoid, swept along motion so fast strokes stay connected (no dots).
+    ImGui::Checkbox("stream mode (continuous)", &streamMode);
+    ImGui::DragFloat("stream rate (/s)", &streamRate, 20.f, 0.f, 20000.f,
+                     "%.0f");
     // M8: spawn shape. Ball -> holeRadius drives droplet size; lattice ->
     // amount drives size (fresh droplet exactly at rest density).
     ImGui::Checkbox("spherical spawn (ball)", &sphericalSpawn);

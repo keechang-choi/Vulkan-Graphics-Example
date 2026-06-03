@@ -102,9 +102,11 @@ struct EmitPush {
   uint32_t count;     // -- 52 -- particles in this burst
   uint32_t seed;      // -- 56 -- rng seed (varies per burst)
   uint32_t _pad;      // -- 60 --
-  // -- 64 --
+  glm::vec4 segPrev;  // -- 64 -- ball sweep START (xyz); == origin for a static
+                      // burst, = previous hole pos for a moving stream (M8)
+  // -- 80 --
 };
-static_assert(sizeof(EmitPush) == 64, "EmitPush push-constant size");
+static_assert(sizeof(EmitPush) == 80, "EmitPush push-constant size");
 
 // Spoid (M5): host-side eyedropper POD. Selected via ImGui, moved via keyboard;
 // Space releases one droplet burst of `amount` particles from each selected
@@ -114,9 +116,15 @@ struct Spoid {
   float holeRadius = 0.12f;
   glm::vec3 color{0.2f, 0.4f, 0.9f};
   float emissionVelocity = 2.f;  // initial downward (+Y) speed
-  int amount = 300;              // particles per drop
+  int amount = 300;              // particles per drop (burst mode)
   float concentration = 1.f;     // -> stamp alpha (M6) + opacity
   bool selected = true;
+  // Stream-mode runtime state (M8, not UI params): prevPos = this hole's
+  // position last frame (the sweep start for a continuous stream); emitAccum =
+  // fractional particle carry so a non-integer per-frame rate still emits
+  // evenly.
+  glm::vec3 prevPos{0.f, -2.5f, 0.f};
+  float emitAccum = 0.f;
 };
 
 // Per-frame keyboard intent, already mapped to world axes (GLFW reading lives
@@ -211,9 +219,12 @@ private:
   // Append one droplet burst: reserves a contiguous slot range from the single
   // global live count (ping-pong chain) and enqueues one EmitPush. Drained once
   // per frame into the current buffer; the predict pass carries it forward.
+  // `segPrev` is the ball-sweep start (M8): pass it != origin to sweep the
+  // spawn ball along [segPrev -> origin] for a continuous moving stream; pass
+  // it == origin (or omit) for a static burst at `origin`.
   void enqueueDrop(const glm::vec3& origin, float holeRadius,
                    const glm::vec3& color, float emissionVel,
-                   float concentration, int amount);
+                   float concentration, int amount, const glm::vec3& segPrev);
   void recordEmit(const vk::raii::CommandBuffer& cmd, uint32_t frame);
   // Single FIFO of pending bursts (one evolving chain; drained + cleared once
   // per frame in buildComputeCommandBuffers, written into the current buffer).
@@ -379,6 +390,13 @@ private:
   // from amount). Ball became viable once the soft epsCFM stopped close-pair
   // pops.
   bool sphericalSpawn = true;
+  // Continuous STREAM mode (M8): instead of discrete bursts on a timer, emit
+  // streamRate particles/sec every frame from each selected spoid's hole, swept
+  // along the hole's motion this frame (so a fast-moving stroke stays connected
+  // instead of breaking into dots). No physical tank -- the soft-constraint
+  // fluid + gravity form the falling ribbon. Takes over from autoEmit when on.
+  bool streamMode = false;    // opt-in (toggle in ImGui); burst is the default
+  float streamRate = 2000.f;  // particles per second per streaming spoid
   // Particle pool exhaustion warning (set when a drop is rejected/clamped).
   bool poolFull = false;
 
