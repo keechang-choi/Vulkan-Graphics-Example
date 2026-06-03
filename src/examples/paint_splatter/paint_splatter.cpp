@@ -885,6 +885,7 @@ void VgeExample::prepareCompute() {
   compute.ubo.rho0 = rho0;
   compute.ubo.epsCFM = epsCFM;
   compute.ubo.cohesionFloor = cohesionFloor;  // M8 bounded cohesion
+  compute.ubo.dpClampFactor = dpClampFactor;  // M8 dp clamp
   compute.ubo.scorrK = scorrK;
   compute.ubo.scorrDq = scorrDqRatio * h;
   compute.ubo.scorrN = scorrN;
@@ -1329,6 +1330,7 @@ void VgeExample::updateComputeUbo() {
   compute.ubo.depositRadius = depositRadius;  // canvas stamp size (world units)
   compute.ubo.drySettle = drySettle;  // drying freezes near-floor motion
   compute.ubo.cohesionFloor = cohesionFloor;  // M8: bounded cohesion pull
+  compute.ubo.dpClampFactor = dpClampFactor;  // M8: UBO-driven dp clamp
   {
     float dq2 = compute.ubo.scorrDq * compute.ubo.scorrDq;
     float t = compute.ubo.h * compute.ubo.h - dq2;
@@ -1984,8 +1986,8 @@ void VgeExample::onUpdateUIOverlay() {
                     selectedSpoidUi);
         // applyAll(field): copy the just-edited field to all spoids when in
         // edit-ALL mode. Per-field so it doesn't clobber the other params.
-        if (ImGui::DragFloat("hole radius", &s.holeRadius, 0.002f, 0.02f, 0.5f,
-                             "%.3f") &&
+        if (ImGui::DragFloat("hole radius (disk)", &s.holeRadius, 0.002f, 0.02f,
+                             0.5f, "%.3f") &&
             editAllSpoids)
           for (auto& o : spoids) o.holeRadius = s.holeRadius;
         if (ImGui::DragFloat("emission vel", &s.emissionVelocity, 0.02f, 0.f,
@@ -2019,10 +2021,15 @@ void VgeExample::onUpdateUIOverlay() {
       ImGui::DragFloat("solver relax", &solverRelax, 0.005f, 0.05f, 1.f,
                        "%.3f");
       ImGui::DragFloat("epsCFM", &epsCFM, 1.f, 1.f, 1000.f, "%.1f");
+      // M8 cohesion/crown dials
+      ImGui::DragFloat("cohesion floor", &cohesionFloor, 0.005f, 0.f, 1.f,
+                       "%.3f");
+      ImGui::DragFloat("dp clamp (xh, 0=off)", &dpClampFactor, 0.005f, 0.f,
+                       0.5f, "%.3f");
       ImGui::DragFloat("scorrK", &scorrK, 0.002f, 0.f, 0.5f, "%.3f");
       ImGui::DragFloat("scorrDq/h", &scorrDqRatio, 0.002f, 0.05f, 0.5f, "%.3f");
       ImGui::DragFloat("xsphC", &xsphC, 0.005f, 0.f, 1.f, "%.3f");
-      ImGui::DragFloat("vel damping", &velDamp, 0.05f, 0.f, 20.f, "%.2f");
+      ImGui::DragFloat("vel damping (/s)", &velDamp, 0.02f, 0.f, 20.f, "%.2f");
       ImGui::DragFloat("vel clamp (CFL, 0=off)", &velClampFactor, 0.002f, 0.f,
                        0.5f, "%.3f");
       ImGui::Checkbox("color by density", &colorByDensity);

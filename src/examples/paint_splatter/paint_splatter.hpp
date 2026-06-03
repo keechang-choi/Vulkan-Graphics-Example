@@ -82,7 +82,9 @@ struct ComputeUbo {
   float cohesionFloor;  // -- 136 -- bounded signed constraint: C = max(rho/rho0
                         // -1, -cohesionFloor). 0 = compression-only (no
                         // cohesion); ~0.3-0.5 = cohesive droplet (M8)
-  float pad1;           // -- 140 --
+  float dpClampFactor;  // -- 140 -- per-iteration |dp| cap = factor*h; <=0
+                        // disables. Low/off lets the incompressible rebound
+                        // (crown) grow; default 0.2 = old behavior (M8)
   // -- 144 --
 };
 static_assert(sizeof(ComputeUbo) == 144, "ComputeUbo std140 size");
@@ -448,6 +450,10 @@ private:
   // sub-monolayer cannot run away (the M4 "THE big one" explosion). 0 =
   // compression-only. This is the PRIMARY in-flight cohesion knob.
   float cohesionFloor = 0.1f;
+  // Per-iteration Δp clamp (pbf_delta), as a multiple of h. <=0 disables it.
+  // Default 0.2 preserves the old clamp; lower it toward 0 for a stronger crown
+  // once substeps keep the sim stable (M8).
+  float dpClampFactor = 0.2f;
   float scorrK = 0.1f;        // artificial pressure strength
   float scorrDqRatio = 0.2f;  // scorrDq = ratio * h
   float scorrN = 4.f;

@@ -29,6 +29,14 @@ layout(std140, set = 0, binding = 1) uniform Ubo {
   float velDamp;
   float velClampFactor;
   float solverRelax;
+  uint prevCount;
+  float dryRate;
+  float depositStrength;
+  float depositHeight;
+  float depositRadius;
+  float drySettle;
+  float cohesionFloor;
+  float dpClampFactor;  // -- 140 --
 }
 u;
 layout(std430, set = 0, binding = 3) buffer CellStart { uint cellStart[]; };
@@ -92,11 +100,15 @@ void main() {
   // are close/piled ("flicker"); relaxing converges smoothly instead.
   dp *= u.solverRelax;
 
-  // Stability clamp (Macklin 2013 §5): bound the per-iteration position
-  // correction so stiff constraints cannot overshoot and explode.
-  float maxDp = 0.2 * u.h;
-  float dl = length(dp);
-  if (dl > maxDp) dp *= maxDp / dl;
+  // Stability clamp (Macklin 2013 §5), now UBO-driven: bound the per-iteration
+  // position correction so stiff constraints cannot overshoot. dpClampFactor<=0
+  // disables it (substeps then carry stability), which lets the incompressible
+  // impact rebound launch a stronger crown.
+  if (u.dpClampFactor > 0.0) {
+    float maxDp = u.dpClampFactor * u.h;
+    float dl = length(dp);
+    if (dl > maxDp) dp *= maxDp / dl;
+  }
 
   // Collision: clamp the candidate into the domain box (floor at cmax.y=0).
   vec3 candidate = clamp(xi + dp, u.cmin.xyz, u.cmax.xyz);
