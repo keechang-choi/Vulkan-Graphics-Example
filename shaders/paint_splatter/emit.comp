@@ -19,10 +19,11 @@ layout(std430, set = 0, binding = 0) buffer Particles { Particle p[]; };
 layout(std430, set = 0, binding = 9) buffer LiveCount { uint liveCount[]; };
 
 layout(push_constant) uniform Push {
-  vec4 originRadius;  // xyz = spoid origin (y<0), w = lattice spacing
+  vec4 originRadius;  // xyz = spoid origin (y<0); w = lattice spacing (mode 0)
+                      // OR ball radius = holeRadius (mode 1)
   vec4 velConc;       // xyz = initial velocity (+Y = down on screen), w = conc
   vec4 color;         // rgb = paint color, a unused
-  uint baseIndex;     // (unused since M6-C-2; slot comes from atomicAdd)
+  uint mode;          // 0 = jittered cube lattice, 1 = uniform ball (M8)
   uint count;         // number of particles in this burst
   uint seed;          // rng seed (varies per burst)
   uint pad;
@@ -53,20 +54,34 @@ void main() {
   if (idx >= kMaxParticles) return;  // pool full -> drop this particle
 
   uint s = pc.seed + i * 9781u;
-  // Jittered cube lattice: place particle i on a regular grid of side
-  // ceil(cbrt(count)) at spacing originRadius.w, then add jitter < spacing/2 so
-  // a minimum separation is guaranteed (no accidental overlaps -> no spawn pop).
-  // Random-in-ball occasionally clumps close pairs whose local over-density pops
-  // apart on the first solve; the lattice avoids that by construction.
-  float spacing = pc.originRadius.w;
-  uint side = uint(ceil(pow(float(pc.count), 1.0 / 3.0)));
-  if (side < 1u) side = 1u;
-  uint ix = i % side;
-  uint iy = (i / side) % side;
-  uint iz = i / (side * side);
-  vec3 grid = (vec3(ix, iy, iz) - 0.5 * (float(side) - 1.0)) * spacing;
-  vec3 jit = (vec3(rnd(s), rnd(s + 1u), rnd(s + 2u)) - 0.5) * (0.4 * spacing);
-  vec3 x = pc.originRadius.xyz + grid + jit;
+  vec3 x;
+  if (pc.mode == 1u) {
+    // Uniform-in-ball of radius holeRadius (originRadius.w): r = R*cbrt(u) gives
+    // a uniform radial density, direction is a uniform point on the sphere.
+    // Random placement can land close pairs, but the M8 SOFT constraint
+    // (epsCFM~1e5) resolves those gently instead of popping -- which is what
+    // made the lattice necessary before. holeRadius now drives droplet size.
+    float R = pc.originRadius.w;
+    float r = R * pow(rnd(s), 1.0 / 3.0);
+    float ct = 2.0 * rnd(s + 1u) - 1.0;            // cos(theta) in [-1,1]
+    float st = sqrt(max(0.0, 1.0 - ct * ct));
+    float ph = 6.2831853 * rnd(s + 2u);            // azimuth
+    vec3 dir = vec3(st * cos(ph), st * sin(ph), ct);
+    x = pc.originRadius.xyz + dir * r;
+  } else {
+    // Jittered cube lattice: place particle i on a regular grid of side
+    // ceil(cbrt(count)) at spacing originRadius.w, then add jitter < spacing/2 so
+    // a minimum separation is guaranteed (no accidental overlaps -> no spawn pop).
+    float spacing = pc.originRadius.w;
+    uint side = uint(ceil(pow(float(pc.count), 1.0 / 3.0)));
+    if (side < 1u) side = 1u;
+    uint ix = i % side;
+    uint iy = (i / side) % side;
+    uint iz = i / (side * side);
+    vec3 grid = (vec3(ix, iy, iz) - 0.5 * (float(side) - 1.0)) * spacing;
+    vec3 jit = (vec3(rnd(s), rnd(s + 1u), rnd(s + 2u)) - 0.5) * (0.4 * spacing);
+    x = pc.originRadius.xyz + grid + jit;
+  }
   p[idx].pos = vec4(x, 1.0);
   p[idx].vel = vec4(pc.velConc.xyz, 1.0);  // w = wetness = 1 (consumed in M6)
   p[idx].predict = vec4(x, 0.0);

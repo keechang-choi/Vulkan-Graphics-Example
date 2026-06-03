@@ -93,13 +93,15 @@ static_assert(sizeof(ComputeUbo) == 144, "ComputeUbo std140 size");
 // burst; the host computes baseIndex (append-only live count) so no GPU atomic
 // counter is needed until compaction lands in M6.
 struct EmitPush {
-  glm::vec4 originRadius;  // -- 0  -- xyz spoid origin (y<0), w lattice spacing
-  glm::vec4 velConc;   // -- 16 -- xyz initial velocity (+Y), w concentration
-  glm::vec4 color;     // -- 32 -- rgb paint color, a unused
-  uint32_t baseIndex;  // -- 48 -- first particle slot written
-  uint32_t count;      // -- 52 -- particles in this burst
-  uint32_t seed;       // -- 56 -- rng seed (varies per burst)
-  uint32_t _pad;       // -- 60 --
+  glm::vec4
+      originRadius;   // -- 0  -- xyz spoid origin (y<0); w = lattice spacing
+                      // (mode 0) or ball radius=holeRadius (mode 1)
+  glm::vec4 velConc;  // -- 16 -- xyz initial velocity (+Y), w concentration
+  glm::vec4 color;    // -- 32 -- rgb paint color, a unused
+  uint32_t mode;      // -- 48 -- spawn shape: 0 = cube lattice, 1 = ball (M8)
+  uint32_t count;     // -- 52 -- particles in this burst
+  uint32_t seed;      // -- 56 -- rng seed (varies per burst)
+  uint32_t _pad;      // -- 60 --
   // -- 64 --
 };
 static_assert(sizeof(EmitPush) == 64, "EmitPush push-constant size");
@@ -372,6 +374,11 @@ private:
   bool autoEmit = true;  // default-on: spoids auto-drop so the scene is alive
   float autoEmitInterval = 0.6f;  // seconds between auto drops
   float autoEmitTimer = 0.f;
+  // Spawn shape (M8): true = uniform ball of radius holeRadius (holeRadius
+  // drives droplet size); false = jittered cube lattice at rest spacing (size
+  // from amount). Ball became viable once the soft epsCFM stopped close-pair
+  // pops.
+  bool sphericalSpawn = true;
   // Particle pool exhaustion warning (set when a drop is rejected/clamped).
   bool poolFull = false;
 

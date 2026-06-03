@@ -1069,28 +1069,27 @@ void VgeExample::enqueueDrop(const glm::vec3& origin, float holeRadius,
     poolFull = true;
   }
 
-  // Spawn on a JITTERED LATTICE (not random-in-a-ball): a regular grid + small
-  // jitter guarantees a minimum particle separation, so no two particles land
-  // on top of each other (random sampling clumps pairs that pop on the first
-  // solve). Emit at the REST spacing so a fresh droplet is at rest density
-  // (rho ~= rho0): only then are the incompressibility + bounded cohesion
-  // constraints active (M8). `count` particles fill a cube of side
-  // ceil(cbrt(count)) -> droplet diameter ~= side*restSpacing, so `amount`
-  // (count) drives droplet size. `holeRadius` no longer sets droplet size (a
-  // cohesive droplet must be at rest density, which fixes spacing); it is kept
-  // as the spoid's emission-disk radius for the future Phase-2 stream mode.
-  const int side = std::max(
-      1, static_cast<int>(std::ceil(std::cbrt(static_cast<float>(count)))));
+  // Spawn shape (M8): two modes (toggled by sphericalSpawn).
+  //  - BALL (mode 1): uniform in a ball of radius `holeRadius` -> holeRadius
+  //    drives droplet size. Viable now that the soft epsCFM resolves the
+  //    close-pair overlaps that random placement makes (the lattice existed to
+  //    avoid those pops). The droplet's density = amount / ball-volume; if that
+  //    differs from rest density the cohesion/incompressibility constraints
+  //    just relax it toward rho0 on the first frames.
+  //  - LATTICE (mode 0): jittered cube grid at the REST spacing -> a fresh
+  //    droplet is exactly at rest density; size comes from `amount`
+  //    (diameter ~= cbrt(amount)*restSpacing). Guaranteed min separation.
   const float spacing = kParticleSpacing;
+  const float wRadius = sphericalSpawn ? holeRadius : spacing;
 
   EmitPush push{};
-  // originRadius.w carries the lattice spacing (see emit.comp lattice
-  // sampling).
-  push.originRadius = glm::vec4(origin, spacing);
+  // originRadius.w = ball radius (mode 1) or lattice spacing (mode 0).
+  push.originRadius = glm::vec4(origin, wRadius);
   // Initial velocity is downward toward the floor (+Y in this engine's world).
   push.velConc = glm::vec4(0.f, emissionVel, 0.f, concentration);
   push.color = glm::vec4(color, 0.f);
-  push.baseIndex = 0u;  // unused since M6-C-2 (slot from GPU atomicAdd)
+  push.mode =
+      sphericalSpawn ? 1u : 0u;  // spawn shape (slot from GPU atomicAdd)
   push.count = count;
   push.seed = emitSeedCounter++;
   push._pad = 0u;
@@ -1923,6 +1922,9 @@ void VgeExample::onUpdateUIOverlay() {
     ImGui::Checkbox("auto emit", &autoEmit);
     ImGui::DragFloat("auto interval (s)", &autoEmitInterval, 0.01f, 0.05f, 5.f,
                      "%.2f");
+    // M8: spawn shape. Ball -> holeRadius drives droplet size; lattice ->
+    // amount drives size (fresh droplet exactly at rest density).
+    ImGui::Checkbox("spherical spawn (ball)", &sphericalSpawn);
 
     // --- Spoids (M5 Task 10) ---
     if (ImGui::CollapsingHeader("Spoids", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -1986,7 +1988,7 @@ void VgeExample::onUpdateUIOverlay() {
                     selectedSpoidUi);
         // applyAll(field): copy the just-edited field to all spoids when in
         // edit-ALL mode. Per-field so it doesn't clobber the other params.
-        if (ImGui::DragFloat("hole radius (disk)", &s.holeRadius, 0.002f, 0.02f,
+        if (ImGui::DragFloat("hole radius (ball)", &s.holeRadius, 0.002f, 0.02f,
                              0.5f, "%.3f") &&
             editAllSpoids)
           for (auto& o : spoids) o.holeRadius = s.holeRadius;
