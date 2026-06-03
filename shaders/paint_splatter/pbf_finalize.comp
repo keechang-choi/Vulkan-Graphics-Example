@@ -125,4 +125,13 @@ void main() {
   if (xi.y >= -u.depositHeight && p[i].pos.w > 0.0) {
     p[i].pos.w = max(0.0, p[i].pos.w - u.dryRate * u.dt);
   }
+  // Cull off-canvas particles ONCE THEY LAND on the floor (not the instant they
+  // cross the edge): a particle that flies off the canvas keeps falling freely
+  // (x/z are unclamped, so it is never trapped at a wall) and is removed only
+  // when it reaches the ground outside the painting -- where it cannot deposit
+  // anyway (UV out of range). pos.w<=0 makes next frame's compaction drop it.(M8)
+  if (xi.y >= -u.depositHeight &&
+      (abs(xi.x) > u.cmax.x || abs(xi.z) > u.cmax.z)) {
+    p[i].pos.w = -1.0;
+  }
 }

@@ -110,7 +110,11 @@ void main() {
     if (dl > maxDp) dp *= maxDp / dl;
   }
 
-  // Collision: clamp the candidate into the domain box (floor at cmax.y=0).
-  vec3 candidate = clamp(xi + dp, u.cmin.xyz, u.cmax.xyz);
+  // Collision: clamp ONLY the y axis (floor at cmax.y=0, ceiling at cmin.y).
+  // x/z are left FREE so particles can leave the canvas footprint instead of
+  // piling against the rim -- pbf_finalize then kills any that cross the canvas
+  // edge (they're off the painting). (M8)
+  vec3 candidate = xi + dp;
+  candidate.y = clamp(candidate.y, u.cmin.y, u.cmax.y);
   deltaP[i].xyz = candidate - xi;
 }

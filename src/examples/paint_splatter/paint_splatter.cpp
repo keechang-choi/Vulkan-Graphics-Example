@@ -2026,7 +2026,8 @@ void VgeExample::onUpdateUIOverlay() {
                              8.f, "%.2f") &&
             editAllSpoids)
           for (auto& o : spoids) o.emissionVelocity = s.emissionVelocity;
-        if (ImGui::DragInt("amount", &s.amount, 1.f, 0, 2000) && editAllSpoids)
+        if (ImGui::DragInt("amount (burst)", &s.amount, 1.f, 0, 2000) &&
+            editAllSpoids)
           for (auto& o : spoids) o.amount = s.amount;
         if (ImGui::DragFloat("concentration", &s.concentration, 0.005f, 0.f,
                              1.f, "%.3f") &&
