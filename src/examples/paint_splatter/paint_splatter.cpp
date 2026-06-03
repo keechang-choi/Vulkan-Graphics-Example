@@ -1069,15 +1069,16 @@ void VgeExample::enqueueDrop(const glm::vec3& origin, float holeRadius,
   // Spawn on a JITTERED LATTICE (not random-in-a-ball): a regular grid + small
   // jitter guarantees a minimum particle separation, so no two particles land
   // on top of each other (random sampling clumps pairs that pop on the first
-  // solve). `count` particles fill a cube of side ceil(cbrt(count)) at this
-  // spacing -> droplet diameter ~= side*spacing. The lattice is sized to
-  // `holeRadius/side` (a dense drop ~holeRadius wide), clamped below by the
-  // rest spacing. Lowering the numerator packs the droplet tighter.
+  // solve). Emit at the REST spacing so a fresh droplet is at rest density
+  // (rho ~= rho0): only then are the incompressibility + bounded cohesion
+  // constraints active (M8). `count` particles fill a cube of side
+  // ceil(cbrt(count)) -> droplet diameter ~= side*restSpacing, so `amount`
+  // (count) drives droplet size. `holeRadius` no longer sets droplet size (a
+  // cohesive droplet must be at rest density, which fixes spacing); it is kept
+  // as the spoid's emission-disk radius for the future Phase-2 stream mode.
   const int side = std::max(
       1, static_cast<int>(std::ceil(std::cbrt(static_cast<float>(count)))));
-  const float restSpacing = kParticleSpacing;
-  const float wantSpacing = holeRadius / static_cast<float>(side);
-  const float spacing = std::max(restSpacing, wantSpacing);
+  const float spacing = kParticleSpacing;
 
   EmitPush push{};
   // originRadius.w carries the lattice spacing (see emit.comp lattice
