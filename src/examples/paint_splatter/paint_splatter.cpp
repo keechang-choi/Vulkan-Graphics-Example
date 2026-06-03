@@ -281,6 +281,21 @@ void VgeExample::restartSimulation() {
   prevParticleCount = 0;
   pendingEmits.clear();
   poolFull = false;
+  // M6-C-2: reset the compaction live-count state and zero the GPU counters so
+  // the next frame's prev-slot read sees an empty buffer (not stale survivors).
+  cumEmitted = 0;
+  emittedThisFrame = 0;
+  liveCountDisplay = 0;
+  liveUpperFromReadback = kMaxParticles;
+  liveReadbackValid.assign(MAX_CONCURRENT_FRAMES, 0);
+  liveCopyCumEmitted.assign(MAX_CONCURRENT_FRAMES, 0);
+  for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    vgeu::oneTimeSubmit(
+        device, commandPool, queue, [&](const vk::raii::CommandBuffer& cmd) {
+          cmd.fillBuffer(liveCountBuffers[i]->getBuffer(), 0,
+                         liveCountBuffers[i]->getBufferSize(), 0u);
+        });
+  }
   // Clear the painting back to blank white paper (canvas stays in GENERAL).
   {
     vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0,
@@ -299,6 +314,13 @@ void VgeExample::restartSimulation() {
   readbackPending.assign(MAX_CONCURRENT_FRAMES, 0);
   readbackTimer = 0.f;
   readbackRequest = false;
+  // User-approved: restart also resets each spoid's colour (palette by index)
+  // and position (re-spread on the X-Z circle + reset y). Other params (amount,
+  // holeRadius, concentration, ...) and the spoid count are preserved.
+  for (int i = 0; i < static_cast<int>(spoids.size()); i++) {
+    spoids[i].color = spoidPalette(i);
+  }
+  arrangeSpoidsCircle();
 }
 
 // Per-frame host-visible marker buffers (one Particle slot per spoid) drawn as
@@ -398,10 +420,11 @@ void VgeExample::createDescriptorPool() {
   std::vector<vk::DescriptorPoolSize> poolSizes;
   poolSizes.emplace_back(vk::DescriptorType::eUniformBuffer,
                          MAX_CONCURRENT_FRAMES * 2u);
-  // Compute set: 7 storage buffers per frame (particles, cellCount, cellStart,
-  // cellOffset, sortedIds, deltaP, particlesPrev for the ping-pong predict).
+  // Compute set: 9 storage buffers per frame (particles, cellCount, cellStart,
+  // cellOffset, sortedIds, deltaP, particlesPrev for the ping-pong predict,
+  // plus liveCount + prevLiveCount for M6-C-2 compaction).
   poolSizes.emplace_back(vk::DescriptorType::eStorageBuffer,
-                         MAX_CONCURRENT_FRAMES * 7u);
+                         MAX_CONCURRENT_FRAMES * 9u);
   // Canvas texture sampler (one per graphics descriptor set).
   poolSizes.emplace_back(vk::DescriptorType::eCombinedImageSampler,
                          MAX_CONCURRENT_FRAMES);
@@ -684,6 +707,40 @@ void VgeExample::createGridBuffers() {
   }
 }
 
+// M6-C-2: per-slot GPU live-count buffers (uint[1]) + host-visible readback
+// copies. The device-local counter is reset to 0 each frame (binding 9) and
+// atomic-incremented by pbf_predict (compaction) and emit; binding 10 reads the
+// prev slot's counter. Initialized to 0 so the very first prev-slot read is
+// valid (not garbage).
+void VgeExample::createLiveCountBuffers() {
+  liveCountBuffers.clear();
+  liveCountReadbackBuffers.clear();
+  liveCountBuffers.reserve(MAX_CONCURRENT_FRAMES);
+  liveCountReadbackBuffers.reserve(MAX_CONCURRENT_FRAMES);
+  for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    liveCountBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
+        globalAllocator->getAllocator(), sizeof(uint32_t), 1,
+        vk::BufferUsageFlagBits::eStorageBuffer |
+            vk::BufferUsageFlagBits::eTransferDst |  // fillBuffer(0)
+            vk::BufferUsageFlagBits::eTransferSrc,   // copy -> readback
+        VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, 0));
+    liveCountReadbackBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
+        globalAllocator->getAllocator(), sizeof(uint32_t), 1,
+        vk::BufferUsageFlagBits::eTransferDst, VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT));
+  }
+  liveReadbackValid.assign(MAX_CONCURRENT_FRAMES, 0);
+  liveCopyCumEmitted.assign(MAX_CONCURRENT_FRAMES, 0);
+  for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    vgeu::oneTimeSubmit(
+        device, commandPool, queue, [&](const vk::raii::CommandBuffer& cmd) {
+          cmd.fillBuffer(liveCountBuffers[i]->getBuffer(), 0,
+                         liveCountBuffers[i]->getBufferSize(), 0u);
+        });
+  }
+}
+
 // Kernel normalization constants (3D), precomputed on host (avoid per-thread
 // pow). poly6: 315/(64 pi h^9); spiky gradient magnitude: 45/(pi h^6).
 static float kPoly6Const(float h) {
@@ -727,6 +784,7 @@ void VgeExample::prepareCompute() {
   }
 
   createGridBuffers();
+  createLiveCountBuffers();
 
   // --- Initialize the compute UBO (per-frame copies filled below) ---
   compute.ubo = ComputeUbo{};
@@ -834,6 +892,12 @@ void VgeExample::createComputeDescriptorSetLayout() {
   // Bound in every compute set; only the deposit pass reads it.
   layoutBindings.emplace_back(8, vk::DescriptorType::eStorageImage, 1,
                               vk::ShaderStageFlagBits::eCompute);
+  // 9 = liveCount (cur, M6-C-2 compaction atomic counter), 10 = prevLiveCount
+  // (prev slot's counter, read-only, for pbf_predict's exact compaction range).
+  layoutBindings.emplace_back(9, vk::DescriptorType::eStorageBuffer, 1,
+                              vk::ShaderStageFlagBits::eCompute);
+  layoutBindings.emplace_back(10, vk::DescriptorType::eStorageBuffer, 1,
+                              vk::ShaderStageFlagBits::eCompute);
 
   vk::DescriptorSetLayoutCreateInfo layoutCI({}, layoutBindings);
   compute.descriptorSetLayout = vk::raii::DescriptorSetLayout(device, layoutCI);
@@ -897,14 +961,23 @@ void VgeExample::enqueueDrop(const glm::vec3& origin, float holeRadius,
                              const glm::vec3& color, float emissionVel,
                              float concentration, int amount) {
   if (amount <= 0) return;
-  uint32_t want = static_cast<uint32_t>(amount);
-  if (numParticles >= kMaxParticles) {
+  uint32_t count = static_cast<uint32_t>(amount);
+  // M6-C-2: slots are now assigned by a GPU atomic (no host baseIndex). Clamp
+  // the burst against a conservative estimate of slots already in use this
+  // frame (prevParticleCount is an upper bound on the surviving particles +
+  // emittedThisFrame) so we never overflow the pool; the emit shader also drops
+  // any overflow (idx >= kMax) as a hard backstop.
+  uint32_t usedEst =
+      std::min(kMaxParticles, prevParticleCount + emittedThisFrame);
+  if (usedEst >= kMaxParticles) {
     poolFull = true;
     return;
   }
-  uint32_t avail = kMaxParticles - numParticles;
-  uint32_t count = std::min(want, avail);
-  if (count < want) poolFull = true;
+  uint32_t avail = kMaxParticles - usedEst;
+  if (count > avail) {
+    count = avail;
+    poolFull = true;
+  }
 
   // Spawn on a JITTERED LATTICE (not random-in-a-ball): a regular grid + small
   // jitter guarantees a minimum particle separation, so no two particles land
@@ -926,20 +999,21 @@ void VgeExample::enqueueDrop(const glm::vec3& origin, float holeRadius,
   // Initial velocity is downward toward the floor (+Y in this engine's world).
   push.velConc = glm::vec4(0.f, emissionVel, 0.f, concentration);
   push.color = glm::vec4(color, 0.f);
-  push.baseIndex = numParticles;
+  push.baseIndex = 0u;  // unused since M6-C-2 (slot from GPU atomicAdd)
   push.count = count;
   push.seed = emitSeedCounter++;
   push._pad = 0u;
 
-  numParticles += count;
+  emittedThisFrame += count;
+  cumEmitted += count;
   pendingEmits.push_back(push);
 }
 
-// Drain the pending bursts into the CURRENT buffer (ping-pong chain): one emit
-// dispatch per burst, each writing its reserved [baseIndex, baseIndex+count)
-// slot range. Runs before predict so the solver sees the new particles this
-// frame; predict skips these slots (i >= prevCount) and carries the rest from
-// the prev buffer. Drained once per frame -- the chain propagates them onward.
+// Drain the pending bursts into the CURRENT buffer: one emit dispatch per
+// burst. Since M6-C-2 each spawned particle reserves its slot via an atomicAdd
+// on liveCount (binding 9), so emit must run AFTER pbf_predict has compacted
+// the survivors -- the new particles then append right after them. Drained once
+// per frame; the ping-pong chain carries them forward next frame.
 void VgeExample::recordEmit(const vk::raii::CommandBuffer& cmd,
                             uint32_t frame) {
   if (pendingEmits.empty()) return;
@@ -955,7 +1029,7 @@ void VgeExample::recordEmit(const vk::raii::CommandBuffer& cmd,
     cmd.dispatch((push.count + 255u) / 256u, 1, 1);
   }
   pendingEmits.clear();
-  // emit (shader write) -> predict (shader read/write) barrier.
+  // emit (shader write) -> grid/solve (shader read/write) barrier.
   vk::MemoryBarrier mb(
       vk::AccessFlagBits::eShaderWrite,
       vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite);
@@ -1064,8 +1138,16 @@ void VgeExample::createComputeDescriptorSets() {
     // Canvas as a storage image (no sampler) in GENERAL layout for deposit.
     vk::DescriptorImageInfo canvasStoreInfo(
         nullptr, *canvasImage->getImageView(), vk::ImageLayout::eGeneral);
+    // M6-C-2 ping-pong: binding 9 = this slot's live counter (cur, written),
+    // binding 10 = the prev slot's counter (read by pbf_predict for the exact
+    // compaction range). Same prevIdx as the particle 0/7 ping-pong above.
+    vk::DescriptorBufferInfo liveInfo(liveCountBuffers[i]->getBuffer(), 0,
+                                      liveCountBuffers[i]->getBufferSize());
+    vk::DescriptorBufferInfo prevLiveInfo(
+        liveCountBuffers[prevIdx]->getBuffer(), 0,
+        liveCountBuffers[prevIdx]->getBufferSize());
 
-    std::array<vk::WriteDescriptorSet, 9> writes{
+    std::array<vk::WriteDescriptorSet, 11> writes{
         vk::WriteDescriptorSet(*compute.descriptorSets[i], 0, 0,
                                vk::DescriptorType::eStorageBuffer, nullptr,
                                ssboInfo),
@@ -1093,6 +1175,12 @@ void VgeExample::createComputeDescriptorSets() {
         vk::WriteDescriptorSet(*compute.descriptorSets[i], 8, 0,
                                vk::DescriptorType::eStorageImage,
                                canvasStoreInfo),
+        vk::WriteDescriptorSet(*compute.descriptorSets[i], 9, 0,
+                               vk::DescriptorType::eStorageBuffer, nullptr,
+                               liveInfo),
+        vk::WriteDescriptorSet(*compute.descriptorSets[i], 10, 0,
+                               vk::DescriptorType::eStorageBuffer, nullptr,
+                               prevLiveInfo),
     };
     device.updateDescriptorSets(writes, nullptr);
   }
@@ -1108,6 +1196,7 @@ void VgeExample::updateGlobalUbo() {
   // canvasInfo.w doubles as the density-debug-color flag for particle.vert.
   globalUbo.canvasInfo = glm::vec4(kCanvasWorld * 0.5f, kCanvasWorld * 0.5f,
                                    kCanvasWorld, colorByDensity ? 1.f : 0.f);
+  globalUbo.renderParams = glm::vec4(pointScale, 0.f, 0.f, 0.f);
   std::memcpy(uniformBuffers[currentFrameIndex]->getMappedData(), &globalUbo,
               sizeof(GlobalUbo));
 }
@@ -1118,10 +1207,17 @@ void VgeExample::updateComputeUbo() {
   float frameDt = useFixedDt ? kFixedDt : frameTimer;
   int sub = std::max(1, substeps);
   compute.ubo.dt = frameDt / static_cast<float>(sub);
+  // M6-C-2 dispatch/draw upper bounds. prevParticleCount carries last frame's
+  // bound; shrink it with the readback-derived bound (both are valid upper
+  // bounds on the prev buffer's live count, so min stays valid). numParticles
+  // then adds this frame's fresh emits. Correctness is enforced by the
+  // in-shader liveCount/prevLiveCount guards -- these host counts only need to
+  // be >= the true counts, which they are by construction.
+  prevParticleCount = std::min(prevParticleCount, liveUpperFromReadback);
+  numParticles = std::min(kMaxParticles, prevParticleCount + emittedThisFrame);
   compute.ubo.particleCount = numParticles;
-  // Ping-pong: predict carries [0, prevCount) from the prev buffer; emit wrote
-  // the freshly-spawned [prevCount, numParticles) into cur this frame.
-  compute.ubo.prevCount = prevParticleCount;
+  compute.ubo.prevCount =
+      prevParticleCount;  // reference only (GPU guards rule)
   compute.ubo.gravity = gravity;
   // Fluid domain box (collision walls): the full canvas footprint in x,z.
   compute.ubo.canvasMin =
@@ -1140,6 +1236,8 @@ void VgeExample::updateComputeUbo() {
   compute.ubo.dryRate = dryRate;  // used by deposit (M6-C drying)
   compute.ubo.depositStrength = depositStrength;
   compute.ubo.depositHeight = depositHeight;
+  compute.ubo.depositRadius = depositRadius;  // canvas stamp size (world units)
+  compute.ubo.drySettle = drySettle;  // drying freezes near-floor motion
   {
     float dq2 = compute.ubo.scorrDq * compute.ubo.scorrDq;
     float t = compute.ubo.h * compute.ubo.h - dq2;
@@ -1182,12 +1280,15 @@ void VgeExample::consumeParticleReadback() {
   if (numParticles == 0) return;
   const Particle* data = static_cast<const Particle*>(
       readbackBuffers[currentFrameIndex]->getMappedData());
-  float minY = data[0].pos.y, maxY = data[0].pos.y;
+  float minY = 1e30f, maxY = -1e30f;
   double sumRho = 0.0, maxRho = 0.0;
   double sumSpeed = 0.0, maxSpeed = 0.0;  // vel.xyz magnitude (vel.w = density)
   uint32_t nearFloor = 0;                 // within 0.3 of the floor (y >= -0.3)
   double pileSpeedSum = 0.0, pileSpeedMax = 0.0;  // jiggle of the settled pile
+  uint32_t nValid = 0;  // M6-C-2: skip the offscreen-parked compaction tail
   for (uint32_t i = 0; i < numParticles; i++) {
+    if (data[i].pos.y > 1e6f) continue;  // pbf_finalize parked stale slots here
+    nValid++;
     minY = std::min(minY, data[i].pos.y);
     maxY = std::max(maxY, data[i].pos.y);
     sumRho += data[i].vel.w;  // finalize stored rho/rho0 here
@@ -1203,15 +1304,32 @@ void VgeExample::consumeParticleReadback() {
       pileSpeedMax = std::max(pileSpeedMax, sp);
     }
   }
-  std::cout << "[paint_splatter] y[" << minY << "," << maxY
-            << "] | rho/rho0 mean=" << (sumRho / numParticles)
-            << " max=" << maxRho
-            << " | speed mean=" << (sumSpeed / numParticles)
-            << " max=" << maxSpeed
-            << " | nearFloor%=" << (100.0 * nearFloor / numParticles)
+  if (nValid == 0) return;
+  std::cout << "[paint_splatter] live=" << nValid
+            << " (disp=" << liveCountDisplay << ") y[" << minY << "," << maxY
+            << "] | rho/rho0 mean=" << (sumRho / nValid) << " max=" << maxRho
+            << " | speed mean=" << (sumSpeed / nValid) << " max=" << maxSpeed
+            << " | nearFloor%=" << (100.0 * nearFloor / nValid)
             << " | PILE speed mean="
             << (nearFloor ? pileSpeedSum / nearFloor : 0.0)
             << " max=" << pileSpeedMax << std::endl;
+}
+
+// M6-C-2: read this slot's live-count copy (recorded when the slot was last
+// submitted, its fence now waited on). Used for ImGui display and to derive a
+// shrinking upper bound on the live count. live_now <= R + (emits since the
+// copy), a valid bound that tracks particles drying out so the dispatch range
+// does not peg at kMax. NOT used for correctness (the in-shader guards are).
+void VgeExample::consumeLiveCountReadback() {
+  uint32_t slot = currentFrameIndex;
+  if (!liveReadbackValid[slot]) return;
+  uint32_t r = *static_cast<const uint32_t*>(
+      liveCountReadbackBuffers[slot]->getMappedData());
+  liveCountDisplay = std::min(r, kMaxParticles);
+  uint64_t since = cumEmitted - liveCopyCumEmitted[slot];
+  uint64_t bound = static_cast<uint64_t>(r) + since;
+  liveUpperFromReadback =
+      static_cast<uint32_t>(std::min<uint64_t>(bound, kMaxParticles));
 }
 
 // ---------------------------------------------------------------------------
@@ -1224,6 +1342,9 @@ void VgeExample::render() {
     restartRequested = false;
     restartSimulation();
   }
+
+  // M6-C-2: count this frame's fresh emits (feeds the dispatch upper bound).
+  emittedThisFrame = 0;
 
   // Spoid keyboard control + emit triggers (Task 10).
   updateSpoids();
@@ -1276,6 +1397,8 @@ void VgeExample::draw() {
   // This frame slot's previous submission has completed; if it recorded a
   // debug readback copy, its host-visible buffer is now valid to read.
   consumeParticleReadback();
+  consumeLiveCountReadback();  // M6-C-2: live count for display + dispatch
+                               // bound
 
   prepareFrame();
 
@@ -1349,17 +1472,70 @@ void VgeExample::buildComputeCommandBuffers() {
   }
   computeFirstUse[currentFrameIndex] = 0;
 
-  // Emit pending droplet bursts first so the new particles are part of this
-  // frame's solve (mirrors the per-frame order in the design spec).
-  recordEmit(compute.cmdBuffers[currentFrameIndex], currentFrameIndex);
+  const vk::raii::CommandBuffer& ccmd = compute.cmdBuffers[currentFrameIndex];
+  const uint32_t groupCount = (numParticles + 255u) / 256u;
+  auto computeBarrier = [&]() {
+    vk::MemoryBarrier mb(
+        vk::AccessFlagBits::eShaderWrite,
+        vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite);
+    ccmd.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,
+                         vk::PipelineStageFlagBits::eComputeShader,
+                         vk::DependencyFlags{}, mb, nullptr, nullptr);
+  };
 
-  compute.cmdBuffers[currentFrameIndex].bindDescriptorSets(
-      vk::PipelineBindPoint::eCompute, *compute.pipelineLayout, 0,
-      *compute.descriptorSets[currentFrameIndex], nullptr);
+  // M6-C-2: reset THIS slot's live counter to 0 before compaction/emit
+  // atomic-append into it. The prev slot's counter (binding 10) is left intact
+  // so pbf_predict can read the exact valid range of the prev buffer.
+  ccmd.fillBuffer(liveCountBuffers[currentFrameIndex]->getBuffer(), 0,
+                  liveCountBuffers[currentFrameIndex]->getBufferSize(), 0u);
+  {
+    vk::MemoryBarrier mb(
+        vk::AccessFlagBits::eTransferWrite,
+        vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite);
+    ccmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                         vk::PipelineStageFlagBits::eComputeShader,
+                         vk::DependencyFlags{}, mb, nullptr, nullptr);
+  }
 
-  // Run the PBF solver, substepping the frame for stability.
+  ccmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
+                          *compute.pipelineLayout, 0,
+                          *compute.descriptorSets[currentFrameIndex], nullptr);
+
+  // Compaction-predict, ONCE per frame (re-running per substep would
+  // double-count via the atomic). Packs the prev buffer's survivors to the
+  // front of cur and sets liveCount; dispatched on the upper bound, the
+  // prevLiveCount[0] guard trims to the exact survivor range.
+  if (groupCount > 0) {
+    ccmd.bindPipeline(vk::PipelineBindPoint::eCompute, *compute.pipeline);
+    ccmd.dispatch(groupCount, 1, 1);
+    computeBarrier();  // predict writes liveCount -> emit must see it
+  }
+
+  // Emit appends fresh particles AFTER the survivors via the same atomic.
+  // recordEmit binds the emit pipeline layout, so rebind the PBF sets after.
+  recordEmit(ccmd, currentFrameIndex);
+  ccmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
+                          *compute.pipelineLayout, 0,
+                          *compute.descriptorSets[currentFrameIndex], nullptr);
+
+  // Grid build + solve + finalize, substepped for stability.
   for (int s = 0; s < std::max(1, substeps); s++) {
-    recordPbfSubstep(compute.cmdBuffers[currentFrameIndex], currentFrameIndex);
+    recordPbfSubstep(ccmd, currentFrameIndex);
+  }
+
+  // M6-C-2: copy the final live count into the host-visible readback buffer
+  // (ImGui display + dispatch-bound shrink). Same compute queue -> no QFOT.
+  {
+    vk::MemoryBarrier mb(vk::AccessFlagBits::eShaderWrite,
+                         vk::AccessFlagBits::eTransferRead);
+    ccmd.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,
+                         vk::PipelineStageFlagBits::eTransfer,
+                         vk::DependencyFlags{}, mb, nullptr, nullptr);
+    ccmd.copyBuffer(liveCountBuffers[currentFrameIndex]->getBuffer(),
+                    liveCountReadbackBuffers[currentFrameIndex]->getBuffer(),
+                    vk::BufferCopy(0, 0, sizeof(uint32_t)));
+    liveReadbackValid[currentFrameIndex] = 1;
+    liveCopyCumEmitted[currentFrameIndex] = cumEmitted;
   }
 
   // Release barrier compute -> graphics (if different queue families)
@@ -1379,9 +1555,10 @@ void VgeExample::buildComputeCommandBuffers() {
 
   compute.cmdBuffers[currentFrameIndex].end();
 
-  // The current buffer now holds the full live state [0, numParticles). Next
-  // frame it becomes the prev buffer, so its live count is what predict must
-  // carry forward (ping-pong chain).
+  // Carry this frame's dispatch upper bound as next frame's prev bound (an
+  // upper bound on the prev buffer's live count). updateComputeUbo shrinks it
+  // with the readback-derived bound before use. The exact prev count is read on
+  // the GPU (binding 10) by pbf_predict, so this host value need only be >=.
   prevParticleCount = numParticles;
 }
 
@@ -1408,11 +1585,12 @@ void VgeExample::recordPbfSubstep(const vk::raii::CommandBuffer& cmd,
     cmd.dispatch(groupCount, 1, 1);
   };
 
-  // 1. predict
-  dispatchParticles(compute.pipeline);
-  barrier();
+  // NOTE (M6-C-2): predict (now the compaction step) runs ONCE per frame in
+  // buildComputeCommandBuffers, before emit -- NOT here -- because its atomic
+  // append would double-count if repeated per substep. This substep starts at
+  // the neighbour-grid rebuild over the already-predicted positions.
 
-  // 2. build neighbor grid: clear counts -> count -> scan -> scatter
+  // 1. build neighbor grid: clear counts -> count -> scan -> scatter
   cmd.fillBuffer(cellCountBuffers[frame]->getBuffer(), 0,
                  cellCountBuffers[frame]->getBufferSize(), 0u);
   // transfer-write (fill) -> shader-read barrier
@@ -1617,7 +1795,10 @@ void VgeExample::onUpdateUIOverlay() {
     ImGui::Text("Camera pos : (%.2f, %.2f, %.2f)", camPos.x, camPos.y,
                 camPos.z);
 
-    ImGui::Text("Particles  : %u / %u", numParticles, kMaxParticles);
+    // M6-C-2: liveCountDisplay is the read-back compacted count (bounded over a
+    // sustained session); numParticles is the conservative dispatch/draw bound.
+    ImGui::Text("Particles  : %u live / %u max  (bound %u)", liveCountDisplay,
+                kMaxParticles, numParticles);
     ImGui::Checkbox("Show particles", &showParticles);
     if (poolFull) {
       ImGui::TextColored(ImVec4(1.f, 0.4f, 0.3f, 1.f),
@@ -1626,7 +1807,8 @@ void VgeExample::onUpdateUIOverlay() {
 
     // --- emit (M5 Task 9: auto-drop) ---
     ImGui::Checkbox("auto emit", &autoEmit);
-    ImGui::SliderFloat("auto interval (s)", &autoEmitInterval, 0.1f, 2.f);
+    ImGui::DragFloat("auto interval (s)", &autoEmitInterval, 0.01f, 0.05f, 5.f,
+                     "%.2f");
 
     // --- Spoids (M5 Task 10) ---
     if (ImGui::CollapsingHeader("Spoids", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -1634,11 +1816,20 @@ void VgeExample::onUpdateUIOverlay() {
           "Keys: IJKL move, U/O height, Space = drop from selected");
       ImGui::Checkbox("show spoids", &showSpoids);
 
+      // Edit mode: a single radio toggles "edit ALL spoids" -- param edits
+      // below then apply to every spoid at once (per-spoid radios edit just
+      // one).
+      if (ImGui::RadioButton("edit ALL spoids", editAllSpoids)) {
+        editAllSpoids = true;
+      }
+
       for (int i = 0; i < static_cast<int>(spoids.size()); i++) {
         ImGui::PushID(i);
         ImGui::Checkbox("##sel", &spoids[i].selected);
         ImGui::SameLine();
-        if (ImGui::RadioButton("edit", selectedSpoidUi == i)) {
+        if (ImGui::RadioButton("edit",
+                               !editAllSpoids && selectedSpoidUi == i)) {
+          editAllSpoids = false;
           selectedSpoidUi = i;
         }
         ImGui::SameLine();
@@ -1673,19 +1864,37 @@ void VgeExample::onUpdateUIOverlay() {
           selectedSpoidUi < static_cast<int>(spoids.size())) {
         Spoid& s = spoids[selectedSpoidUi];
         ImGui::Separator();
-        ImGui::Text("Editing spoid #%d", selectedSpoidUi);
-        ImGui::SliderFloat("hole radius", &s.holeRadius, 0.02f, 0.5f);
-        ImGui::SliderFloat("emission vel", &s.emissionVelocity, 0.f, 8.f);
-        ImGui::SliderInt("amount", &s.amount, 0, 2000);
-        ImGui::SliderFloat("concentration", &s.concentration, 0.f, 1.f);
-        ImGui::ColorEdit3("color", &s.color.x);
+        // In "edit ALL" mode the widgets show this spoid's values but any
+        // change is propagated to every spoid (so you can retune all of them
+        // together).
+        ImGui::Text(editAllSpoids ? "Editing ALL spoids (via #%d)"
+                                  : "Editing spoid #%d",
+                    selectedSpoidUi);
+        // applyAll(field): copy the just-edited field to all spoids when in
+        // edit-ALL mode. Per-field so it doesn't clobber the other params.
+        if (ImGui::DragFloat("hole radius", &s.holeRadius, 0.002f, 0.02f, 0.5f,
+                             "%.3f") &&
+            editAllSpoids)
+          for (auto& o : spoids) o.holeRadius = s.holeRadius;
+        if (ImGui::DragFloat("emission vel", &s.emissionVelocity, 0.02f, 0.f,
+                             8.f, "%.2f") &&
+            editAllSpoids)
+          for (auto& o : spoids) o.emissionVelocity = s.emissionVelocity;
+        if (ImGui::DragInt("amount", &s.amount, 1.f, 0, 2000) && editAllSpoids)
+          for (auto& o : spoids) o.amount = s.amount;
+        if (ImGui::DragFloat("concentration", &s.concentration, 0.005f, 0.f,
+                             1.f, "%.3f") &&
+            editAllSpoids)
+          for (auto& o : spoids) o.concentration = s.concentration;
+        if (ImGui::ColorEdit3("color", &s.color.x) && editAllSpoids)
+          for (auto& o : spoids) o.color = s.color;
       }
     }
 
     // --- sim params (M3) ---
-    ImGui::SliderFloat("gravity (+Y)", &gravity, 0.f, 30.f);
+    ImGui::DragFloat("gravity (+Y)", &gravity, 0.05f, 0.f, 30.f, "%.2f");
     ImGui::Checkbox("fixed dt (1/120)", &useFixedDt);
-    ImGui::SliderFloat("seed jitter xz", &seedJitterXZ, 0.f, 5.f);
+    ImGui::DragFloat("seed jitter xz", &seedJitterXZ, 0.01f, 0.f, 5.f, "%.2f");
     if (uiOverlay->button("Restart")) {
       restartRequested = true;
     }
@@ -1693,26 +1902,39 @@ void VgeExample::onUpdateUIOverlay() {
     // --- PBF solver (M4) ---
     if (ImGui::CollapsingHeader("PBF solver", ImGuiTreeNodeFlags_DefaultOpen)) {
       ImGui::Text("rho0 (rest) : %.1f", rho0);
-      ImGui::SliderInt("substeps", &substeps, 1, 16);
-      ImGui::SliderInt("solverIters", &solverIters, 1, 6);
-      ImGui::SliderFloat("solver relax", &solverRelax, 0.05f, 1.f);
-      ImGui::SliderFloat("epsCFM", &epsCFM, 1.f, 1000.f);
-      ImGui::SliderFloat("scorrK", &scorrK, 0.f, 0.5f);
-      ImGui::SliderFloat("scorrDq/h", &scorrDqRatio, 0.05f, 0.5f);
-      ImGui::SliderFloat("xsphC", &xsphC, 0.f, 1.f);
-      ImGui::SliderFloat("vel damping", &velDamp, 0.f, 20.f);
-      ImGui::SliderFloat("vel clamp (CFL, 0=off)", &velClampFactor, 0.f, 0.5f);
+      ImGui::DragInt("substeps", &substeps, 1.f, 1, 16);
+      ImGui::DragInt("solverIters", &solverIters, 1.f, 1, 6);
+      ImGui::DragFloat("solver relax", &solverRelax, 0.005f, 0.05f, 1.f,
+                       "%.3f");
+      ImGui::DragFloat("epsCFM", &epsCFM, 1.f, 1.f, 1000.f, "%.1f");
+      ImGui::DragFloat("scorrK", &scorrK, 0.002f, 0.f, 0.5f, "%.3f");
+      ImGui::DragFloat("scorrDq/h", &scorrDqRatio, 0.002f, 0.05f, 0.5f, "%.3f");
+      ImGui::DragFloat("xsphC", &xsphC, 0.005f, 0.f, 1.f, "%.3f");
+      ImGui::DragFloat("vel damping", &velDamp, 0.05f, 0.f, 20.f, "%.2f");
+      ImGui::DragFloat("vel clamp (CFL, 0=off)", &velClampFactor, 0.002f, 0.f,
+                       0.5f, "%.3f");
       ImGui::Checkbox("color by density", &colorByDensity);
     }
 
     // --- Canvas deposit (M6) ---
     if (ImGui::CollapsingHeader("Canvas deposit",
                                 ImGuiTreeNodeFlags_DefaultOpen)) {
-      // Stamp alpha = concentration * depositStrength. Raise depositStrength
-      // (or depositHeight to catch more particles) if marks look too faint.
-      ImGui::SliderFloat("deposit strength", &depositStrength, 0.f, 1.f);
-      ImGui::SliderFloat("dry rate (/s)", &dryRate, 0.f, 5.f);
-      ImGui::SliderFloat("deposit height", &depositHeight, 0.01f, 0.5f);
+      // Per-frame stamp alpha = concentration * depositStrength. Keep SMALL so
+      // overlapping colours mix smoothly instead of flickering (compaction
+      // reorders particles -> order-dependent alpha-over oscillates at high
+      // alpha) and so concentration/blending stays visible (no saturation).
+      ImGui::DragFloat("deposit strength", &depositStrength, 0.001f, 0.f, 0.5f,
+                       "%.3f");
+      ImGui::DragFloat("deposit radius (world)", &depositRadius, 0.001f, 0.005f,
+                       0.06f, "%.3f");
+      ImGui::DragFloat("dry rate (/s)", &dryRate, 0.05f, 0.f, 10.f, "%.2f");
+      ImGui::DragFloat("deposit height", &depositHeight, 0.002f, 0.01f, 0.5f,
+                       "%.3f");
+      // Drying freezes near-floor motion (paint setting); 0 = off, 1 = full.
+      ImGui::DragFloat("dry settle (freeze)", &drySettle, 0.01f, 0.f, 1.f,
+                       "%.2f");
+      // Live-particle sprite size scale.
+      ImGui::DragFloat("particle size", &pointScale, 0.01f, 0.1f, 2.f, "%.2f");
     }
 
     if (uiOverlay->button("Save (no-op)")) {

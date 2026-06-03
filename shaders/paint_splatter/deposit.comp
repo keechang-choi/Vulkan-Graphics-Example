@@ -39,6 +39,10 @@ layout(std140, set = 0, binding = 1) uniform Ubo {
   float dryRate;
   float depositStrength;
   float depositHeight;
+  float depositRadius;  // canvas stamp radius in WORLD units (M6)
+  float drySettle;
+  float pad0;
+  float pad1;
 }
 u;
 layout(set = 0, binding = 8, rgba8) uniform image2D canvasImg;
@@ -63,9 +67,9 @@ void main() {
   ivec2 center = clamp(ivec2(uv * vec2(size)), ivec2(0), size - 1);
 
   // Stamp a small disk so a sparse particle still leaves a visible mark. Radius
-  // ~= the rest spacing in texels (clamped to a sane range).
+  // = depositRadius (world units) converted to texels (clamped to a sane range).
   float texelWorld = (u.cmax.x - u.cmin.x) / float(size.x);
-  int rad = clamp(int(u.h * 0.5 / texelWorld), 1, 24);
+  int rad = clamp(int(u.depositRadius / texelWorld), 1, 48);
 
   float a = clamp(p[i].color.a * u.depositStrength, 0.0, 1.0);
   vec3 paint = p[i].color.rgb;

@@ -30,6 +30,9 @@ layout(std140, set = 0, binding = 1) uniform Ubo {
 u;
 layout(std430, set = 0, binding = 3) buffer CellStart { uint cellStart[]; };
 layout(std430, set = 0, binding = 5) buffer SortedIds { uint sortedIds[]; };
+layout(std430, set = 0, binding = 9) readonly buffer LiveCount {
+  uint liveCount[];
+};
 
 ivec3 cellCoord(vec3 x) {
   return clamp(ivec3(floor((x - u.cmin.xyz) / u.h)), ivec3(0), u.gridDim.xyz - 1);
@@ -49,7 +52,7 @@ vec3 spikyGrad(vec3 rij, float r) {
 
 void main() {
   uint i = gl_GlobalInvocationID.x;
-  if (i >= u.count) return;
+  if (i >= liveCount[0]) return;
   vec3 xi = p[i].predict.xyz;
   ivec3 ci = cellCoord(xi);
 

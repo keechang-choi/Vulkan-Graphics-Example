@@ -29,10 +29,13 @@ layout(std140, set = 0, binding = 1) uniform Ubo {
 }
 u;
 layout(std430, set = 0, binding = 6) buffer DeltaP { vec4 deltaP[]; };
+layout(std430, set = 0, binding = 9) readonly buffer LiveCount {
+  uint liveCount[];
+};
 
 void main() {
   uint i = gl_GlobalInvocationID.x;
-  if (i >= u.count) return;
+  if (i >= liveCount[0]) return;
   // Jacobi update: all delta_p were computed against the same iteration's x*.
   p[i].predict.xyz += deltaP[i].xyz;
 }

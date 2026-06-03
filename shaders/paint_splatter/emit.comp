@@ -1,30 +1,36 @@
 #version 450
 layout(local_size_x = 256) in;
 
-// Emit pass (M5): spawn one droplet burst into the particle SSBO. The host
-// tracks the live count and computes baseIndex per burst (append-only until M6
-// adds compaction), so no GPU atomic counter is needed here. One dispatch per
-// droplet burst; each invocation writes one new particle at baseIndex + i.
+// Emit pass (M5 + M6-C-2): spawn one droplet burst into the particle SSBO.
+// Since compaction landed (M6-C-2) the live count is a GPU value (binding 9 =
+// liveCount), so each spawned particle reserves its slot with an atomicAdd
+// instead of a host-computed baseIndex. This runs AFTER pbf_predict compacts
+// the survivors to the front, so new particles append right after them. The
+// push-constant `baseIndex` field is kept for layout stability but unused now.
 
 struct Particle {
-  vec4 pos;      // xyz position, w unused
-  vec4 vel;      // xyz velocity, w = wetness
+  vec4 pos;      // xyz position, w = wetness (1 at emit, spent while drying)
+  vec4 vel;      // xyz velocity, w = density ratio (debug, set by finalize)
   vec4 predict;  // xyz predicted x*, w = lambda
   vec4 color;    // rgba paint color (a = concentration)
 };
 
 layout(std430, set = 0, binding = 0) buffer Particles { Particle p[]; };
+layout(std430, set = 0, binding = 9) buffer LiveCount { uint liveCount[]; };
 
 layout(push_constant) uniform Push {
   vec4 originRadius;  // xyz = spoid origin (y<0), w = lattice spacing
   vec4 velConc;       // xyz = initial velocity (+Y = down on screen), w = conc
   vec4 color;         // rgb = paint color, a unused
-  uint baseIndex;     // first particle slot to write
+  uint baseIndex;     // (unused since M6-C-2; slot comes from atomicAdd)
   uint count;         // number of particles in this burst
   uint seed;          // rng seed (varies per burst)
   uint pad;
 }
 pc;
+
+// Must match host kMaxParticles (1 << 16). Keep in sync with paint_splatter.hpp.
+const uint kMaxParticles = 65536u;
 
 // hash-based RNG (PCG-style integer hash) for per-particle jitter.
 uint hash(uint x) {
@@ -42,7 +48,9 @@ float rnd(uint n) {
 void main() {
   uint i = gl_GlobalInvocationID.x;
   if (i >= pc.count) return;
-  uint idx = pc.baseIndex + i;
+  // Reserve a packed slot after the compacted survivors via the shared atomic.
+  uint idx = atomicAdd(liveCount[0], 1u);
+  if (idx >= kMaxParticles) return;  // pool full -> drop this particle
 
   uint s = pc.seed + i * 9781u;
   // Jittered cube lattice: place particle i on a regular grid of side

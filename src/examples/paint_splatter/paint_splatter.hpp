@@ -30,10 +30,12 @@ struct GlobalUbo {
   glm::mat4 view{1.f};         // -- 64 --
   glm::mat4 inverseView{1.f};  // -- 128 --
   glm::vec4 canvasInfo{
-      0.f};  // -- 192 -- xy=half-extent, z=world size, w unused
-  // -- 208 --
+      0.f};  // -- 192 -- xy=half-extent, z=world size, w=density-debug flag
+  glm::vec4 renderParams{1.f, 0.f, 0.f,
+                         0.f};  // -- 208 -- x=particle point-size scale
+  // -- 224 --
 };
-static_assert(sizeof(GlobalUbo) == 208, "GlobalUbo std140 size");
+static_assert(sizeof(GlobalUbo) == 224, "GlobalUbo std140 size");
 
 // Particle: std430, 64 bytes
 //   pos      vec4  -- 0  -- xyz position, w=1
@@ -75,9 +77,13 @@ struct ComputeUbo {
   float dryRate;           // -- 116 -- wetness lost/sec while depositing (M6)
   float depositStrength;   // -- 120 -- stamp alpha = concentration*this (M6)
   float depositHeight;     // -- 124 -- deposit when pos.y >= -this (near floor)
-  // -- 128 --
+  float depositRadius;     // -- 128 -- canvas stamp radius in WORLD units (M6)
+  float drySettle;  // -- 132 -- 0..1: how much drying freezes motion (M6)
+  float pad0;       // -- 136 --
+  float pad1;       // -- 140 --
+  // -- 144 --
 };
-static_assert(sizeof(ComputeUbo) == 128, "ComputeUbo std140 size");
+static_assert(sizeof(ComputeUbo) == 144, "ComputeUbo std140 size");
 
 // EmitPush: push constant for the emit pass (M5). One dispatch per droplet
 // burst; the host computes baseIndex (append-only live count) so no GPU atomic
@@ -256,17 +262,58 @@ private:
   vk::raii::Sampler canvasSampler = nullptr;
   static constexpr uint32_t kCanvasTexRes = 2048;
   // deposit params (M6-B); live in ComputeUbo pads.
-  float dryRate = 0.5f;          // wetness lost per second while depositing
-  float depositStrength = 0.5f;  // stamp alpha = concentration * this
-  float depositHeight = 0.08f;   // deposit when pos.y >= -this (near floor y=0)
+  float dryRate = 2.0f;  // wetness lost per second while depositing
+  // Small per-frame stamp alpha so overlapping colours ACCUMULATE smoothly
+  // (mix) instead of flickering: compaction reorders particles each frame, so a
+  // high-alpha order-dependent alpha-over makes a two-colour texel oscillate
+  // (A-over-B vs B-over-A). A small alpha makes the order variance negligible
+  // and also keeps concentration/blending visible (no instant saturation).
+  float depositStrength = 0.03f;  // stamp alpha = concentration * this
+  float depositHeight = 0.08f;  // deposit when pos.y >= -this (near floor y=0)
+  float depositRadius = 0.02f;  // canvas stamp radius in WORLD units (M6)
+  // Drying makes a near-floor particle freeze in place (paint setting): its
+  // velocity is scaled toward 0 as wetness (pos.w) -> 0. 0 = no freeze, 1 =
+  // fully tie motion to wetness.
+  float drySettle = 1.0f;
+  // Particle point-sprite size scale (GlobalUbo.renderParams.x). <1 shrinks the
+  // rendered live-particle discs.
+  float pointScale = 0.5f;
 
   // ---- particle SSBO ----
   static constexpr uint32_t kMaxParticles = 1u << 16;  // 65536
+  // M6-C-2: the exact live count now lives on the GPU (liveCountBuffers). The
+  // host counters below are conservative UPPER BOUNDS used only to size
+  // dispatches / the point-draw; correctness comes from the in-shader liveCount
+  // guards. numParticles = this frame's dispatch & draw upper bound;
+  // prevParticleCount = upper bound on the prev buffer's live count (predict's
+  // compaction dispatch size). Both are >= the true counts by construction.
   uint32_t numParticles = 0;
-  // Ping-pong chain: live count at the END of the previous frame == # particles
-  // the prev buffer holds. predict carries [0, prevParticleCount) from prev to
-  // cur; emit writes the freshly-spawned [prevParticleCount, numParticles).
   uint32_t prevParticleCount = 0;
+
+  // ---- live count / compaction (M6-C-2) ----
+  // liveCountBuffers[i]: a uint[1] storage buffer holding the # of packed live
+  // particles for slot i. Reset to 0 at the top of each frame's compute
+  // (binding 9); pbf_predict (compaction) + emit atomicAdd into it; every other
+  // PBF pass guards on it. The PREV slot's buffer is bound at binding 10
+  // (read-only) so pbf_predict reads the exact valid range of the prev
+  // (ping-pong) buffer without a host readback -- mirrors the particle 0/7
+  // ping-pong. liveCount never crosses queues (compute reads/writes only).
+  std::vector<std::unique_ptr<vgeu::VgeuBuffer>> liveCountBuffers;
+  // Host-visible per-slot copies (one tiny uint, filled once per frame) for
+  // ImGui display + to shrink the dispatch upper bound. NOT used for
+  // correctness (the GPU guards handle that), only to keep dispatch tight.
+  std::vector<std::unique_ptr<vgeu::VgeuBuffer>> liveCountReadbackBuffers;
+  std::vector<uint8_t> liveReadbackValid;    // per slot: a copy has been made
+  std::vector<uint64_t> liveCopyCumEmitted;  // cumEmitted snapshot at the copy
+  uint64_t cumEmitted = 0;        // all-time emitted particle count (monotonic)
+  uint32_t emittedThisFrame = 0;  // reset each frame; feeds the dispatch bound
+  uint32_t liveCountDisplay = 0;  // last read-back live count (ImGui/debug)
+  // Readback-derived upper bound on the live count (kMax until the first
+  // readback). live_now <= R + emittedSince, so this is a valid bound that also
+  // shrinks as particles dry out -> keeps numParticles from pegging at kMax.
+  uint32_t liveUpperFromReadback = kMaxParticles;
+  void createLiveCountBuffers();
+  void consumeLiveCountReadback();
   // per-frame device-local SSBOs (written by compute, read as vertex buffer).
   // Stepped as a ping-pong chain (read prev, write cur) like particle.cpp, so
   // the two in-flight buffers form ONE evolving sim (no per-buffer divergence).
@@ -307,8 +354,9 @@ private:
   // compute<->graphics ping-pong (host-written each frame).
   std::vector<std::unique_ptr<vgeu::VgeuBuffer>> markerBuffers;
   bool showSpoids = true;
-  bool spaceWasDown = false;  // edge-detect the emit key
-  int selectedSpoidUi = 0;    // which spoid the ImGui param sliders edit
+  bool spaceWasDown = false;   // edge-detect the emit key
+  int selectedSpoidUi = 0;     // which spoid the ImGui param sliders edit
+  bool editAllSpoids = false;  // edit mode: apply param edits to ALL spoids
   // Task 9: hardcoded auto-drop (a single fixed emitter) to verify the emit
   // pass before the spoid UI exists; off by default now that spoids drive it.
   bool autoEmit = true;  // default-on: spoids auto-drop so the scene is alive

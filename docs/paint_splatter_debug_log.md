@@ -440,7 +440,87 @@ Final Composite
 
 오프라인 VFX는 "메쉬 생성 후 렌더", 실시간은 "스크린 스페이스 유체 렌더링"이라고 생각하면 거의 맞다. 특히 작은 물방울 수천~수만 개를 실시간으로 다룰 때는 메쉬 생성 비용 때문에 스크린 스페이스 접근이 훨씬 많이 사용된다.
 
-## M6-C-2 — Compaction design (blueprint, implementing next)
+## M6-C-2 — Compaction (IMPLEMENTED 2026-06-03; design blueprint below)
+
+**DONE & self-verified (VL-CLEAN + bounded live count).** Implemented the
+blueprint below with one robustness deviation. autoEmit (~300 particles / 0.6s)
+ran 11s: live count held a steady ~900-1200 band (was unbounded -> ~5-6k before
+compaction), with frame-to-frame drops (1200->1041, 1200->944) proving
+compaction removes dried particles; STDERR validation-clean; physics stable
+(rho bounded, speed ~0.7, particles reach floor, no explosion). Awaits the user
+visual GATE (marks accumulate / paint dries / count bounded on screen).
+
+Deviations from / refinements to the blueprint:
+- **predict reads the EXACT prev count from the GPU (new binding 10 =
+  prevLiveCount), not a host `prevCount`.** The blueprint's host prevCount lags
+  the prev buffer by one ping-pong cycle (N=2: a slot's liveCount readback is
+  only available 2 frames later), so it would mismatch the prev buffer's true
+  range -> over-count re-introduces stale slots as ghosts, under-count drops
+  live particles. binding 10 = liveCountBuffers[prevIdx] (the prev slot's own
+  counter, written when it was last `cur`, NOT reset this frame) gives predict
+  the exact range: `if (i >= prevLiveCount[0]) return;`. Mirrors the particle
+  0/7 ping-pong. So correctness no longer depends on readback accuracy.
+- **liveCount never crosses queues.** Only compute reads/writes it (predict +
+  emit atomicAdd into binding 9; grid/lambda/delta/apply/finalize guard on it).
+  deposit (graphics queue) does NOT read liveCount -- it keeps its host-`count`
+  + geometric guards and rejects the parked tail by uv-out-of-range. So no QFOT
+  on the counter; the per-frame readback copy is a same-queue transfer.
+- **finalize parks the stale tail offscreen.** The buffer is packed
+  [0, liveCount); the host dispatches/draws an UPPER BOUND. finalize sets
+  `p[i].pos = vec4(1e18)` for `i >= liveCount[0]` so the point-draw clips them
+  and deposit rejects them, without needing draw-indirect or an exact host draw
+  count. Next frame's compaction reads only [0, prevLiveCount) so never picks
+  them up.
+- **Host counts are conservative UPPER BOUNDS, not the live count.**
+  numParticles = min(kMax, prevBound + emittedThisFrame); prevBound is shrunk by
+  a readback-derived bound (`live_now <= R + emittedSince`, provably >= true) so
+  dispatch stays tight instead of pegging at kMax. ImGui shows the readback
+  live count. Readback is display + dispatch-tightening only; GPU guards own
+  correctness (matches plan Task 12's "readback not for control flow" spirit).
+- predict-compaction + emit run ONCE per frame (re-running the atomic per
+  substep would double-count); recordPbfSubstep now starts at the grid rebuild.
+
+Files touched: shaders pbf_predict/emit/grid_count/grid_scatter/pbf_lambda/
+pbf_delta/pbf_apply/pbf_finalize.comp; paint_splatter.hpp/.cpp (liveCount
+buffers + bindings 9/10, pool 7->9 SSBO, enqueueDrop/updateComputeUbo/
+consumeLiveCountReadback/buildComputeCommandBuffers/restartSimulation/ImGui).
+grid_scan.comp and deposit.comp unchanged.
+
+### Post-M6-C-2 visual tuning (2026-06-03, user iteration)
+- dry settle (pbf_finalize): near-floor velocity scaled by wetness so drying
+  particles freeze (paint setting) instead of sliding. `drySettle` slider.
+- deposit/sprite size: `depositRadius` (world units) replaces the fixed h*0.5
+  stamp; `pointScale` (GlobalUbo.renderParams.x) scales gl_PointSize. Both
+  sliders. ComputeUbo 128->144 (+depositRadius,drySettle,pad0,pad1); GlobalUbo
+  208->224 (+renderParams). VL-clean confirmed with the new sizes.
+- deposit flicker mitigation: depositStrength default lowered (0.5->0.03) so the
+  per-frame alpha is small -> compaction's per-frame particle REORDER makes the
+  order-dependent alpha-over oscillate less at color overlaps (the "z-fighting
+  between colors" the user saw is this reorder x order-dependence, not 3D depth).
+- dryRate default 0.5->2.0 (paint absorbs faster -> lower steady live count).
+- restart now also resets spoid colour (palette) + position (arrangeSpoidsCircle);
+  count + other params kept (user-approved).
+- ImGui: most float params -> DragFloat, amount/substeps/solverIters -> DragInt
+  (fine control); "edit ALL spoids" radio propagates a param edit to every spoid.
+
+### DEFERRED (future work) — order-independent deposit accumulation
+The low-depositStrength PALENESS and the color-overlap FLICKER are two sides of
+the SAME alpha-over limitation: rich-immediate color needs high per-stamp alpha
+(-> order-dependent -> flickers when compaction reorders particles), smooth
+mixing needs low alpha (-> blends toward the WHITE canvas base -> pale until
+enough stamps accumulate, which fast drying prevents). The proper fix is an
+ORDER-INDEPENDENT weighted accumulation: per texel store sum(paint_i * w_i) and
+sum(w_i) via imageAtomicAdd (addition is commutative -> order-independent), and
+canvas.frag outputs sum_color/sum_w. Gives saturated color + correct color
+mixing + zero flicker, all independent of particle order. Cost: canvas RGBA8 ->
+atomic-capable storage (4x R32_UINT fixed-point images, or packed), rewrite
+deposit.comp (atomicAdd), canvas.frag (normalize on read), the PNG save path
+(readback + normalize), and restart clear. Sizable -- its own milestone. User
+deferred it (2026-06-03); current alpha-over model kept for now.
+
+---
+
+### Original blueprint (design, pre-implementation)
 Goal: remove dried-out particles (pos.w<=0) so the live count stays bounded; the
 "droplet absorbed into the canvas and gone" behaviour. The hard part: the live
 count becomes a GPU-dynamic value, but the solver currently dispatches/guards on

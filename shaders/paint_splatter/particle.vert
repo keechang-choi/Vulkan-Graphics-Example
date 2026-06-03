@@ -9,6 +9,7 @@ layout(set = 0, binding = 0) uniform GlobalUbo {
   mat4 view;
   mat4 inverseView;
   vec4 canvasInfo;
+  vec4 renderParams;  // x = particle point-size scale
 }
 ubo;
 
@@ -28,7 +29,9 @@ vec3 sciColor(float t) {
 void main() {
   vec4 clip = ubo.projection * ubo.view * vec4(inPos.xyz, 1.0);
   gl_Position = clip;
-  gl_PointSize = clamp(16.0 / max(clip.w, 0.001), 2.0, 32.0);
+  // renderParams.x scales the sprite size (live-particle disc); <1 shrinks it.
+  gl_PointSize =
+      clamp(ubo.renderParams.x * 16.0 / max(clip.w, 0.001), 1.0, 32.0);
   if (ubo.canvasInfo.w > 0.5) {
     // density debug: inVel.w holds rho/rho0; center the map around rest (1.0)
     vColor = vec4(sciColor((inVel.w - 0.5) / 1.0), 1.0);
