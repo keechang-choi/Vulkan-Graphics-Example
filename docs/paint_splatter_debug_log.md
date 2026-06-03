@@ -518,6 +518,7 @@ deposit.comp (atomicAdd), canvas.frag (normalize on read), the PNG save path
 (readback + normalize), and restart clear. Sizable -- its own milestone. User
 deferred it (2026-06-03); current alpha-over model kept for now.
 
+그리고 이거 나중에 작업할때 물감 섞이는 것도 alpha blending이 아니라 색이 혼합되는 방식을 모사할 수 있으면 좋겠어.
 ---
 
 ### Original blueprint (design, pre-implementation)

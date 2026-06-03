@@ -39,3 +39,5 @@ bash.exe.stackdump
 *.spv
 screenshots/*
 .config
+run_err.txt
+run_out.txt
