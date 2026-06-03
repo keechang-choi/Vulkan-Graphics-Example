@@ -394,7 +394,9 @@ private:
     std::vector<vk::raii::DescriptorSet> descriptorSets;
     vk::raii::PipelineLayout pipelineLayout = nullptr;
     // PBF pipeline stages (all share descriptorSetLayout/pipelineLayout)
-    vk::raii::Pipeline pipeline = nullptr;  // predict
+    vk::raii::Pipeline pipeline = nullptr;  // predict (compaction, once/frame)
+    vk::raii::Pipeline integrate =
+        nullptr;  // M8: per-substep force integration
     vk::raii::Pipeline gridCount = nullptr;
     vk::raii::Pipeline gridScan = nullptr;
     vk::raii::Pipeline gridScatter = nullptr;
@@ -442,8 +444,12 @@ private:
   float scorrK = 0.1f;        // artificial pressure strength
   float scorrDqRatio = 0.2f;  // scorrDq = ratio * h
   float scorrN = 4.f;
-  float xsphC = 0.1f;    // XSPH viscosity (normalized)
-  float velDamp = 8.0f;  // global velocity drag (per second) to settle bulk
+  float xsphC = 0.1f;  // XSPH viscosity (normalized)
+  // Gentle per-substep drag (M8): the reference uses v*=0.999/substep. High
+  // values (the old 8.0) dissipate the impact energy that launches a crown and
+  // cap terminal velocity (~0.75) -- settling of DEPOSITED paint is drying's
+  // job (drySettle), not bulk drag's.
+  float velDamp = 0.5f;  // global velocity drag (per second), kept gentle
   // CFL speed cap maxSpeed = factor * h / dt; <=0 disables it. The principled
   // approach is XPBD "small steps" (many substeps, few iters): with small dt
   // the velocity recovery v=(x*-x)/dt is already physical, so no clamp is
@@ -455,8 +461,9 @@ private:
   // close/piled particles oscillate ("flicker") and softens close-range
   // popping.
   float solverRelax = 0.3f;
-  int substeps = 1;
-  int solverIters = 4;
+  int substeps = 3;  // M8: XPBD small-steps (stability from many small dt,
+                     // not from grinding iters at a big dt; reference uses 5)
+  int solverIters = 2;  // M8: fewer iters per substep (reference uses 2)
   bool colorByDensity = false;  // debug: tint particles by rho/rho0
 
   static constexpr float kCanvasWorld = 4.0f;

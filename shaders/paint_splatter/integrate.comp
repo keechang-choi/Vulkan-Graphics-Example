@@ -1,0 +1,51 @@
+#version 450
+layout(local_size_x = 256) in;
+
+// M8: per-substep force integration (split out of pbf_predict so substeps work).
+// Runs at the START of every substep over the already-compacted cur buffer:
+// apply gravity (+Y = down on screen) and predict x* = x + v*dt. With N
+// substeps and dt = frameDt/N, the total gravity impulse per frame is N*g*dt =
+// g*frameDt regardless of N (so substepping no longer weakens gravity). The
+// solver then resolves constraints/collision against predict; finalize commits
+// v = (predict - pos)/dt and pos = predict, so the next substep integrates from
+// the updated position. Guards on liveCount[0] (binding 9) like every PBF pass.
+
+struct Particle {
+  vec4 pos;      // xyz position, w = wetness
+  vec4 vel;      // xyz velocity, w = density ratio (debug)
+  vec4 predict;  // xyz predicted x*, w = lambda
+  vec4 color;
+};
+
+layout(std430, set = 0, binding = 0) buffer Particles { Particle p[]; };
+layout(std430, set = 0, binding = 9) readonly buffer LiveCount {
+  uint liveCount[];
+};
+
+layout(std140, set = 0, binding = 1) uniform Ubo {
+  float dt;
+  uint count;
+  float gravity;
+  float h;
+  vec4 cmin;
+  vec4 cmax;
+  ivec4 gridDim;
+  float rho0;
+  float epsCFM;
+  float scorrK;
+  float scorrDq;
+  float scorrN;
+  float xsphC;
+  float kPoly6;
+  float kSpiky;
+  float scorrDenom;
+}
+u;
+
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  if (i >= liveCount[0]) return;
+  vec3 v = p[i].vel.xyz + vec3(0.0, u.gravity, 0.0) * u.dt;
+  p[i].vel.xyz = v;  // keep vel.w (density ratio, set by finalize)
+  p[i].predict = vec4(p[i].pos.xyz + v * u.dt, 0.0);
+}

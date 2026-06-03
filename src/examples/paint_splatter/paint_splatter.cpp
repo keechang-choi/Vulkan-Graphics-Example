@@ -1007,6 +1007,7 @@ void VgeExample::createComputePipeline() {
     return vk::raii::Pipeline(device, pipelineCache, pipelineCI);
   };
   compute.pipeline = makePipeline("pbf_predict");
+  compute.integrate = makePipeline("integrate");  // M8: per-substep integration
   compute.gridCount = makePipeline("grid_count");
   compute.gridScan = makePipeline("grid_scan");
   compute.gridScatter = makePipeline("grid_scatter");
@@ -1679,10 +1680,17 @@ void VgeExample::recordPbfSubstep(const vk::raii::CommandBuffer& cmd,
     cmd.dispatch(groupCount, 1, 1);
   };
 
-  // NOTE (M6-C-2): predict (now the compaction step) runs ONCE per frame in
+  // NOTE (M6-C-2/M8): predict (the compaction step) runs ONCE per frame in
   // buildComputeCommandBuffers, before emit -- NOT here -- because its atomic
-  // append would double-count if repeated per substep. This substep starts at
-  // the neighbour-grid rebuild over the already-predicted positions.
+  // append would double-count if repeated per substep. Force INTEGRATION,
+  // however, must repeat per substep, so it runs here (integrate.comp) as the
+  // first pass of each substep: apply gravity + predict x* = pos + v*dt over
+  // the compacted cur buffer, then rebuild the grid over those predicted
+  // positions.
+
+  // 0. integrate external forces (gravity) -> predict x* (M8, per substep)
+  dispatchParticles(compute.integrate);
+  barrier();
 
   // 1. build neighbor grid: clear counts -> count -> scan -> scatter
   cmd.fillBuffer(cellCountBuffers[frame]->getBuffer(), 0,

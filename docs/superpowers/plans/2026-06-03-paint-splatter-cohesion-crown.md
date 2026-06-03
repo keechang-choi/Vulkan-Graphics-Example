@@ -97,12 +97,15 @@ rtk git add -A && rtk git commit -m "feat(paint_splatter): match rho0 to emit sp
 
 ---
 
-## Task 2 — Stabilization defaults (substeps over clamps)
+## Task 2 — Enable true substeps (split predict) + stabilization defaults
 
-**Goal:** switch the solver to the XPBD "small steps" recipe (more substeps, fewer iters) and gentle damping, so the revived constraint stays stable without the heavy `velDamp` that kills the crown. Still compression-only here, so the droplet won't be cohesive yet — the gate is **stability**.
+**Goal:** switch the solver to the XPBD "small steps" recipe (more substeps, fewer iters) and gentle damping. **Discovered during execution:** the M6-C-2 refactor fused compaction + force-integration into `pbf_predict`, which runs ONCE per frame *outside* the substep loop, so `substeps>1` weakened gravity (integrated once at `dt/N`) and `finalize` wiped falling velocity each extra substep — particles froze and drifted. So this task first **splits `pbf_predict` into compaction-only + a new per-substep `integrate.comp`**, then applies the defaults. Still compression-only here (no cohesion yet) — the gate is **stability + correct fall**.
 
 **Files:**
-- Modify: `src/examples/paint_splatter/paint_splatter.hpp:443,455,456`
+- Modify: `shaders/paint_splatter/pbf_predict.comp` (remove gravity integration; carry state, `predict=pos`)
+- Create: `shaders/paint_splatter/integrate.comp` (per-substep gravity + `predict = pos + v*dt`, guards on liveCount binding 9)
+- Modify: `src/examples/paint_splatter/paint_splatter.hpp` (compute struct: add `integrate` pipeline; `velDamp`/substeps/solverIters defaults)
+- Modify: `src/examples/paint_splatter/paint_splatter.cpp` (`createComputePipeline` build `integrate`; `recordPbfSubstep` dispatch `integrate` first, before the grid build)
 
 - [ ] **Step 1: Change the stabilization defaults.** In `paint_splatter.hpp`:
 

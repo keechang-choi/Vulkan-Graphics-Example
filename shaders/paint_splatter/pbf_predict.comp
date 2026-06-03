@@ -8,13 +8,16 @@ struct Particle {
   vec4 color;    // rgba paint color
 };
 
-// M6-C-2 COMPACTION. This pass is now the stream-compaction step as well as the
-// gravity/predict integration. It reads the PREVIOUS frame's committed state
-// (binding 7, the ping-pong prev buffer), DROPS dried-out particles
+// M6-C-2 COMPACTION (M8: compaction ONLY -- integration moved to integrate.comp
+// so it can run per-substep). This pass reads the PREVIOUS frame's committed
+// state (binding 7, the ping-pong prev buffer), DROPS dried-out particles
 // (pos.w <= 0), and packs the survivors to the FRONT of this frame's buffer
 // (binding 0, cur) via an atomic counter (binding 9 = liveCount, reset to 0 at
 // the top of the frame). emit.comp then appends fresh particles after the
 // survivors using the same atomic. All later PBF passes guard on liveCount[0].
+// It runs ONCE per frame (its atomic append must not repeat per substep); the
+// gravity/predict integration that DOES repeat per substep now lives in
+// integrate.comp, the first pass of each substep.
 //
 // The valid range of the prev buffer is read from binding 10 = prevLiveCount
 // (the prev slot's own liveCount, written when it was last `cur` and NOT reset
@@ -69,12 +72,12 @@ void main() {
   uint d = atomicAdd(liveCount[0], 1u);
   if (d >= kMaxParticles) return;  // pool full (should not happen given bound)
 
-  // PBF Algorithm 1: apply external force, predict x*. gravity = +Y (down on
-  // screen). Collision/constraint resolved in the solver; velocity recomputed
-  // in finalize. Carry committed position / colour / wetness forward.
-  vec3 v = src.vel.xyz + vec3(0.0, u.gravity, 0.0) * u.dt;
+  // Carry committed position / velocity / colour / wetness forward unchanged.
+  // No force integration here (M8): integrate.comp applies gravity + predicts x*
+  // per substep. predict starts at pos (x* = x) so a guard read before the first
+  // integrate is still valid.
   p[d].pos = src.pos;
-  p[d].vel = vec4(v, src.vel.w);
-  p[d].predict = vec4(src.pos.xyz + v * u.dt, 0.0);
+  p[d].vel = src.vel;
+  p[d].predict = vec4(src.pos.xyz, 0.0);
   p[d].color = src.color;
 }
