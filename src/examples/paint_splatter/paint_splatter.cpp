@@ -5,16 +5,22 @@
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
+// stb_image_write: the implementation is compiled once in vgeu_gltf.cpp
+// (STB_IMAGE_WRITE_IMPLEMENTATION there); here we only need the declarations.
+#include "stb_image_write.h"
 
 // std
 #include <algorithm>
 #include <array>
 #include <cassert>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <iostream>
 #include <limits>
 #include <random>
+#include <string>
 #include <vector>
 
 namespace vge {
@@ -378,6 +384,87 @@ void VgeExample::createCanvasImage() {
         cmd.clearColorImage(canvasImage->getImage(), vk::ImageLayout::eGeneral,
                             white, range);
       });
+}
+
+// M7 Task 14: export the accumulation canvas to a PNG. device.waitIdle (the
+// simplest correct sync), copy the GENERAL-layout RGBA8 image into a
+// host-visible buffer (copyImageToBuffer; GENERAL is a valid transfer-src
+// layout), then write it with stbi_write_png. Filename is
+// build/paint_<timestamp>.png (the app runs from build/). On failure the
+// status string reports it and the sim continues.
+void VgeExample::saveCanvasPng() {
+  const uint32_t w = kCanvasTexRes;
+  const uint32_t h = kCanvasTexRes;
+
+  // Stop the GPU so the canvas is settled and safe to read (no in-flight
+  // deposit/sample). Heavy but correct, and Save is a rare manual action.
+  device.waitIdle();
+
+  vgeu::VgeuBuffer staging(globalAllocator->getAllocator(), 4u, w * h,
+                           vk::BufferUsageFlagBits::eTransferDst,
+                           VMA_MEMORY_USAGE_AUTO,
+                           VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT |
+                               VMA_ALLOCATION_CREATE_MAPPED_BIT);
+
+  vgeu::oneTimeSubmit(
+      device, commandPool, queue, [&](const vk::raii::CommandBuffer& cmd) {
+        vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1,
+                                        0, 1);
+        // Transition GENERAL -> TRANSFER_SRC_OPTIMAL for the copy (also makes
+        // prior deposit/sample writes visible), then restore GENERAL so the
+        // descriptor / deposit / sample keep working. Validation flags GENERAL
+        // as non-optimal for vkCmdCopyImageToBuffer.
+        vk::ImageMemoryBarrier toTransfer(
+            vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead,
+            vk::AccessFlagBits::eTransferRead, vk::ImageLayout::eGeneral,
+            vk::ImageLayout::eTransferSrcOptimal, VK_QUEUE_FAMILY_IGNORED,
+            VK_QUEUE_FAMILY_IGNORED, canvasImage->getImage(), range);
+        cmd.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader |
+                                vk::PipelineStageFlagBits::eFragmentShader,
+                            vk::PipelineStageFlagBits::eTransfer,
+                            vk::DependencyFlags{}, nullptr, nullptr,
+                            toTransfer);
+        vk::BufferImageCopy region(
+            0, 0, 0,
+            vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0,
+                                       1),
+            vk::Offset3D(0, 0, 0), vk::Extent3D(w, h, 1));
+        cmd.copyImageToBuffer(canvasImage->getImage(),
+                              vk::ImageLayout::eTransferSrcOptimal,
+                              staging.getBuffer(), region);
+        vk::ImageMemoryBarrier backToGeneral(
+            vk::AccessFlagBits::eTransferRead,
+            vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead,
+            vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eGeneral,
+            VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+            canvasImage->getImage(), range);
+        cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                            vk::PipelineStageFlagBits::eComputeShader |
+                                vk::PipelineStageFlagBits::eFragmentShader,
+                            vk::DependencyFlags{}, nullptr, nullptr,
+                            backToGeneral);
+      });
+
+  // Timestamped filename (relative to cwd = build/).
+  std::time_t t = std::time(nullptr);
+  std::tm tm{};
+#if defined(_WIN32)
+  localtime_s(&tm, &t);
+#else
+  localtime_r(&t, &tm);
+#endif
+  char name[64];
+  std::strftime(name, sizeof(name), "paint_%Y%m%d_%H%M%S.png", &tm);
+
+  int ok = stbi_write_png(name, static_cast<int>(w), static_cast<int>(h), 4,
+                          staging.getMappedData(), static_cast<int>(w * 4u));
+  if (ok) {
+    saveStatus = std::string("saved ") + name;
+    std::cout << "[paint_splatter] " << saveStatus << std::endl;
+  } else {
+    saveStatus = std::string("SAVE FAILED: ") + name;
+    std::cerr << "[paint_splatter] " << saveStatus << std::endl;
+  }
 }
 
 void VgeExample::createUniformBuffers() {
@@ -1343,6 +1430,12 @@ void VgeExample::render() {
     restartSimulation();
   }
 
+  // M7: handle a pending canvas->PNG save (does device.waitIdle internally).
+  if (saveRequested) {
+    saveRequested = false;
+    saveCanvasPng();
+  }
+
   // M6-C-2: count this frame's fresh emits (feeds the dispatch upper bound).
   emittedThisFrame = 0;
 
@@ -1935,6 +2028,14 @@ void VgeExample::onUpdateUIOverlay() {
                        "%.2f");
       // Live-particle sprite size scale.
       ImGui::DragFloat("particle size", &pointScale, 0.01f, 0.1f, 2.f, "%.2f");
+
+      // M7 Task 14: export the canvas to build/paint_<timestamp>.png.
+      if (uiOverlay->button("Save PNG")) {
+        saveRequested = true;  // handled next render() (does device.waitIdle)
+      }
+      if (!saveStatus.empty()) {
+        ImGui::TextWrapped("%s", saveStatus.c_str());
+      }
     }
 
     if (uiOverlay->button("Save (no-op)")) {

@@ -258,6 +258,12 @@ private:
   // compute imageStore and the fragment sample are valid without per-use layout
   // transitions.
   void createCanvasImage();
+  // M7 Task 14: read the canvas image back to the host and write a PNG to
+  // build/paint_<timestamp>.png. device.waitIdle (simplest correct) -> copy the
+  // GENERAL-layout RGBA8 image to a host-visible buffer -> stbi_write_png.
+  void saveCanvasPng();
+  bool saveRequested = false;  // set by the ImGui button, handled in render()
+  std::string saveStatus;      // last save result, shown in the ImGui panel
   std::unique_ptr<vgeu::VgeuImage> canvasImage;
   vk::raii::Sampler canvasSampler = nullptr;
   static constexpr uint32_t kCanvasTexRes = 2048;
