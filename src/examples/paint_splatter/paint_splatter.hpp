@@ -283,7 +283,9 @@ private:
   std::string saveStatus;      // last save result, shown in the ImGui panel
   std::unique_ptr<vgeu::VgeuImage> canvasImage;
   vk::raii::Sampler canvasSampler = nullptr;
-  static constexpr uint32_t kCanvasTexRes = 2048;
+  // Canvas accumulation-texture resolution. Allocated once at startup -> a
+  // start-time-only setting (no live slider); set via --canvas-res.
+  uint32_t kCanvasTexRes = 2048;
   // deposit params (M6-B); live in ComputeUbo pads.
   float dryRate = 2.0f;  // wetness lost per second while depositing
   // Small per-frame stamp alpha so overlapping colours ACCUMULATE smoothly
@@ -467,7 +469,9 @@ private:
   // sets rho0 + the emit lattice, not the grid.) NOTE: the old 0.005 (=0.05h)
   // made rho0 ~8e6 >> a droplet's actual density -> both density pressure and
   // scorr evaluated to ~0 -> no cohesion, no crown (see the M8 design spec).
-  static constexpr float kParticleSpacing = 0.03f;
+  // Not runtime-tunable (feeds rho0 + the grid at startup) -> a start-time-only
+  // setting; set via --spacing.
+  float kParticleSpacing = 0.03f;
   float rho0 = 0.f;  // computed from the rest lattice in prepare()
   // SOFT constraint (M8, reference-grounded): the CPU reference uses
   // epsilon_cfm=1e5, which dominates a typical Sum|grad C|^2 (~660 at our

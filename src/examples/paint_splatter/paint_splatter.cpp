@@ -46,6 +46,14 @@ VgeExample::~VgeExample() {}
 
 void VgeExample::setupCommandLineParser(CLI::App& app) {
   VgeBase::setupCommandLineParser(app);
+  // Only START-TIME-ONLY settings get CLI flags (everything else is a live
+  // ImGui slider). These two are allocated/computed once in prepare() with no
+  // runtime path, so they can only be chosen at launch.
+  app.add_option("--canvas-res", kCanvasTexRes,
+                 "canvas accumulation texture resolution (px, default 2048)");
+  app.add_option("--spacing", kParticleSpacing,
+                 "PBF rest particle spacing (default 0.03 = 0.3h); sets rho0 + "
+                 "emit density");
 }
 
 void VgeExample::getEnabledFeatures() {
