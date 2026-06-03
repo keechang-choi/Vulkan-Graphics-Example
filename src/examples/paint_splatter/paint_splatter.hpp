@@ -442,7 +442,7 @@ private:
   // sets rho0 + the emit lattice, not the grid.) NOTE: the old 0.005 (=0.05h)
   // made rho0 ~8e6 >> a droplet's actual density -> both density pressure and
   // scorr evaluated to ~0 -> no cohesion, no crown (see the M8 design spec).
-  static constexpr float kParticleSpacing = 0.05f;
+  static constexpr float kParticleSpacing = 0.03f;
   float rho0 = 0.f;  // computed from the rest lattice in prepare()
   // SOFT constraint (M8, reference-grounded): the CPU reference uses
   // epsilon_cfm=1e5, which dominates a typical Sum|grad C|^2 (~660 at our
