@@ -112,7 +112,7 @@ static_assert(sizeof(EmitPush) == 80, "EmitPush push-constant size");
 // Space releases one droplet burst of `amount` particles from each selected
 // spoid. World convention: spoids live above the floor at y<0.
 struct Spoid {
-  glm::vec3 pos{0.f, -2.5f, 0.f};
+  glm::vec3 pos{0.f, -1.25f, 0.f};  // M8: start height halved (was -2.5)
   float holeRadius = 0.12f;
   glm::vec3 color{0.2f, 0.4f, 0.9f};
   float emissionVelocity = 2.f;  // initial downward (+Y) speed
@@ -123,7 +123,7 @@ struct Spoid {
   // position last frame (the sweep start for a continuous stream); emitAccum =
   // fractional particle carry so a non-integer per-frame rate still emits
   // evenly.
-  glm::vec3 prevPos{0.f, -2.5f, 0.f};
+  glm::vec3 prevPos{0.f, -1.25f, 0.f};
   float emitAccum = 0.f;
 };
 

@@ -1157,11 +1157,14 @@ void VgeExample::updateSpoids() {
   std::vector<int> emitDrops;
   spoidController->update(frameTimer, spoids, in, emitDrops);
 
-  // Keep spoids inside the domain and above the floor (y < 0).
+  // Spoids may move OUTSIDE the canvas footprint (so a stroke can enter/leave
+  // the painting) -- only a generous outer bound stops them being lost. y stays
+  // between the floor and the ceiling.
   const float m = 0.05f;
+  const float xzBound = 2.f * kDomainHalf;  // one canvas-width past each edge
   for (auto& s : spoids) {
-    s.pos.x = glm::clamp(s.pos.x, -kDomainHalf + m, kDomainHalf - m);
-    s.pos.z = glm::clamp(s.pos.z, -kDomainHalf + m, kDomainHalf - m);
+    s.pos.x = glm::clamp(s.pos.x, -xzBound, xzBound);
+    s.pos.z = glm::clamp(s.pos.z, -xzBound, xzBound);
     s.pos.y = glm::clamp(s.pos.y, -kDomainHeight + m, -0.1f);
   }
 
@@ -1182,7 +1185,7 @@ void VgeExample::arrangeSpoidsCircle() {
   if (n == 0) return;
   // Re-level every spoid to the default spawn height (y) too, so
   // adding/removing a spoid resets the whole set to a clean starting layout.
-  const float y = -2.5f;  // matches Spoid::pos default
+  const float y = -1.25f;  // matches Spoid::pos default (M8: start height /2)
   if (n == 1) {
     spoids[0].pos = glm::vec3(0.f, y, 0.f);
     return;
