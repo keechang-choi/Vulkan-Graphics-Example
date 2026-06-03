@@ -83,10 +83,37 @@ defaults, all in existing shaders/host code.
   radius and derive `amount` from the ball volume; the plan picks one and shows
   the derived value in ImGui.
 
+### §1.5. Cohesion mechanism — bounded signed constraint (the actual cohesion knob)
+
+Matching `rho0` (§1) revives the *over-compression* response — the incompressible
+rebound that makes a **crown on impact** — but it does **not** by itself make a
+falling droplet cohesive. Our current constraint is compression-only
+`C = max(ρ/ρ0 − 1, 0)`: a droplet at rest density has interior `ρ≈ρ0` (C=0) and
+surface `ρ<ρ0` (clamped to 0), so **every particle yields λ=0 → zero attractive
+force**. `scorr` is anti-clustering (repulsive-leaning), not cohesive. So a
+compression-only droplet, even at the right `rho0`, has nothing pulling it together
+and disperses in flight — exactly the symptom.
+
+Real liquid cohesion is the density constraint pulling **under-dense** (stretched)
+regions back toward rest density — i.e. the *signed* constraint `C = ρ/ρ0 − 1` the
+reference uses. We removed the sign because in the M4 *sub-monolayer* (fluid spread
+too thin to ever reach `rho0`) it was perpetually under-dense → unbounded
+attractive pull → the "THE big one" explosion. A **compact droplet** does not have
+that problem: it can reach `rho0`, so the pull settles at equilibrium.
+
+**Mechanism:** use a **bounded signed constraint**
+`C = max(ρ/ρ0 − 1, −cohesionFloor)`. Under-dense particles now get a *bounded*
+attractive correction (cohesion), while the floor caps the pull so a sub-monolayer
+cannot run away. `cohesionFloor = 0` reduces to today's compression-only behaviour;
+`cohesionFloor ≈ 0.3–0.5` gives a cohesive droplet. This is the **primary cohesion
+knob** (a live slider). It is one clamp change in `pbf_lambda` and one UBO field
+(reuse an existing `ComputeUbo` pad — no struct-size change).
+
 ### §2. Stabilization recipe (corrected by the reference)
 
-The revived density constraint reintroduces the old close-encounter pop unless
-stabilized the *modern* way — **small steps, not band-aids**:
+The revived density constraint — and especially the §1.5 cohesion pull — can
+reintroduce the old close-encounter pop unless stabilized the *modern* way —
+**small steps, not band-aids**:
 
 - **Substeps over iterations:** default toward `substeps ≈ 3–4`, `solverIters ≈ 2`
   (was 1×4). With the droplet near the constraint manifold (now that `rho0`
@@ -103,18 +130,23 @@ stabilized the *modern* way — **small steps, not band-aids**:
   the `pbf_delta` `maxDp = 0.2h` clamp **toggleable/slack** (e.g. raise the cap or
   gate it) rather than always-on. They remain available as sliders to tame a
   specific misbehaving high-velocity drop, but are not the primary stabilizer.
-- **Re-tune `epsCFM`:** because `Σ‖∇C‖² ∝ 1/rho0²`, dropping `rho0` ~10⁶× rescales
-  the λ denominator; the current `epsCFM = 100` will be mis-scaled. After the
-  `rho0` change, READBACK a typical `Σ‖∇C‖²` and set `epsCFM` to a small fraction
-  (~1e-3…1e-2) of it so λ stays bounded. Expose it as a slider.
+- **`epsCFM` re-aligns automatically:** `Σ‖∇C‖² ∝ 1/rho0²`, so the λ denominator's
+  scale is set by `rho0`. Reverting `kParticleSpacing` to `0.05` restores
+  `rho0 ≈ 8078` — the exact value `epsCFM = 100` was tuned against in M4 — so no
+  manual rescale is needed (reference Finding 6 is satisfied for free). Keep
+  `epsCFM` a slider and sanity-check λ stays bounded via READBACK after the change.
 
 ### §3. Crown expressiveness dials (tuning, live at the GATE)
 
 With incompressibility back, the crown is controlled by, in priority order:
 `emissionVelocity ↑` (impact momentum) × `velDamp ↓` (don't dissipate it) ×
 clamps-off (don't cap the rebound) × `solverIters/substeps` (enough to resolve the
-incompressible push). `scorrK` is a *secondary* surface-sharpening knob (the
-reference itself flags scorr as weak/heuristic), not the cohesion source.
+incompressible push). In-flight **cohesion** is owned by `cohesionFloor` (§1.5),
+not by `scorrK`; `scorrK` stays a *secondary* surface-sharpening / anti-clustering
+knob (the reference itself flags scorr as weak/heuristic). Cohesion (hold the
+droplet together) and crown (let it spread on impact) pull in opposite directions,
+so they are balanced live at the gate: enough `cohesionFloor` to survive the fall,
+not so much that the impact can't break the surface open.
 
 ### §4. Spawn-pop contingency (only if needed)
 
@@ -133,14 +165,18 @@ not baseline scope — do not implement preemptively.
 
 | File | Change |
 |---|---|
-| `paint_splatter.hpp` | `kParticleSpacing 0.005→0.05`; `velDamp` default; `epsCFM` default; substeps/solverIters defaults; (maybe) Δp-clamp toggle field |
-| `paint_splatter.cpp` | `enqueueDrop` spacing = restSpacing; `holeRadius`/`amount` reconciliation + ImGui; `epsCFM` READBACK helper for re-tune; ImGui slider ranges/defaults |
-| `shaders/pbf_delta.comp` | Δp clamp → toggleable/slack (UBO-driven), not hard-coded 0.2h |
-| `shaders/pbf_finalize.comp` | no form change (velDamp already per-substep); only if the Δp-clamp toggle needs a UBO field |
-| `ComputeUbo` (hpp + all PBF shaders) | only if a Δp-clamp toggle/cap field is added (size-assert update + pad) — otherwise unchanged |
+| `paint_splatter.hpp` | `kParticleSpacing 0.005→0.05`; `velDamp`/substeps/solverIters defaults; new host knobs `cohesionFloor`, `dpClampFactor`; rename `ComputeUbo` `pad0→cohesionFloor`, `pad1→dpClampFactor` (no size change) |
+| `paint_splatter.cpp` | `enqueueDrop` spacing = restSpacing; `holeRadius`/`amount` reconciliation (amount = control); push the two new UBO fields in `updateComputeUbo`; ImGui sliders + ranges/defaults; bbox-extent READBACK for the cohesion check |
+| `shaders/pbf_lambda.comp` | constraint `max(ρ/ρ0−1,0)` → `max(ρ/ρ0−1, −cohesionFloor)`; extend UBO block to read `cohesionFloor` (offset 136) |
+| `shaders/pbf_delta.comp` | hard-coded `maxDp=0.2h` → UBO-driven `dpClampFactor` (≤0 disables); extend UBO block to read `dpClampFactor` (offset 140) |
+| `shaders/pbf_finalize.comp` | no form change (velDamp already per-substep); only default value changes via UBO |
+| `ComputeUbo` (hpp) | repurpose the two trailing pads → `cohesionFloor`, `dpClampFactor`; **size stays 144, static_assert unchanged** |
 
-Most of M8 is parameter defaults + one emit-spacing line + an `epsCFM` re-tune;
-the only potential struct change is an optional Δp-clamp control.
+`rho0`/`epsCFM` note: reverting `kParticleSpacing` to `0.05` recomputes `rho0 ≈
+8078` — the same value `epsCFM = 100` was originally tuned against in M4 — so the
+εCFM rescale (reference Finding 6) is **automatic**; keep `epsCFM` a slider but the
+`100` default re-aligns for free. No new struct fields are needed beyond the two
+repurposed pads.
 
 ---
 
