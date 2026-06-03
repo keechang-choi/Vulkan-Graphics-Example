@@ -443,26 +443,40 @@ private:
   // made rho0 ~8e6 >> a droplet's actual density -> both density pressure and
   // scorr evaluated to ~0 -> no cohesion, no crown (see the M8 design spec).
   static constexpr float kParticleSpacing = 0.05f;
-  float rho0 = 0.f;      // computed from the rest lattice in prepare()
-  float epsCFM = 100.f;  // CFM relaxation
+  float rho0 = 0.f;  // computed from the rest lattice in prepare()
+  // SOFT constraint (M8, reference-grounded): the CPU reference uses
+  // epsilon_cfm=1e5, which dominates a typical Sum|grad C|^2 (~660 at our
+  // scale) by ~175x -> tiny lambda -> gentle, stable corrections. The old
+  // epsCFM=100 was STIFF (<< 660) -> big lambda -> Delta p / sub_dt blew up on
+  // emit ("first explosion" / "too fast"). Lower it toward ~1e3 for a stiffer,
+  // crisper crown.
+  float epsCFM = 1.0e5f;  // CFM relaxation (reference: 1e5)
   // Bounded signed density constraint (M8): under-dense particles get a bounded
   // attractive pull (cohesion) toward rest density; the floor caps it so a
-  // sub-monolayer cannot run away (the M4 "THE big one" explosion). 0 =
-  // compression-only. This is the PRIMARY in-flight cohesion knob.
-  float cohesionFloor = 0.1f;
+  // sub-monolayer cannot run away. cohesionFloor=1.0 == the reference's
+  // UNBOUNDED signed constraint (C never drops below -1 physically), now safe
+  // because the soft epsCFM already keeps the pull gentle. 0 = compression-only
+  // (no cohesion).
+  float cohesionFloor = 1.0f;
   // Per-iteration Δp clamp (pbf_delta), as a multiple of h. <=0 disables it.
   // Default 0.2 preserves the old clamp; lower it toward 0 for a stronger crown
   // once substeps keep the sim stable (M8).
   float dpClampFactor = 0.2f;
-  float scorrK = 0.1f;        // artificial pressure strength
-  float scorrDqRatio = 0.2f;  // scorrDq = ratio * h
+  // Artificial pressure / surface tension (Eq.13). Reference-grounded (M8):
+  // corr_k = m*1e-4 ~= 3e-6 (unit mass), corr_h = 0.30h, n = 4. With the soft
+  // epsCFM, lambda is ~1e-5, so the old scorrK=0.1 would dominate it ~10^4x;
+  // 3e-6 keeps scorr a minor surface term as in the reference (which itself
+  // flags scorr as weak/heuristic). Raise it for more visible surface tension.
+  float scorrK = 3.0e-6f;     // artificial pressure strength (reference ~3e-6)
+  float scorrDqRatio = 0.3f;  // scorrDq = ratio * h (reference corr_h = 0.30)
   float scorrN = 4.f;
-  float xsphC = 0.1f;  // XSPH viscosity (normalized)
+  float xsphC = 0.05f;  // XSPH viscosity (reference viscosity_coeff = 0.050)
   // Gentle per-substep drag (M8): the reference uses v*=0.999/substep. High
   // values (the old 8.0) dissipate the impact energy that launches a crown and
   // cap terminal velocity (~0.75) -- settling of DEPOSITED paint is drying's
   // job (drySettle), not bulk drag's.
-  float velDamp = 0.5f;  // global velocity drag (per second), kept gentle
+  float velDamp = 0.36f;  // per-second drag; 1 - velDamp*sub_dt ~= 0.999 at
+                          // sub_dt=1/360 (reference v *= 0.999 per substep)
   // CFL speed cap maxSpeed = factor * h / dt; <=0 disables it. The principled
   // approach is XPBD "small steps" (many substeps, few iters): with small dt
   // the velocity recovery v=(x*-x)/dt is already physical, so no clamp is

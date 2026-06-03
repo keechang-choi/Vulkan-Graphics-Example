@@ -2020,13 +2020,17 @@ void VgeExample::onUpdateUIOverlay() {
       ImGui::DragInt("solverIters", &solverIters, 1.f, 1, 6);
       ImGui::DragFloat("solver relax", &solverRelax, 0.005f, 0.05f, 1.f,
                        "%.3f");
-      ImGui::DragFloat("epsCFM", &epsCFM, 1.f, 1.f, 1000.f, "%.1f");
+      // epsCFM is the SOFTNESS knob: high (~1e5) = soft/stable, low (~1e3) =
+      // stiff/crisp-but-poppy. Logarithmic so 1..1e6 is reachable.
+      ImGui::DragFloat("epsCFM (soft<-)", &epsCFM, 100.f, 1.f, 1.0e6f, "%.0f",
+                       ImGuiSliderFlags_Logarithmic);
       // M8 cohesion/crown dials
-      ImGui::DragFloat("cohesion floor", &cohesionFloor, 0.005f, 0.f, 1.f,
+      ImGui::DragFloat("cohesion floor", &cohesionFloor, 0.01f, 0.f, 1.f,
                        "%.3f");
       ImGui::DragFloat("dp clamp (xh, 0=off)", &dpClampFactor, 0.005f, 0.f,
                        0.5f, "%.3f");
-      ImGui::DragFloat("scorrK", &scorrK, 0.002f, 0.f, 0.5f, "%.3f");
+      ImGui::DragFloat("scorrK", &scorrK, 1.0e-6f, 0.f, 0.1f, "%.6f",
+                       ImGuiSliderFlags_Logarithmic);
       ImGui::DragFloat("scorrDq/h", &scorrDqRatio, 0.002f, 0.05f, 0.5f, "%.3f");
       ImGui::DragFloat("xsphC", &xsphC, 0.005f, 0.f, 1.f, "%.3f");
       ImGui::DragFloat("vel damping (/s)", &velDamp, 0.02f, 0.f, 20.f, "%.2f");
