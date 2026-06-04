@@ -125,6 +125,14 @@ struct Spoid {
   // evenly.
   glm::vec3 prevPos{0.f, -1.25f, 0.f};
   float emitAccum = 0.f;
+  // --- Phase 2: pendulum attachment (used only by PendulumSpoidController) ---
+  int nodeIndex = -1;   // attach node in the chain; -1 = tip (last node)
+  float offsetR = 0.f;  // offset distance in the plane perpendicular to the
+                        // link direction at the attach node (0 = on node)
+  float offsetAngle0 = 0.f;  // start angle in that perpendicular plane (rad)
+  float offsetOmega = 0.f;   // constant spin rate of the offset (rad/s)
+  float offsetPhase = 0.f;   // runtime: angle0 + omega*t, carried across frames
+  float paintMass = 1.f;     // paint reservoir; decreases on emit, 0 => stop
 };
 
 // Per-frame keyboard intent, already mapped to world axes (GLFW reading lives
@@ -160,6 +168,36 @@ public:
       }
     }
   }
+};
+
+// --- Phase 2: PBD pendulum -------------------------------------------------
+// One point mass in a pendulum chain. node[0] is the fixed pivot (invMass 0).
+struct PendulumNode {
+  glm::vec3 pos{0.f};
+  glm::vec3 prevPos{0.f};  // PBD: position at the start of the substep
+  glm::vec3 vel{0.f};
+  float invMass = 1.f;  // 1/m; pivot = 0 (immovable)
+};
+
+// One suspended pendulum assembly (n-link chain). The example owns a vector of
+// these; v1 uses a single chain. CONVENTION: bobMass[i] <= 0 => infinite mass
+// => invMass 0 => node i+1 is PINNED (immovable).
+struct PendulumChain {
+  glm::vec3 pivot{0.f, -2.8f, 0.f};  // fixed suspension point (near ceiling)
+  std::vector<PendulumNode> nodes;   // [0]=pivot, [1..numLinks]=bobs
+  std::vector<float> linkLength;  // rest |node_i - node_{i-1}|, i=1..numLinks
+  // config (UI-editable):
+  int numLinks = 2;            // n: 1 = simple, 2 = double pendulum (default)
+  float totalLength = 1.5f;    // sum of links (split uniformly into n)
+  std::vector<float> bobMass;  // per bob; built on reset, default uniform 1.0
+  float airDamping = 0.1f;     // global velocity damping /s (air resistance)
+  float jointDamping = 0.05f;  // damping of along-link relative velocity
+  int substeps = 8;            // XPBD small-steps
+  int iters = 4;               // distance-constraint Gauss-Seidel iters/substep
+  // initial state (chain starts as a straight line displaced from +Y vertical):
+  float initTheta = 0.6f;  // rad from the +Y (down) axis
+  float initPhi = 0.f;     // rad azimuth in X-Z
+  float initSpeed = 0.f;   // initial tangential speed at the tip (world u/s)
 };
 
 // Intentionally empty for M1; simulation/spoid knobs are added in later
@@ -373,6 +411,31 @@ private:
   // ---- emit / spoids (M5) ----
   std::vector<Spoid> spoids;
   std::unique_ptr<SpoidController> spoidController;
+  // --- Phase 2: pendulum -----------------------------------------------------
+  enum class SpoidControlMode { Keyboard, Pendulum };
+  SpoidControlMode spoidControlMode = SpoidControlMode::Keyboard;
+  std::vector<PendulumChain> pendulumChains;  // owned here; controller mutates
+  static constexpr uint32_t kMaxChainNodes = 32;  // pivot + up to 31 bobs
+  bool showChain = true;  // draw link lines + joint sprites
+  // Per-frame host-visible buffers for chain visualization (Particle stride, so
+  // they reuse the marker/line pipelines' vertex input). jointMarkerBuffers:
+  // one point per node. lineBuffers: two points per link (eLineList).
+  std::vector<std::unique_ptr<vgeu::VgeuBuffer>> jointMarkerBuffers;
+  std::vector<std::unique_ptr<vgeu::VgeuBuffer>> lineBuffers;
+  vk::raii::Pipeline linePipeline = nullptr;  // eLineList, chain_line shaders
+  void resetPendulum();  // (re)build pendulumChains[0] from config + init
+  void createChainBuffers();
+  void createLinePipeline();
+  // --- Phase 2: top-view camera animation ---
+  struct CameraAnim {
+    bool active = false;
+    bool locked = false;  // hold the top view after the animation completes
+    float t = 0.f, duration = 1.0f;
+    glm::vec3 fromEye{0.f}, fromTarget{0.f};
+    glm::vec3 toEye{0.f, -6.f, 0.f}, toTarget{0.f}, up{0.f, 0.f, -1.f};
+  } cameraAnim;
+  void startTopViewAnim();
+  void updateCameraAnim();
   static constexpr uint32_t kMaxSpoids = 16;
   // Per-frame host-visible marker buffers (Particle stride) so the spoids can
   // be drawn as points with the existing particle pipeline. Not part of the
