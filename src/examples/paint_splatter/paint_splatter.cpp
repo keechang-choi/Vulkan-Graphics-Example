@@ -94,6 +94,7 @@ void VgeExample::prepare() {
   createIndexBuffer();
   createParticleBuffers();
   createMarkerBuffers();
+  createChainBuffers();
   createUniformBuffers();
   createCanvasImage();
   createDescriptorSetLayout();
@@ -101,6 +102,7 @@ void VgeExample::prepare() {
   createDescriptorSets();
   createPipelines();
   createParticlePipeline();
+  createLinePipeline();
   prepareCompute();
 
   prepared = true;
@@ -345,6 +347,26 @@ void VgeExample::createMarkerBuffers() {
   for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
     markerBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
         globalAllocator->getAllocator(), sizeof(Particle), kMaxSpoids,
+        vk::BufferUsageFlagBits::eVertexBuffer, VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT));
+  }
+}
+
+// Per-frame host-visible buffers for chain visualization. jointMarkerBuffers:
+// one Particle slot per node (drawn as marker points). lineBuffers: two slots
+// per link (drawn as an eLineList).
+void VgeExample::createChainBuffers() {
+  jointMarkerBuffers.reserve(MAX_CONCURRENT_FRAMES);
+  lineBuffers.reserve(MAX_CONCURRENT_FRAMES);
+  for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+    jointMarkerBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
+        globalAllocator->getAllocator(), sizeof(Particle), kMaxChainNodes,
+        vk::BufferUsageFlagBits::eVertexBuffer, VMA_MEMORY_USAGE_AUTO,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT));
+    lineBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
+        globalAllocator->getAllocator(), sizeof(Particle), kMaxChainNodes * 2,
         vk::BufferUsageFlagBits::eVertexBuffer, VMA_MEMORY_USAGE_AUTO,
         VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
             VMA_ALLOCATION_CREATE_MAPPED_BIT));
@@ -769,6 +791,75 @@ void VgeExample::createParticlePipeline() {
       &multisampleSCI, &depthStencilSCI, &colorBlendSCI, &dynamicSCI,
       *pipelineLayout, *renderPass);
   markerPipeline = vk::raii::Pipeline(device, pipelineCache, markerPipelineCI);
+}
+
+void VgeExample::createLinePipeline() {
+  // Vertex input: same Particle layout as the particle/marker pipelines.
+  vk::VertexInputBindingDescription bindingDesc(0, sizeof(Particle),
+                                                vk::VertexInputRate::eVertex);
+  std::vector<vk::VertexInputAttributeDescription> attrDescs;
+  attrDescs.emplace_back(0, 0, vk::Format::eR32G32B32A32Sfloat,
+                         static_cast<uint32_t>(offsetof(Particle, pos)));
+  attrDescs.emplace_back(1, 0, vk::Format::eR32G32B32A32Sfloat,
+                         static_cast<uint32_t>(offsetof(Particle, vel)));
+  attrDescs.emplace_back(2, 0, vk::Format::eR32G32B32A32Sfloat,
+                         static_cast<uint32_t>(offsetof(Particle, predict)));
+  attrDescs.emplace_back(3, 0, vk::Format::eR32G32B32A32Sfloat,
+                         static_cast<uint32_t>(offsetof(Particle, color)));
+  vk::PipelineVertexInputStateCreateInfo vertexInputSCI(
+      vk::PipelineVertexInputStateCreateFlags(), bindingDesc, attrDescs);
+
+  vk::PipelineInputAssemblyStateCreateInfo inputAssemblySCI(
+      vk::PipelineInputAssemblyStateCreateFlags(),
+      vk::PrimitiveTopology::eLineList);
+  vk::PipelineViewportStateCreateInfo viewportSCI(
+      vk::PipelineViewportStateCreateFlags(), 1, nullptr, 1, nullptr);
+  vk::PipelineRasterizationStateCreateInfo rasterizationSCI(
+      vk::PipelineRasterizationStateCreateFlags(), false, false,
+      vk::PolygonMode::eFill, vk::CullModeFlagBits::eNone,
+      vk::FrontFace::eCounterClockwise, false, 0.0f, 0.0f, 0.0f, 1.0f);
+  vk::PipelineMultisampleStateCreateInfo multisampleSCI(
+      vk::PipelineMultisampleStateCreateFlags(), vk::SampleCountFlagBits::e1);
+  vk::StencilOpState stencilOpState(vk::StencilOp::eKeep, vk::StencilOp::eKeep,
+                                    vk::StencilOp::eKeep,
+                                    vk::CompareOp::eAlways);
+  vk::PipelineDepthStencilStateCreateInfo depthStencilSCI(
+      vk::PipelineDepthStencilStateCreateFlags(), true, true,
+      vk::CompareOp::eLessOrEqual, false, false, stencilOpState,
+      stencilOpState);
+  vk::PipelineColorBlendAttachmentState colorBlendAttachmentState(
+      false, vk::BlendFactor::eZero, vk::BlendFactor::eZero, vk::BlendOp::eAdd,
+      vk::BlendFactor::eZero, vk::BlendFactor::eZero, vk::BlendOp::eAdd,
+      vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+          vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA);
+  vk::PipelineColorBlendStateCreateInfo colorBlendSCI(
+      vk::PipelineColorBlendStateCreateFlags(), false, vk::LogicOp::eNoOp,
+      colorBlendAttachmentState, {{1.0f, 1.0f, 1.0f, 1.0f}});
+  std::array<vk::DynamicState, 2> dynamicStates = {vk::DynamicState::eViewport,
+                                                   vk::DynamicState::eScissor};
+  vk::PipelineDynamicStateCreateInfo dynamicSCI(
+      vk::PipelineDynamicStateCreateFlags(), dynamicStates);
+
+  auto vCode =
+      vgeu::readFile(getShadersPath() + "/paint_splatter/chain_line.vert.spv");
+  auto fCode =
+      vgeu::readFile(getShadersPath() + "/paint_splatter/chain_line.frag.spv");
+  vk::raii::ShaderModule vModule = vgeu::createShaderModule(device, vCode);
+  vk::raii::ShaderModule fModule = vgeu::createShaderModule(device, fCode);
+  std::array<vk::PipelineShaderStageCreateInfo, 2> stageCIs{
+      vk::PipelineShaderStageCreateInfo(vk::PipelineShaderStageCreateFlags(),
+                                        vk::ShaderStageFlagBits::eVertex,
+                                        *vModule, "main", nullptr),
+      vk::PipelineShaderStageCreateInfo(vk::PipelineShaderStageCreateFlags(),
+                                        vk::ShaderStageFlagBits::eFragment,
+                                        *fModule, "main", nullptr),
+  };
+  vk::GraphicsPipelineCreateInfo lineCI(
+      vk::PipelineCreateFlags(), stageCIs, &vertexInputSCI, &inputAssemblySCI,
+      nullptr, &viewportSCI, &rasterizationSCI, &multisampleSCI,
+      &depthStencilSCI, &colorBlendSCI, &dynamicSCI, *pipelineLayout,
+      *renderPass);
+  linePipeline = vk::raii::Pipeline(device, pipelineCache, lineCI);
 }
 
 // ---------------------------------------------------------------------------
@@ -1973,6 +2064,51 @@ void VgeExample::buildCommandBuffers() {
     drawCmdBuffers[currentFrameIndex].bindVertexBuffers(
         0, markerBuffers[currentFrameIndex]->getBuffer(), offset);
     drawCmdBuffers[currentFrameIndex].draw(n, 1, 0, 0);
+  }
+
+  // --- Phase 2: pendulum chain (links + joints) ---
+  if (showChain && spoidControlMode == SpoidControlMode::Pendulum &&
+      !pendulumChains.empty()) {
+    const PendulumChain& c = pendulumChains[0];
+    const uint32_t nodeCount = std::min<uint32_t>(
+        static_cast<uint32_t>(c.nodes.size()), kMaxChainNodes);
+    if (nodeCount >= 2) {
+      // joints
+      Particle* jm = static_cast<Particle*>(
+          jointMarkerBuffers[currentFrameIndex]->getMappedData());
+      for (uint32_t i = 0; i < nodeCount; i++) {
+        jm[i].pos = glm::vec4(c.nodes[i].pos, 1.f);
+        jm[i].vel = glm::vec4(0.f);
+        jm[i].predict = glm::vec4(0.f);
+        jm[i].color = glm::vec4(0.9f, 0.9f, 0.2f, 1.f);  // joint = yellow
+      }
+      // links: two verts per segment (node i-1 -> node i)
+      Particle* lv = static_cast<Particle*>(
+          lineBuffers[currentFrameIndex]->getMappedData());
+      const uint32_t links = nodeCount - 1;
+      for (uint32_t i = 0; i < links; i++) {
+        lv[2 * i].pos = glm::vec4(c.nodes[i].pos, 1.f);
+        lv[2 * i].color = glm::vec4(0.7f, 0.7f, 0.7f, 1.f);  // string = grey
+        lv[2 * i + 1].pos = glm::vec4(c.nodes[i + 1].pos, 1.f);
+        lv[2 * i + 1].color = glm::vec4(0.7f, 0.7f, 0.7f, 1.f);
+      }
+      vk::DeviceSize off(0);
+      // lines
+      drawCmdBuffers[currentFrameIndex].bindPipeline(
+          vk::PipelineBindPoint::eGraphics, *linePipeline);
+      drawCmdBuffers[currentFrameIndex].bindDescriptorSets(
+          vk::PipelineBindPoint::eGraphics, *pipelineLayout, 0,
+          {*descriptorSets[currentFrameIndex]}, nullptr);
+      drawCmdBuffers[currentFrameIndex].bindVertexBuffers(
+          0, lineBuffers[currentFrameIndex]->getBuffer(), off);
+      drawCmdBuffers[currentFrameIndex].draw(links * 2, 1, 0, 0);
+      // joints (marker pipeline)
+      drawCmdBuffers[currentFrameIndex].bindPipeline(
+          vk::PipelineBindPoint::eGraphics, *markerPipeline);
+      drawCmdBuffers[currentFrameIndex].bindVertexBuffers(
+          0, jointMarkerBuffers[currentFrameIndex]->getBuffer(), off);
+      drawCmdBuffers[currentFrameIndex].draw(nodeCount, 1, 0, 0);
+    }
   }
 
   // ImGui overlay
