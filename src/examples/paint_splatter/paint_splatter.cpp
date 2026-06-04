@@ -1358,10 +1358,72 @@ void PendulumSpoidController::update(float dt, std::vector<Spoid>& spoids,
   }
 }
 
-// Placeholder until the PBD-step task.
 void PendulumSpoidController::stepChain(PendulumChain& c, float dt) {
-  (void)c;
-  (void)dt;
+  if (c.nodes.size() < 2 || dt <= 0.f) return;
+  const int sub = std::max(1, c.substeps);
+  const float sdt = dt / static_cast<float>(sub);
+  const float g = gravity;      // +Y (down on screen)
+  const float maxSpeed = 50.f;  // coarse CFL safety net (world u/s)
+  for (int s = 0; s < sub; s++) {
+    // 1. predict (skip the fixed pivot, node 0)
+    for (size_t i = 1; i < c.nodes.size(); i++) {
+      PendulumNode& nd = c.nodes[i];
+      if (nd.invMass == 0.f) continue;  // pinned
+      nd.vel.y += g * sdt;
+      nd.prevPos = nd.pos;
+      nd.pos += nd.vel * sdt;
+    }
+    // 2. distance constraints (Gauss-Seidel)
+    for (int it = 0; it < std::max(1, c.iters); it++) {
+      for (size_t i = 1; i < c.nodes.size(); i++) {
+        PendulumNode& a = c.nodes[i - 1];
+        PendulumNode& b = c.nodes[i];
+        float w = a.invMass + b.invMass;
+        if (w == 0.f) continue;  // both pinned
+        glm::vec3 d = b.pos - a.pos;
+        float len = glm::length(d);
+        if (len < 1e-6f) continue;
+        float L = c.linkLength[i - 1];
+        glm::vec3 corr = (len - L) / (w * len) * d;
+        a.pos += a.invMass * corr;
+        b.pos -= b.invMass * corr;
+      }
+    }
+    // 3. velocity update + 4. damping
+    const float airK = std::max(0.f, 1.f - c.airDamping * sdt);
+    for (size_t i = 1; i < c.nodes.size(); i++) {
+      PendulumNode& nd = c.nodes[i];
+      if (nd.invMass == 0.f) {
+        nd.vel = glm::vec3(0.f);
+        continue;
+      }
+      nd.vel = (nd.pos - nd.prevPos) / sdt;
+      nd.vel *= airK;  // air resistance (global)
+    }
+    // joint/string friction: damp the relative velocity component ALONG each
+    // link (energy lost at the string end).
+    for (size_t i = 1; i < c.nodes.size(); i++) {
+      PendulumNode& a = c.nodes[i - 1];
+      PendulumNode& b = c.nodes[i];
+      glm::vec3 d = b.pos - a.pos;
+      float len = glm::length(d);
+      if (len < 1e-6f) continue;
+      glm::vec3 axis = d / len;
+      glm::vec3 rel = b.vel - a.vel;
+      float along = glm::dot(rel, axis);
+      glm::vec3 damp = axis * (along * c.jointDamping);
+      if (b.invMass > 0.f) b.vel -= damp;
+      if (a.invMass > 0.f) a.vel += damp;
+    }
+    // stability: CFL speed cap + soft-clamp y above the floor (pivot exempt).
+    for (size_t i = 1; i < c.nodes.size(); i++) {
+      PendulumNode& nd = c.nodes[i];
+      float sp = glm::length(nd.vel);
+      if (sp > maxSpeed) nd.vel *= maxSpeed / sp;
+      // floor y=0, ceiling y=-3 (kDomainHeight). keep bobs above the floor.
+      nd.pos.y = glm::clamp(nd.pos.y, -3.0f + 0.05f, -0.1f);
+    }
+  }
 }
 
 void VgeExample::setSpoidControlMode(SpoidControlMode mode) {
@@ -1589,15 +1651,26 @@ void VgeExample::consumeParticleReadback() {
     }
   }
   if (nValid == 0) return;
-  std::cout << "[paint_splatter] live=" << nValid
-            << " (disp=" << liveCountDisplay << ") y[" << minY << "," << maxY
-            << "] | rho/rho0 mean=" << (sumRho / nValid) << " max=" << maxRho
-            << " | speed mean=" << (sumSpeed / nValid) << " max=" << maxSpeed
-            << " | nearFloor%=" << (100.0 * nearFloor / nValid)
-            << " | ext x=" << (maxX - minX) << " z=" << (maxZ - minZ)
-            << " | PILE speed mean="
-            << (nearFloor ? pileSpeedSum / nearFloor : 0.0)
-            << " max=" << pileSpeedMax << std::endl;
+  std::cout
+      << "[paint_splatter] live=" << nValid << " (disp=" << liveCountDisplay
+      << ") y[" << minY << "," << maxY
+      << "] | rho/rho0 mean=" << (sumRho / nValid) << " max=" << maxRho
+      << " | speed mean=" << (sumSpeed / nValid) << " max=" << maxSpeed
+      << " | nearFloor%=" << (100.0 * nearFloor / nValid)
+      << " | ext x=" << (maxX - minX) << " z=" << (maxZ - minZ)
+      << " | PILE speed mean=" << (nearFloor ? pileSpeedSum / nearFloor : 0.0)
+      << " max=" << pileSpeedMax
+      << (spoidControlMode == SpoidControlMode::Pendulum &&
+                  !pendulumChains.empty() && pendulumChains[0].nodes.size() >= 2
+              ? " | tip=(" +
+                    std::to_string(pendulumChains[0].nodes.back().pos.x) + "," +
+                    std::to_string(pendulumChains[0].nodes.back().pos.y) + "," +
+                    std::to_string(pendulumChains[0].nodes.back().pos.z) +
+                    ") tipv=" +
+                    std::to_string(
+                        glm::length(pendulumChains[0].nodes.back().vel))
+              : std::string())
+      << std::endl;
 }
 
 // M6-C-2: read this slot's live-count copy (recorded when the slot was last
