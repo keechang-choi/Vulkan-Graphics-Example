@@ -51,7 +51,11 @@ struct PendulumChain {
   // Configuration (UI-editable):
   int   numLinks    = 2;       // n: 1 = simple, 2 = double pendulum (default)
   float totalLength = 1.5f;    // sum of links (v1: split uniformly into n)
-  float bobMass     = 1.f;     // v1: uniform per bob
+  std::vector<float> bobMass;  // per bob (node 1..n); built on resetChains,
+                               // default uniform 1.0. CONVENTION: mass <= 0 =>
+                               // infinite mass => invMass=0 => node is PINNED
+                               // (immovable), so an intermediate node can be
+                               // fixed to make a constrained chain.
   float airDamping  = 0.1f;    // global velocity damping /s (air resistance)
   float jointDamping= 0.05f;   // damping of along-link relative velocity
                                // (string-end / pivot friction)
@@ -88,7 +92,9 @@ public:
   std::vector<PendulumChain> chains;   // v1: size 1
   void update(float dt, std::vector<Spoid>& spoids,
               const InputState& in, std::vector<int>& emitDrops) override;
-  void resetChains();                  // (re)build nodes from config + init state
+  void resetChains();                  // (re)build nodes from config + init state;
+                                       //   invMass_i = bobMass_i>0 ? 1/bobMass_i : 0
+                                       //   (mass<=0 => pinned); pivot invMass = 0
 };
 ```
 
@@ -113,7 +119,7 @@ Each frame is divided into `substeps` (substep dt `sdt = frameDt / substeps`). P
    - `d = pos_i − pos_{i-1}; len = |d|; C = len − L_i`
    - distribute the correction by inverse mass: `w = invMass_{i-1} + invMass_i`; if `w==0` skip; `corr = (C / (w·len)) · d`
    - `pos_{i-1} += invMass_{i-1} · corr; pos_i −= invMass_i · corr`
-   The pivot (`invMass=0`) never moves, so its child absorbs 100% of the correction (mass cancels in the single-link case, as expected; in multi-link cases nodes share by `invMass` ratio).
+   The pivot (`invMass=0`) never moves, so its child absorbs 100% of the correction (mass cancels in the single-link case, as expected; in multi-link cases nodes share by `invMass` ratio). Any node with `bobMass<=0` is likewise `invMass=0` (pinned) — a fully-pinned link (`w==0`) is just skipped.
 3. **Velocity update:** `vel = (pos − prevPos) / sdt`.
 4. **Damping:**
    - air resistance (global): `vel *= max(0, 1 − airDamping·sdt)`.
@@ -176,7 +182,7 @@ On button press: capture the current eye/target (from `camera.getPosition()` / i
 ## Scope / YAGNI
 
 **v1 (this spec):**
-- Single `PendulumChain`, configurable `numLinks` (default 2 = double pendulum), uniform bob mass and uniform link length, initial `(θ, φ, v)`.
+- Single `PendulumChain`, configurable `numLinks` (default 2 = double pendulum), **per-node bob mass** (mass≤0 ⇒ infinite/pinned), uniform link length, initial `(θ, φ, v)`.
 - Per-spoid rotary offset `(r, angle₀, ω)`, attached to the tip node.
 - Pure PBD integrator with substeps/iters/air+joint damping and stability safety nets.
 - Reservoir `paintMass` with simple linear drain gating emission.
@@ -185,7 +191,7 @@ On button press: capture the current eye/target (from `camera.getPosition()` / i
 - Controller mode switch (keyboard ↔ pendulum) in UI; keyboard remains default.
 
 **Deferred (structure supports, not built now):**
-- Per-link mass/length; multiple independent chains; attaching spoids to arbitrary links/chains.
+- Per-link length; multiple independent chains; attaching spoids to arbitrary links/chains.
 - `paintMass` coupling into dynamics; drain ∝ outflow volume·velocity.
 - Emitted particles inheriting the spoid's tangential velocity (sling).
 - Analytic harmonograph mode (explicitly dropped by the user — pure PBD only).
@@ -202,7 +208,7 @@ No GPU-struct/UBO/shader-physics change → every existing `static_assert` is un
 
 ## Decisions Made (resolved during brainstorming)
 
-1. **Mass:** two distinct masses — chain `bobMass` (dynamics; v1 uniform, mostly cancels in a single-link swing, shares by inverse-mass in multi-link) and spoid `paintMass` (reservoir gating emission, decreases over time). Trajectory is governed mainly by length/angles/damping in v1.
+1. **Mass:** two distinct masses — chain per-node `bobMass` (dynamics; `invMass = mass>0 ? 1/mass : 0`, so **mass≤0 means infinite mass / pinned node**; mostly cancels in a single-link swing, shares by inverse-mass in multi-link) and spoid `paintMass` (reservoir gating emission, decreases over time). Trajectory is governed mainly by length/angles/damping in v1.
 2. **Damping in PBD:** yes — post-solve velocity damping. Air resistance = global; string-end/pivot friction = along-link relative-velocity damping. Both are sliders.
 3. **Single assembly, generalized to n-link:** one hanging pendulum that is a chain of `n` links (double pendulum default), structured (`vector<PendulumChain>`, `nodeIndex`) so multiple chains / arbitrary attachment generalize later.
 4. **Integrator:** pure PBD chain. No analytic fallback (user chose "A only").
