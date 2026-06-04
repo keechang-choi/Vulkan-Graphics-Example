@@ -1168,12 +1168,14 @@ void VgeExample::updateSpoids() {
   // Spoids may move OUTSIDE the canvas footprint (so a stroke can enter/leave
   // the painting) -- only a generous outer bound stops them being lost. y stays
   // between the floor and the ceiling.
-  const float m = 0.05f;
-  const float xzBound = 2.f * kDomainHalf;  // one canvas-width past each edge
-  for (auto& s : spoids) {
-    s.pos.x = glm::clamp(s.pos.x, -xzBound, xzBound);
-    s.pos.z = glm::clamp(s.pos.z, -xzBound, xzBound);
-    s.pos.y = glm::clamp(s.pos.y, -kDomainHeight + m, -0.1f);
+  if (spoidControlMode == SpoidControlMode::Keyboard) {
+    const float m = 0.05f;
+    const float xzBound = 2.f * kDomainHalf;  // one canvas-width past each edge
+    for (auto& s : spoids) {
+      s.pos.x = glm::clamp(s.pos.x, -xzBound, xzBound);
+      s.pos.z = glm::clamp(s.pos.z, -xzBound, xzBound);
+      s.pos.y = glm::clamp(s.pos.y, -kDomainHeight + m, -0.1f);
+    }
   }
 
   for (int idx : emitDrops) {
@@ -1204,6 +1206,81 @@ void VgeExample::arrangeSpoidsCircle() {
         glm::two_pi<float>() * static_cast<float>(i) / static_cast<float>(n);
     spoids[i].pos =
         glm::vec3(radius * std::cos(ang), y, radius * std::sin(ang));
+  }
+}
+
+// Build pendulumChains[0] as a straight line hung from the pivot, displaced
+// from the +Y (down) vertical by (initTheta, initPhi). node[0] = pivot (fixed).
+void VgeExample::resetPendulum() {
+  if (pendulumChains.empty()) pendulumChains.resize(1);
+  PendulumChain& c = pendulumChains[0];
+  const int n =
+      std::max(1, std::min(c.numLinks, static_cast<int>(kMaxChainNodes) - 1));
+  c.numLinks = n;
+  // uniform link length + uniform default mass if not sized to n.
+  c.linkLength.assign(n, c.totalLength / static_cast<float>(n));
+  if (static_cast<int>(c.bobMass.size()) != n) c.bobMass.assign(n, 1.0f);
+  // direction from vertical +Y by (theta, phi): theta from +Y, phi about Y.
+  const float st = std::sin(c.initTheta), ct = std::cos(c.initTheta);
+  const glm::vec3 dir(st * std::cos(c.initPhi), ct, st * std::sin(c.initPhi));
+  c.nodes.assign(n + 1, PendulumNode{});
+  c.nodes[0].pos = c.pivot;
+  c.nodes[0].prevPos = c.pivot;
+  c.nodes[0].invMass = 0.f;  // pivot pinned
+  glm::vec3 p = c.pivot;
+  for (int i = 1; i <= n; i++) {
+    p += dir * c.linkLength[i - 1];
+    c.nodes[i].pos = p;
+    c.nodes[i].prevPos = p;
+    c.nodes[i].vel = glm::vec3(0.f);
+    float m = c.bobMass[i - 1];
+    c.nodes[i].invMass = (m > 0.f) ? 1.0f / m : 0.f;  // m<=0 => pinned
+  }
+  // initial tangential push at the tip (perpendicular to the last link).
+  if (c.initSpeed != 0.f && n >= 1) {
+    glm::vec3 ref =
+        (std::abs(dir.x) < 0.9f) ? glm::vec3(1, 0, 0) : glm::vec3(0, 0, 1);
+    glm::vec3 tangent = glm::normalize(glm::cross(dir, ref));
+    c.nodes[n].vel = tangent * c.initSpeed;
+  }
+}
+
+glm::vec3 PendulumSpoidController::emissionPoint(const PendulumChain& c,
+                                                 const Spoid& s) const {
+  if (c.nodes.size() < 2) return c.pivot;
+  int ni =
+      (s.nodeIndex < 0) ? static_cast<int>(c.nodes.size()) - 1 : s.nodeIndex;
+  ni = std::max(1, std::min(ni, static_cast<int>(c.nodes.size()) - 1));
+  return c.nodes[ni].pos;  // offset added in a later task
+}
+
+void PendulumSpoidController::update(float dt, std::vector<Spoid>& spoids,
+                                     const InputState& in,
+                                     std::vector<int>& emitDrops) {
+  (void)in;
+  (void)emitDrops;  // pendulum mode uses stream emission (render loop)
+  for (PendulumChain& c : chains) stepChain(c, dt);  // no-op until later
+  if (chains.empty()) return;
+  for (Spoid& s : spoids) {
+    s.offsetPhase += s.offsetOmega * dt;
+    s.pos = emissionPoint(chains[0], s);
+  }
+}
+
+// Placeholder until the PBD-step task.
+void PendulumSpoidController::stepChain(PendulumChain& c, float dt) {
+  (void)c;
+  (void)dt;
+}
+
+void VgeExample::setSpoidControlMode(SpoidControlMode mode) {
+  spoidControlMode = mode;
+  if (mode == SpoidControlMode::Pendulum) {
+    resetPendulum();
+    spoidController =
+        std::make_unique<PendulumSpoidController>(pendulumChains, gravity);
+  } else {
+    spoidController = std::make_unique<KeyboardSpoidController>();
   }
 }
 
@@ -1966,6 +2043,16 @@ void VgeExample::onUpdateUIOverlay() {
     // M8: spawn shape. Ball -> holeRadius drives droplet size; lattice ->
     // amount drives size (fresh droplet exactly at rest density).
     ImGui::Checkbox("spherical spawn (ball)", &sphericalSpawn);
+
+    // --- Phase 2: spoid control mode ---
+    int modeI = static_cast<int>(spoidControlMode);
+    if (ImGui::RadioButton("keyboard", &modeI, 0)) {
+      setSpoidControlMode(SpoidControlMode::Keyboard);
+    }
+    ImGui::SameLine();
+    if (ImGui::RadioButton("pendulum", &modeI, 1)) {
+      setSpoidControlMode(SpoidControlMode::Pendulum);
+    }
 
     // --- Spoids (M5 Task 10) ---
     if (ImGui::CollapsingHeader("Spoids", ImGuiTreeNodeFlags_DefaultOpen)) {

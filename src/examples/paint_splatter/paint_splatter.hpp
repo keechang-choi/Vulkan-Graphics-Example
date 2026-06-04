@@ -200,6 +200,25 @@ struct PendulumChain {
   float initSpeed = 0.f;   // initial tangential speed at the tip (world u/s)
 };
 
+// Drives spoids along an n-link PBD pendulum. The example owns the chains and a
+// gravity value; this controller holds references to them. update() steps the
+// PBD chains, advances each spoid's offset phase, and writes spoid.pos = the
+// emission point (attach node + rotating perpendicular offset).
+class PendulumSpoidController : public SpoidController {
+public:
+  PendulumSpoidController(std::vector<PendulumChain>& chains,
+                          const float& gravity)
+      : chains(chains), gravity(gravity) {}
+  std::vector<PendulumChain>& chains;
+  const float& gravity;
+  void update(float dt, std::vector<Spoid>& spoids, const InputState& in,
+              std::vector<int>& emitDrops) override;
+
+private:
+  void stepChain(PendulumChain& c, float dt);  // PBD (filled in a later task)
+  glm::vec3 emissionPoint(const PendulumChain& c, const Spoid& s) const;
+};
+
 // Intentionally empty for M1; simulation/spoid knobs are added in later
 // milestones.
 struct Options {};
@@ -423,6 +442,7 @@ private:
   std::vector<std::unique_ptr<vgeu::VgeuBuffer>> jointMarkerBuffers;
   std::vector<std::unique_ptr<vgeu::VgeuBuffer>> lineBuffers;
   vk::raii::Pipeline linePipeline = nullptr;  // eLineList, chain_line shaders
+  void setSpoidControlMode(SpoidControlMode mode);
   void resetPendulum();  // (re)build pendulumChains[0] from config + init
   void createChainBuffers();
   void createLinePipeline();
