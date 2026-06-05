@@ -95,11 +95,11 @@ void VgeExample::prepare() {
   // (idempotent).
   computeScaledDims();
 
-  // One spoid above the canvas centre. Phase 2: the default control mode is
-  // pendulum (see spoidControlMode default), so build the controller for it.
-  {
+  // Two spoids above the canvas centre by default. Phase 2: the default control
+  // mode is pendulum (see spoidControlMode default), so build the controller.
+  for (int i = 0; i < 2; i++) {
     Spoid s{};
-    s.color = spoidPalette(0);
+    s.color = spoidPalette(i);
     spoids.push_back(s);
   }
   arrangeSpoidsCircle();  // also seeds per-spoid offsetAngle0
@@ -1577,9 +1577,14 @@ void VgeExample::currentCameraPose(glm::vec3& eye, glm::vec3& target,
 }
 
 void VgeExample::startTopViewAnim() {
-  // "from" = wherever we are RIGHT NOW: the free-fly pose this frame, or the
-  // mid-tween pose if an animation is already running. Both directions then
-  // ease smoothly from the current view.
+  // "from" = the pose currently ON SCREEN, so both directions ease from it.
+  //  - mid-tween: the interpolated pose.
+  //  - locked at top: the held top pose (cameraAnim.to*). NOTE: while locked
+  //  the
+  //    camera object holds the free-fly pose at UI time (the controller set it
+  //    last frame), so currentCameraPose() would be WRONG here -- that made the
+  //    return jump instead of animate.
+  //  - idle (free-fly): the live camera pose.
   glm::vec3 nowEye, nowTarget, nowUp;
   if (cameraAnim.active) {
     float u = glm::clamp(cameraAnim.t / cameraAnim.duration, 0.f, 1.f);
@@ -1587,6 +1592,10 @@ void VgeExample::startTopViewAnim() {
     nowEye = glm::mix(cameraAnim.fromEye, cameraAnim.toEye, e);
     nowTarget = glm::mix(cameraAnim.fromTarget, cameraAnim.toTarget, e);
     nowUp = glm::mix(cameraAnim.fromUp, cameraAnim.toUp, e);
+  } else if (cameraAnim.locked) {
+    nowEye = cameraAnim.toEye;  // the held top pose
+    nowTarget = cameraAnim.toTarget;
+    nowUp = cameraAnim.toUp;
   } else {
     currentCameraPose(nowEye, nowTarget, nowUp);
   }
