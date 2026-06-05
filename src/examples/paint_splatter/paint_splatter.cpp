@@ -2559,8 +2559,8 @@ void VgeExample::onUpdateUIOverlay() {
                          "%.4f");
         ImGui::DragFloat("joint damping", &c.jointDamping, 0.0002f, 0.f, 1.f,
                          "%.4f");
-        ImGui::DragInt("substeps", &c.substeps, 0.2f, 1, 32);
-        ImGui::DragInt("constraint iters", &c.iters, 0.1f, 1, 16);
+        ImGui::DragInt("substeps (pendulum)", &c.substeps, 0.2f, 1, 32);
+        ImGui::DragInt("constraint iters (pendulum)", &c.iters, 0.1f, 1, 16);
         // per-node mass (mass<=0 => pinned). Resize to numLinks lazily.
         if (static_cast<int>(c.bobMass.size()) != c.numLinks) {
           c.bobMass.assign(std::max(1, c.numLinks), 1.0f);
@@ -2702,8 +2702,8 @@ void VgeExample::onUpdateUIOverlay() {
     // --- PBF solver (M4) ---
     if (ImGui::CollapsingHeader("PBF solver", ImGuiTreeNodeFlags_DefaultOpen)) {
       ImGui::Text("rho0 (rest) : %.1f", rho0);
-      ImGui::DragInt("substeps", &substeps, 1.f, 1, 16);
-      ImGui::DragInt("solverIters", &solverIters, 1.f, 1, 6);
+      ImGui::DragInt("substeps (PBF)", &substeps, 1.f, 1, 16);
+      ImGui::DragInt("solverIters (PBF)", &solverIters, 1.f, 1, 6);
       ImGui::DragFloat("solver relax", &solverRelax, 0.005f, 0.05f, 1.f,
                        "%.3f");
       // XPBD: scale the constraint coeff by 1/dt^2 so stiffness (and the spawn
