@@ -1402,6 +1402,40 @@ void VgeExample::arrangeSpoidsCircle() {
 void VgeExample::resetPendulum() {
   if (pendulumChains.empty()) pendulumChains.resize(1);
   PendulumChain& c = pendulumChains[0];
+  if (c.blackburn) {
+    // Blackburn (Lissajous): anchors A,B at the pivot height, separated along X
+    // by anchorSep; junction J = node[1] at depth vDepth below the midpoint;
+    // bob = node[2] lowerLen below J. A=node[0] (fixed). B=pivotB (fixed).
+    const float s = 0.5f * c.anchorSep;
+    const glm::vec3 mid = c.pivot;  // anchor-line midpoint
+    const glm::vec3 A = mid - glm::vec3(s, 0.f, 0.f);
+    const glm::vec3 B = mid + glm::vec3(s, 0.f, 0.f);
+    const glm::vec3 J = mid + glm::vec3(0.f, c.vDepth, 0.f);
+    const glm::vec3 P = J + glm::vec3(0.f, c.lowerLen, 0.f);
+    c.numLinks = 2;
+    c.pivotB = B;
+    c.upperLenB = glm::length(J - B);
+    c.linkLength.assign(2, 0.f);
+    c.linkLength[0] = glm::length(J - A);  // A -> J
+    c.linkLength[1] = c.lowerLen;          // J -> bob
+    if (static_cast<int>(c.bobMass.size()) != 2) c.bobMass.assign(2, 1.0f);
+    c.nodes.assign(3, PendulumNode{});
+    c.nodes[0].pos = c.nodes[0].prevPos = A;
+    c.nodes[0].invMass = 0.f;  // anchor A pinned
+    auto setNode = [&](int i, const glm::vec3& p, float m) {
+      c.nodes[i].pos = c.nodes[i].prevPos = p;
+      c.nodes[i].vel = glm::vec3(0.f);
+      c.nodes[i].invMass = (m > 0.f) ? 1.f / m : 0.f;
+    };
+    setNode(1, J, c.bobMass[0]);
+    setNode(2, P, c.bobMass[1]);
+    // Excite both perpendicular modes with a horizontal kick on the bob: X (the
+    // fast, in-anchor-plane axis) from initSpeedRadial, Z (the slow,
+    // out-of-plane axis) from initSpeedTangential. Different amplitudes/freqs
+    // => Lissajous.
+    c.nodes[2].vel = glm::vec3(c.initSpeedRadial, 0.f, c.initSpeedTangential);
+    return;
+  }
   const int n =
       std::max(1, std::min(c.numLinks, static_cast<int>(kMaxChainNodes) - 1));
   c.numLinks = n;
@@ -1509,6 +1543,17 @@ void PendulumSpoidController::stepChain(PendulumChain& c, float dt) {
         glm::vec3 corr = (len - L) / (w * len) * d;
         a.pos += a.invMass * corr;
         b.pos -= b.invMass * corr;
+      }
+      // Blackburn: extra constraint anchoring the junction (node[1]) to the
+      // SECOND fixed anchor B. Together with the node[0]->node[1] (anchor A)
+      // constraint this triangulates J in the A-B plane -> anisotropic swing.
+      if (c.blackburn && c.nodes.size() >= 2 && c.nodes[1].invMass > 0.f) {
+        PendulumNode& J = c.nodes[1];
+        glm::vec3 d = J.pos - c.pivotB;
+        float len = glm::length(d);
+        if (len > 1e-6f) {
+          J.pos -= (len - c.upperLenB) / len * d;  // B fixed: full corr on J
+        }
       }
     }
     // 3. velocity update + 4. damping
@@ -2396,6 +2441,16 @@ void VgeExample::buildCommandBuffers() {
         jm[i].predict = glm::vec4(0.f);
         jm[i].color = glm::vec4(0.9f, 0.9f, 0.2f, 1.f);  // joint = yellow
       }
+      // Blackburn: the second fixed anchor B is not a chain node, so add it as
+      // an extra joint marker after the nodes.
+      uint32_t jointCount = nodeCount;
+      if (c.blackburn && jointCount < kMaxChainNodes) {
+        jm[jointCount].pos = glm::vec4(c.pivotB, 1.f);
+        jm[jointCount].vel = glm::vec4(0.f);
+        jm[jointCount].predict = glm::vec4(0.f);
+        jm[jointCount].color = glm::vec4(0.9f, 0.9f, 0.2f, 1.f);
+        jointCount++;
+      }
       // links: two verts per segment (node i-1 -> node i)
       Particle* lv = static_cast<Particle*>(
           lineBuffers[currentFrameIndex]->getMappedData());
@@ -2421,6 +2476,14 @@ void VgeExample::buildCommandBuffers() {
         lv[vc + 1].color = glm::vec4(glm::vec3(s.color), 1.f);
         vc += 2;
       }
+      // Blackburn: the second upper string, anchor B -> junction (node[1]).
+      if (c.blackburn && nodeCount >= 2 && vc + 2 <= lineCap) {
+        lv[vc].pos = glm::vec4(c.pivotB, 1.f);
+        lv[vc].color = glm::vec4(0.7f, 0.7f, 0.7f, 1.f);
+        lv[vc + 1].pos = glm::vec4(c.nodes[1].pos, 1.f);
+        lv[vc + 1].color = glm::vec4(0.7f, 0.7f, 0.7f, 1.f);
+        vc += 2;
+      }
       vk::DeviceSize off(0);
       // lines (chain links + spoid arms)
       drawCmdBuffers[currentFrameIndex].bindPipeline(
@@ -2439,7 +2502,7 @@ void VgeExample::buildCommandBuffers() {
           vk::PipelineBindPoint::eGraphics, *markerPipeline);
       drawCmdBuffers[currentFrameIndex].bindVertexBuffers(
           0, jointMarkerBuffers[currentFrameIndex]->getBuffer(), off);
-      drawCmdBuffers[currentFrameIndex].draw(nodeCount, 1, 0, 0);
+      drawCmdBuffers[currentFrameIndex].draw(jointCount, 1, 0, 0);
     }
   }
 
@@ -2540,20 +2603,42 @@ void VgeExample::onUpdateUIOverlay() {
           ImGui::DragFloat("line width", &chainLineWidth, 0.1f, 1.f, 10.f,
                            "%.1f");
         bool rebuild = false;
-        rebuild |= ImGui::DragInt("links (n)", &c.numLinks, 0.1f, 1,
-                                  static_cast<int>(kMaxChainNodes) - 1);
-        rebuild |= ImGui::DragFloat("total length", &c.totalLength, 0.01f, 0.1f,
-                                    2.8f, "%.2f");
+        // Blackburn (Lissajous) pendulum: two anchors + triangulated junction.
+        if (ImGui::Checkbox("Blackburn (Lissajous)", &c.blackburn)) {
+          rebuild = true;
+          // entering Blackburn: make sure BOTH perpendicular axes are kicked so
+          // a Lissajous (not a 1D line) appears immediately.
+          if (c.blackburn && c.initSpeedRadial == 0.f) c.initSpeedRadial = 1.5f;
+        }
+        if (c.blackburn) {
+          rebuild |= ImGui::DragFloat("anchor sep", &c.anchorSep, 0.01f, 0.f,
+                                      3.f, "%.2f");
+          rebuild |= ImGui::DragFloat("V depth (h)", &c.vDepth, 0.01f, 0.05f,
+                                      3.f, "%.2f");
+          rebuild |= ImGui::DragFloat("lower len (L)", &c.lowerLen, 0.01f,
+                                      0.05f, 3.f, "%.2f");
+          const float ratio =
+              std::sqrt((c.vDepth + c.lowerLen) / std::max(c.lowerLen, 1e-3f));
+          ImGui::Text("freq ratio fx:fz ~ %.2f : 1 (set L,h for n:m)", ratio);
+        } else {
+          rebuild |= ImGui::DragInt("links (n)", &c.numLinks, 0.1f, 1,
+                                    static_cast<int>(kMaxChainNodes) - 1);
+          rebuild |= ImGui::DragFloat("total length", &c.totalLength, 0.01f,
+                                      0.1f, 2.8f, "%.2f");
+        }
         rebuild |= ImGui::DragFloat3("pivot", &c.pivot.x, 0.01f);
-        rebuild |= ImGui::DragFloat("init theta (rad)", &c.initTheta, 0.01f,
-                                    0.f, 3.14f, "%.2f");
-        rebuild |= ImGui::DragFloat("init phi (rad)", &c.initPhi, 0.01f, 0.f,
-                                    6.28f, "%.2f");
-        rebuild |= ImGui::DragFloat("init speed radial", &c.initSpeedRadial,
-                                    0.01f, -10.f, 10.f, "%.2f");
-        rebuild |=
-            ImGui::DragFloat("init speed tangential", &c.initSpeedTangential,
-                             0.01f, -10.f, 10.f, "%.2f");
+        if (!c.blackburn) {
+          rebuild |= ImGui::DragFloat("init theta (rad)", &c.initTheta, 0.01f,
+                                      0.f, 3.14f, "%.2f");
+          rebuild |= ImGui::DragFloat("init phi (rad)", &c.initPhi, 0.01f, 0.f,
+                                      6.28f, "%.2f");
+        }
+        rebuild |= ImGui::DragFloat(
+            c.blackburn ? "init speed X (fast)" : "init speed radial",
+            &c.initSpeedRadial, 0.01f, -10.f, 10.f, "%.2f");
+        rebuild |= ImGui::DragFloat(
+            c.blackburn ? "init speed Z (slow)" : "init speed tangential",
+            &c.initSpeedTangential, 0.01f, -10.f, 10.f, "%.2f");
         // finer steps + more decimals: small damping changes are visible.
         ImGui::DragFloat("air damping (/s)", &c.airDamping, 0.0002f, 0.f, 5.f,
                          "%.4f");

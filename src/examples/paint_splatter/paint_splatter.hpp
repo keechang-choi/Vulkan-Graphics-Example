@@ -214,6 +214,21 @@ struct PendulumChain {
   //                 precessing swing that pairs with the rotary offset.
   float initSpeedRadial = 0.f;
   float initSpeedTangential = 2.0f;
+
+  // --- Blackburn (Lissajous) pendulum ---------------------------------------
+  // Two fixed anchors A,B + a triangulated junction J (node[1]) + a single bob
+  // (node[2]). The junction is rigidly triangulated in the A-B plane (so the
+  // bob swings about J with the SHORT length lowerLen there) but free to swing
+  // about the A-B line perpendicular to it (LONG length vDepth+lowerLen) -> two
+  // different frequencies in perpendicular axes => Lissajous. Pure PBD: the two
+  // upper distance constraints (A->J, B->J) produce the anisotropy. Frequency
+  // ratio ~ sqrt((vDepth+lowerLen)/lowerLen).
+  bool blackburn = false;
+  float anchorSep = 1.0f;  // 2s: horizontal gap between anchors A,B (along X)
+  float vDepth = 1.5f;     // h: junction depth below the anchor line
+  float lowerLen = 0.5f;   // L: junction -> bob
+  glm::vec3 pivotB{0.f};   // anchor B (computed on reset; A = `pivot`-derived)
+  float upperLenB = 0.f;   // rest |J - B| (computed on reset)
 };
 
 // Drives spoids along an n-link PBD pendulum. The example owns the chains and a
