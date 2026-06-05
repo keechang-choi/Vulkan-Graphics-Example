@@ -1552,39 +1552,78 @@ void VgeExample::setSpoidControlMode(SpoidControlMode mode) {
   }
 }
 
+// The live camera pose as (eye, target, up). target is a point along the view
+// direction so the actual look direction (not an assumed origin) is preserved.
+void VgeExample::currentCameraPose(glm::vec3& eye, glm::vec3& target,
+                                   glm::vec3& up) const {
+  eye = camera.getPosition();
+  const glm::mat4 iv = camera.getInverseView();
+  const glm::vec3 fwd = -glm::vec3(iv[2]);  // world forward (camera looks -Z)
+  up = glm::vec3(iv[1]);                    // camera up (engine -Y convention)
+  float dist = glm::length(eye);            // look-at distance ~ to the canvas
+  if (dist < 0.5f) dist = 4.f;
+  target = eye + fwd * dist;
+}
+
 void VgeExample::startTopViewAnim() {
-  if (cameraAnim.active || cameraAnim.locked) {
-    // toggle off: release back to the orbit controller.
-    cameraAnim.active = false;
-    cameraAnim.locked = false;
-    return;
+  // "from" = wherever we are RIGHT NOW: the free-fly pose this frame, or the
+  // mid-tween pose if an animation is already running. Both directions then
+  // ease smoothly from the current view.
+  glm::vec3 nowEye, nowTarget, nowUp;
+  if (cameraAnim.active) {
+    float u = glm::clamp(cameraAnim.t / cameraAnim.duration, 0.f, 1.f);
+    float e = u * u * (3.f - 2.f * u);
+    nowEye = glm::mix(cameraAnim.fromEye, cameraAnim.toEye, e);
+    nowTarget = glm::mix(cameraAnim.fromTarget, cameraAnim.toTarget, e);
+    nowUp = glm::mix(cameraAnim.fromUp, cameraAnim.toUp, e);
+  } else {
+    currentCameraPose(nowEye, nowTarget, nowUp);
   }
-  cameraAnim.fromEye = camera.getPosition();
-  // aim at the canvas centre (0,0,0), the orbit target.
-  cameraAnim.fromTarget = glm::vec3(0.f);
-  cameraAnim.toEye = glm::vec3(0.f, -6.f, 0.f);  // overhead (world -Y is up)
-  cameraAnim.toTarget = glm::vec3(0.f);
-  cameraAnim.up =
-      glm::vec3(0.f, 0.f, -1.f);  // non-degenerate for a +Y view dir
+  const bool atOrToTop =
+      cameraAnim.locked || (cameraAnim.active && cameraAnim.toTop);
+  cameraAnim.fromEye = nowEye;
+  cameraAnim.fromTarget = nowTarget;
+  cameraAnim.fromUp = nowUp;
+  if (atOrToTop) {
+    // RETURN: animate back to the free-fly controller's current pose.
+    glm::vec3 e2, t2, u2;
+    currentCameraPose(e2, t2, u2);
+    cameraAnim.toEye = e2;
+    cameraAnim.toTarget = t2;
+    cameraAnim.toUp = u2;
+    cameraAnim.toTop = false;
+  } else {
+    // GO TO TOP: overhead, framed to the (scaled) canvas. world -Y is "up".
+    cameraAnim.toEye = glm::vec3(0.f, -1.5f * kCanvasWorld, 0.f);
+    cameraAnim.toTarget = glm::vec3(0.f);
+    cameraAnim.toUp = glm::vec3(0.f, 0.f, -1.f);
+    cameraAnim.toTop = true;
+  }
   cameraAnim.t = 0.f;
   cameraAnim.active = true;
+  cameraAnim.locked = false;
 }
 
 void VgeExample::updateCameraAnim() {
   if (!cameraAnim.active && !cameraAnim.locked) return;
-  glm::vec3 eye = cameraAnim.toEye, target = cameraAnim.toTarget;
+  glm::vec3 eye = cameraAnim.toEye, target = cameraAnim.toTarget,
+            up = cameraAnim.toUp;
   if (cameraAnim.active) {
     cameraAnim.t += frameTimer;
     float u = glm::clamp(cameraAnim.t / cameraAnim.duration, 0.f, 1.f);
     float e = u * u * (3.f - 2.f * u);  // smoothstep ease in/out
     eye = glm::mix(cameraAnim.fromEye, cameraAnim.toEye, e);
     target = glm::mix(cameraAnim.fromTarget, cameraAnim.toTarget, e);
+    up = glm::mix(cameraAnim.fromUp, cameraAnim.toUp, e);
     if (u >= 1.f) {
       cameraAnim.active = false;
-      cameraAnim.locked = true;
+      // hold the top view; when returning, hand control back to the controller.
+      cameraAnim.locked = cameraAnim.toTop;
     }
   }
-  camera.setViewTarget(eye, target, cameraAnim.up);
+  if (cameraAnim.active || cameraAnim.locked) {
+    camera.setViewTarget(eye, target, up);
+  }
 }
 
 void VgeExample::createComputeDescriptorSets() {
@@ -2634,9 +2673,10 @@ void VgeExample::onUpdateUIOverlay() {
       ImGui::DragFloat("particle size", &pointScale, 0.01f, 0.1f, 2.f, "%.2f");
 
       // Phase 2: smoothly animate to/from an overhead top-down view.
-      if (uiOverlay->button(cameraAnim.locked || cameraAnim.active
-                                ? "Free camera"
-                                : "Top view")) {
+      if (uiOverlay->button(
+              (cameraAnim.locked || (cameraAnim.active && cameraAnim.toTop))
+                  ? "Free camera"
+                  : "Top view")) {
         startTopViewAnim();
       }
 

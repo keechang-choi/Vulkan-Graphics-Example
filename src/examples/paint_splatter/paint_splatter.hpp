@@ -127,7 +127,7 @@ struct Spoid {
   float emitAccum = 0.f;
   // --- Phase 2: pendulum attachment (used only by PendulumSpoidController) ---
   int nodeIndex = -1;    // attach node in the chain; -1 = tip (last node)
-  float offsetR = 0.5f;  // offset distance in the plane perpendicular to the
+  float offsetR = 0.1f;  // offset distance in the plane perpendicular to the
                          // link direction at the attach node (0 = on node)
   float offsetAngle0 = 0.f;  // start angle in that perpendicular plane (rad);
                              // set per-spoid by arrangeSpoidsCircle so multiple
@@ -370,7 +370,7 @@ private:
   // high-alpha order-dependent alpha-over makes a two-colour texel oscillate
   // (A-over-B vs B-over-A). A small alpha makes the order variance negligible
   // and also keeps concentration/blending visible (no instant saturation).
-  float depositStrength = 0.015f;  // stamp alpha = concentration * this
+  float depositStrength = 0.01f;  // stamp alpha = concentration * this
   float depositHeight = 0.08f;  // deposit when pos.y >= -this (near floor y=0)
   float depositRadius = 0.01f;  // canvas stamp radius in WORLD units (M6)
   // Drying makes a near-floor particle freeze in place (paint setting): its
@@ -471,14 +471,19 @@ private:
   void createLinePipeline();
   // --- Phase 2: top-view camera animation ---
   struct CameraAnim {
-    bool active = false;
-    bool locked = false;  // hold the top view after the animation completes
+    bool active = false;  // an eye/target/up tween is in progress
+    bool locked = false;  // holding the top view after the forward tween
+    bool toTop = true;    // direction: true = going to top, false = returning
     float t = 0.f, duration = 1.0f;
-    glm::vec3 fromEye{0.f}, fromTarget{0.f};
-    glm::vec3 toEye{0.f, -6.f, 0.f}, toTarget{0.f}, up{0.f, 0.f, -1.f};
+    // full poses (eye, target, up) so BOTH the position and the look direction
+    // interpolate smoothly, in either direction.
+    glm::vec3 fromEye{0.f}, fromTarget{0.f}, fromUp{0.f, -1.f, 0.f};
+    glm::vec3 toEye{0.f}, toTarget{0.f}, toUp{0.f, 0.f, -1.f};
   } cameraAnim;
   void startTopViewAnim();
   void updateCameraAnim();
+  void currentCameraPose(glm::vec3& eye, glm::vec3& target,
+                         glm::vec3& up) const;
   static constexpr uint32_t kMaxSpoids = 16;
   // Per-frame host-visible marker buffers (Particle stride) so the spoids can
   // be drawn as points with the existing particle pipeline. Not part of the
