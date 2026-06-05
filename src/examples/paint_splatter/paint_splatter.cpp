@@ -1402,7 +1402,21 @@ glm::vec3 PendulumSpoidController::emissionPoint(const PendulumChain& c,
   int ni =
       (s.nodeIndex < 0) ? static_cast<int>(c.nodes.size()) - 1 : s.nodeIndex;
   ni = std::max(1, std::min(ni, static_cast<int>(c.nodes.size()) - 1));
-  return c.nodes[ni].pos;  // offset added in a later task
+  glm::vec3 node = c.nodes[ni].pos;
+  if (s.offsetR == 0.f) return node;
+  // link direction at this node (node - parent).
+  glm::vec3 d = node - c.nodes[ni - 1].pos;
+  float dl = glm::length(d);
+  if (dl < 1e-6f) return node;
+  d /= dl;
+  // orthonormal basis of the plane perpendicular to the string. Swap the
+  // reference axis when d is nearly parallel to it (singularity guard).
+  glm::vec3 ref =
+      (std::abs(d.x) < 0.9f) ? glm::vec3(1, 0, 0) : glm::vec3(0, 0, 1);
+  glm::vec3 e1 = glm::normalize(glm::cross(d, ref));
+  glm::vec3 e2 = glm::cross(d, e1);
+  float ph = s.offsetPhase;  // angle0 + omega*t, advanced in update()
+  return node + s.offsetR * (std::cos(ph) * e1 + std::sin(ph) * e2);
 }
 
 void PendulumSpoidController::update(float dt, std::vector<Spoid>& spoids,
@@ -1491,11 +1505,47 @@ void VgeExample::setSpoidControlMode(SpoidControlMode mode) {
   spoidControlMode = mode;
   if (mode == SpoidControlMode::Pendulum) {
     resetPendulum();
+    for (Spoid& s : spoids) s.offsetPhase = s.offsetAngle0;
     spoidController = std::make_unique<PendulumSpoidController>(
         pendulumChains, gravity, kDomainHeight);
   } else {
     spoidController = std::make_unique<KeyboardSpoidController>();
   }
+}
+
+void VgeExample::startTopViewAnim() {
+  if (cameraAnim.active || cameraAnim.locked) {
+    // toggle off: release back to the orbit controller.
+    cameraAnim.active = false;
+    cameraAnim.locked = false;
+    return;
+  }
+  cameraAnim.fromEye = camera.getPosition();
+  // aim at the canvas centre (0,0,0), the orbit target.
+  cameraAnim.fromTarget = glm::vec3(0.f);
+  cameraAnim.toEye = glm::vec3(0.f, -6.f, 0.f);  // overhead (world -Y is up)
+  cameraAnim.toTarget = glm::vec3(0.f);
+  cameraAnim.up =
+      glm::vec3(0.f, 0.f, -1.f);  // non-degenerate for a +Y view dir
+  cameraAnim.t = 0.f;
+  cameraAnim.active = true;
+}
+
+void VgeExample::updateCameraAnim() {
+  if (!cameraAnim.active && !cameraAnim.locked) return;
+  glm::vec3 eye = cameraAnim.toEye, target = cameraAnim.toTarget;
+  if (cameraAnim.active) {
+    cameraAnim.t += frameTimer;
+    float u = glm::clamp(cameraAnim.t / cameraAnim.duration, 0.f, 1.f);
+    float e = u * u * (3.f - 2.f * u);  // smoothstep ease in/out
+    eye = glm::mix(cameraAnim.fromEye, cameraAnim.toEye, e);
+    target = glm::mix(cameraAnim.fromTarget, cameraAnim.toTarget, e);
+    if (u >= 1.f) {
+      cameraAnim.active = false;
+      cameraAnim.locked = true;
+    }
+  }
+  camera.setViewTarget(eye, target, cameraAnim.up);
 }
 
 void VgeExample::createComputeDescriptorSets() {
@@ -1786,14 +1836,17 @@ void VgeExample::render() {
     // fast stroke stays connected. A fractional accumulator carries the
     // sub-particle remainder so low rates still emit evenly.
     const float dt = frameTimer;
+    const float kDrain = 1.0e-4f;  // reservoir drained per emitted particle
     for (Spoid& s : spoids) {
       if (!isEmitter(s)) continue;
+      if (s.paintMass <= 0.f) continue;  // empty reservoir -> no emission
       s.emitAccum += streamRate * dt;
       int n = static_cast<int>(s.emitAccum);
       if (n > 0) {
         s.emitAccum -= static_cast<float>(n);
         enqueueDrop(s.pos, s.holeRadius, s.color, s.emissionVelocity,
                     s.concentration, n, s.prevPos);
+        s.paintMass -= kDrain * static_cast<float>(n);
       }
     }
   } else if (autoEmit && !spoids.empty()) {
@@ -1813,6 +1866,7 @@ void VgeExample::render() {
   // emitting so the stream spans the motion just taken).
   for (Spoid& s : spoids) s.prevPos = s.pos;
 
+  updateCameraAnim();  // overrides the orbit view while animating/locked
   updateGlobalUbo();
   updateComputeUbo();
 
@@ -2324,6 +2378,47 @@ void VgeExample::onUpdateUIOverlay() {
       setSpoidControlMode(SpoidControlMode::Pendulum);
     }
 
+    // --- Phase 2: pendulum config (only in pendulum mode) ---
+    if (spoidControlMode == SpoidControlMode::Pendulum &&
+        !pendulumChains.empty()) {
+      PendulumChain& c = pendulumChains[0];
+      if (ImGui::CollapsingHeader("Pendulum", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Checkbox("show chain", &showChain);
+        bool rebuild = false;
+        rebuild |= ImGui::DragInt("links (n)", &c.numLinks, 0.1f, 1,
+                                  static_cast<int>(kMaxChainNodes) - 1);
+        rebuild |= ImGui::DragFloat("total length", &c.totalLength, 0.01f, 0.1f,
+                                    2.8f, "%.2f");
+        rebuild |= ImGui::DragFloat3("pivot", &c.pivot.x, 0.01f);
+        rebuild |= ImGui::DragFloat("init theta (rad)", &c.initTheta, 0.01f,
+                                    0.f, 3.14f, "%.2f");
+        rebuild |= ImGui::DragFloat("init phi (rad)", &c.initPhi, 0.01f, 0.f,
+                                    6.28f, "%.2f");
+        rebuild |= ImGui::DragFloat("init speed", &c.initSpeed, 0.01f, 0.f,
+                                    10.f, "%.2f");
+        ImGui::DragFloat("air damping (/s)", &c.airDamping, 0.005f, 0.f, 5.f,
+                         "%.3f");
+        ImGui::DragFloat("joint damping", &c.jointDamping, 0.005f, 0.f, 1.f,
+                         "%.3f");
+        ImGui::DragInt("substeps", &c.substeps, 0.2f, 1, 32);
+        ImGui::DragInt("constraint iters", &c.iters, 0.1f, 1, 16);
+        // per-node mass (mass<=0 => pinned). Resize to numLinks lazily.
+        if (static_cast<int>(c.bobMass.size()) != c.numLinks) {
+          c.bobMass.assign(std::max(1, c.numLinks), 1.0f);
+        }
+        for (int i = 0; i < static_cast<int>(c.bobMass.size()); i++) {
+          char lbl[32];
+          std::snprintf(lbl, sizeof(lbl), "bob %d mass (<=0 pin)", i + 1);
+          rebuild |=
+              ImGui::DragFloat(lbl, &c.bobMass[i], 0.02f, 0.f, 10.f, "%.2f");
+        }
+        if (uiOverlay->button("reset pendulum") || rebuild) {
+          resetPendulum();
+          for (Spoid& s : spoids) s.offsetPhase = s.offsetAngle0;
+        }
+      }
+    }
+
     // --- Spoids (M5 Task 10) ---
     if (ImGui::CollapsingHeader("Spoids", ImGuiTreeNodeFlags_DefaultOpen)) {
       ImGui::TextWrapped(
@@ -2403,6 +2498,29 @@ void VgeExample::onUpdateUIOverlay() {
           for (auto& o : spoids) o.concentration = s.concentration;
         if (ImGui::ColorEdit3("color", &s.color.x) && editAllSpoids)
           for (auto& o : spoids) o.color = s.color;
+        // Phase 2: per-spoid rotary offset (r, angle0, omega) + paint
+        // reservoir.
+        if (spoidControlMode == SpoidControlMode::Pendulum) {
+          if (ImGui::DragFloat("offset r", &s.offsetR, 0.005f, 0.f, 1.f,
+                               "%.3f") &&
+              editAllSpoids)
+            for (auto& o : spoids) o.offsetR = s.offsetR;
+          if (ImGui::DragFloat("offset angle0 (rad)", &s.offsetAngle0, 0.01f,
+                               0.f, 6.28f, "%.2f") &&
+              editAllSpoids)
+            for (auto& o : spoids) o.offsetAngle0 = s.offsetAngle0;
+          if (ImGui::DragFloat("offset omega (rad/s)", &s.offsetOmega, 0.02f,
+                               -20.f, 20.f, "%.2f") &&
+              editAllSpoids)
+            for (auto& o : spoids) o.offsetOmega = s.offsetOmega;
+          ImGui::Text("paint mass : %.3f", s.paintMass);
+          if (uiOverlay->button("refill paint")) {
+            if (editAllSpoids)
+              for (auto& o : spoids) o.paintMass = 1.f;
+            else
+              s.paintMass = 1.f;
+          }
+        }
       }
     }
 
@@ -2467,6 +2585,13 @@ void VgeExample::onUpdateUIOverlay() {
                        "%.2f");
       // Live-particle sprite size scale.
       ImGui::DragFloat("particle size", &pointScale, 0.01f, 0.1f, 2.f, "%.2f");
+
+      // Phase 2: smoothly animate to/from an overhead top-down view.
+      if (uiOverlay->button(cameraAnim.locked || cameraAnim.active
+                                ? "Free camera"
+                                : "Top view")) {
+        startTopViewAnim();
+      }
 
       // M7 Task 14: export the canvas to build/paint_<timestamp>.png.
       if (uiOverlay->button("Save PNG")) {
