@@ -111,6 +111,34 @@ CPU 레퍼런스(`yuki-koyama/position-based-fluids`)와 대조해 커널 수식
   이동 경로 sweep으로 빠른 스트로크 연결. **캔버스 밖**: 입자는 벽에 안 갇히고 자유낙하 후
   캔버스 밖 바닥에 닿으면 제거.
 
+## Phase 2 — PBD 진자 구동 스포이드 + 탑뷰
+
+스포이드를 **n-링크 PBD 진자**(기본 더블 펜듈럼)의 운동에 매달아, 흔들림 × 회전
+오프셋으로 하모노그래프/스피로그래프 패턴을 그리는 마일스톤. **호스트 사이드 전용**:
+컴퓨트 패스/UBO/GPU 구조체 변경 없이 컨트롤러가 매 프레임 `spoid.pos`만 갱신하고,
+기존 PBF/emit/stream/deposit/PNG 경로가 그 값을 그대로 재사용한다. 추가 셰이더는
+체인 라인용 `chain_line.{vert,frag}` 둘뿐.
+
+- **PendulumSpoidController**: 키보드 모드와 토글(라디오 버튼). 펜듈럼 모드에서 각
+  스포이드는 체인의 한 노드(기본=tip)에 붙어 emit 지점을 따라간다. Phase-1 스포이드
+  위치 clamp는 펜듈럼 모드에서 면제(진자 물리가 위치를 소유).
+- **PBD 스텝**: predict → 거리 제약(Gauss-Seidel, per-node 역질량) → 속도 갱신 →
+  air/joint 감쇠, substep + CFL 속도캡 + 바닥 위 soft-clamp. **순수 PBD**(해석해 폴백
+  없음). 노드별 질량 `bobMass<=0` ⇒ 역질량 0 ⇒ **해당 노드 고정(pin)**.
+- **회전 오프셋 `(r, angle₀, ω)`**: 부착 노드에서 줄 방향에 수직인 평면 위로 `r`만큼
+  떨어진 점을 `ω`로 회전(특이점 가드 포함). 흔들림 × 회전 = 스피로그래프.
+- **paintMass 저수조**: stream 분사가 입자당 선형 소모(기본 `kDrain=1e-4`), 0이면 분사
+  중단. UI `refill paint`로 리셋.
+- **체인 시각화**: 링크는 새 `eLineList` 파이프라인(회색 선), 조인트는 `markerPipeline`
+  재사용(노란 점).
+- **탑뷰 카메라**: 오비트 카메라는 그대로 두고, 버튼이 현재 시점에서 머리 위
+  부감으로 부드럽게(smoothstep) 애니메이션 후 고정. 다시 누르면 오비트로 복귀.
+  Save PNG는 카메라와 무관.
+- **월드 스케일**: `world scale`(1~4) 노브가 캔버스 + 시뮬 도메인 + 이웃 그리드를
+  배율(입자 크기/h/rho0/spacing은 불변)로 키운다. Restart 시 적용(그리드 버퍼는 최대
+  배율로 미리 할당 → 재할당/디스크립터 재작성 없이 gridDim/numCells만 갱신). Restart는
+  펜듈럼도 초기 상태로 되돌린다.
+
 ## 주요 설정 (ImGui 라이브)
 
 | 옵션 | 설명 |
@@ -123,6 +151,15 @@ CPU 레퍼런스(`yuki-koyama/position-based-fluids`)와 대조해 커널 수식
 | `spherical spawn` / `hole radius` | ball 분사 토글 / 방울 반경 |
 | `amount (burst)` / `emission vel` / `concentration` / `color` | 버스트 입자수 / 분사속도 / 농도 / 색 |
 | `deposit strength` / `dry rate` / `deposit radius` | 퇴적 알파 / 건조 속도 / stamp 반경 |
+| `keyboard` / `pendulum` | 스포이드 제어 모드 토글 (Phase 2) |
+| `links (n)` / `total length` / `pivot` | 진자 링크 수 / 전체 길이 / 매단 점 |
+| `init theta/phi/speed` | 초기 각도(수직 +Y 기준)·방위·tip 접선속도 |
+| `air/joint damping` / `substeps` / `constraint iters` | 공기·조인트 감쇠 / PBD substep / 제약 반복 |
+| `bob N mass (<=0 pin)` | 노드별 질량(0 이하면 해당 노드 고정) |
+| `offset r` / `offset angle0` / `offset omega` | 회전 오프셋 반경 / 시작각 / 각속도(스피로그래프) |
+| `paint mass` / `refill paint` | 스포이드 저수조 잔량 / 리필 |
+| `world scale` | 월드 배율(1~4, Restart 적용). 입자 크기는 불변 |
+| Top view / Free camera | 머리 위 부감으로 부드럽게 전환 / 오비트 복귀 |
 | Save PNG | 캔버스를 `build/paint_<timestamp>.png`로 저장 |
 
 ## 참고 문헌
