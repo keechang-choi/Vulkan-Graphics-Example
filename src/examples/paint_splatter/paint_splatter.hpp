@@ -134,7 +134,12 @@ struct Spoid {
                              // spoids sit evenly around the ring
   float offsetOmega = 4.f;   // constant spin rate of the offset (rad/s)
   float offsetPhase = 0.f;   // runtime: angle0 + omega*t, carried across frames
-  float paintMass = 1.f;     // paint reservoir; decreases on emit, 0 => stop
+  // runtime: a unit vector in the plane perpendicular to the string, parallel-
+  // transported across frames so the rotary-offset basis stays CONTINUOUS as
+  // the string swings (a per-frame world-axis pick stutters during a conical
+  // swing).
+  glm::vec3 offsetAxis{1.f, 0.f, 0.f};
+  float paintMass = 1.f;  // paint reservoir; decreases on emit, 0 => stop
 };
 
 // Per-frame keyboard intent, already mapped to world axes (GLFW reading lives
@@ -229,7 +234,9 @@ public:
 
 private:
   void stepChain(PendulumChain& c, float dt);  // PBD (filled in a later task)
-  glm::vec3 emissionPoint(const PendulumChain& c, const Spoid& s) const;
+  // non-const Spoid&: parallel-transports s.offsetAxis to keep the basis
+  // smooth.
+  glm::vec3 emissionPoint(const PendulumChain& c, Spoid& s) const;
 };
 
 // Intentionally empty for M1; simulation/spoid knobs are added in later

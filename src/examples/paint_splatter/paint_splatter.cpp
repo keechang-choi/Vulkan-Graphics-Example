@@ -68,7 +68,10 @@ void VgeExample::initVulkan() {
   // World convention (consistent with engine): screen-up = world -Y, so the
   // canvas floor (X-Z plane at y=0) is viewed from the -Y side (above) and -Z
   // (behind). Gravity will pull +Y; spoids/fluid live at y<0 (above the floor).
-  camera.setViewTarget(glm::vec3{0.f, -4.f, -4.f}, glm::vec3{0.f, 0.f, 0.f});
+  // Pull the camera back proportionally to the world scale so the (larger)
+  // canvas is framed the same regardless of worldScale.
+  camera.setViewTarget(glm::vec3{0.f, -4.f * worldScale, -4.f * worldScale},
+                       glm::vec3{0.f, 0.f, 0.f});
   camera.setPerspectiveProjection(
       glm::radians(60.f),
       static_cast<float>(width) / static_cast<float>(height), 0.1f, 256.f);
@@ -81,6 +84,13 @@ void VgeExample::prepare() {
   // Set queue family indices (mirrors particle.cpp:92-93)
   graphics.queueFamilyIndex = queueFamilyIndices.graphics;
   compute.queueFamilyIndex = queueFamilyIndices.compute;
+
+  // Phase 2: bake the world scale into kCanvasWorld/kDomainHalf/kDomainHeight
+  // BEFORE anything that reads them (canvas quad, spoid circle, pendulum). Was
+  // only done in prepareCompute(), so a non-1 startup worldScale built a
+  // mismatched (unscaled) canvas quad. prepareCompute() recomputes
+  // (idempotent).
+  computeScaledDims();
 
   // One spoid above the canvas centre. Phase 2: the default control mode is
   // pendulum (see spoidControlMode default), so build the controller for it.
@@ -1361,6 +1371,7 @@ void VgeExample::arrangeSpoidsCircle() {
     spoids[i].offsetAngle0 =
         glm::two_pi<float>() * static_cast<float>(i) / static_cast<float>(n);
     spoids[i].offsetPhase = spoids[i].offsetAngle0;
+    spoids[i].offsetAxis = glm::vec3(1.f, 0.f, 0.f);  // reset transported frame
   };
   if (n == 1) {
     spoids[0].pos = glm::vec3(0.f, y, 0.f);
@@ -1417,7 +1428,7 @@ void VgeExample::resetPendulum() {
 }
 
 glm::vec3 PendulumSpoidController::emissionPoint(const PendulumChain& c,
-                                                 const Spoid& s) const {
+                                                 Spoid& s) const {
   if (c.nodes.size() < 2) return c.pivot;
   int ni =
       (s.nodeIndex < 0) ? static_cast<int>(c.nodes.size()) - 1 : s.nodeIndex;
@@ -1429,16 +1440,19 @@ glm::vec3 PendulumSpoidController::emissionPoint(const PendulumChain& c,
   float dl = glm::length(d);
   if (dl < 1e-6f) return node;
   d /= dl;
-  // orthonormal basis of the plane perpendicular to the string. Pick the world
-  // axis LEAST aligned with d as the reference, so the basis stays well
-  // conditioned across the whole swing -- in particular through theta~90 where
-  // the old abs(d.x)<0.9 test flipped the basis (the spoid's offset circle
-  // glitched there). cross(d, ref) is never near-zero with this choice.
-  glm::vec3 ad(std::abs(d.x), std::abs(d.y), std::abs(d.z));
-  glm::vec3 ref = (ad.x <= ad.y && ad.x <= ad.z) ? glm::vec3(1, 0, 0)
-                  : (ad.y <= ad.z)               ? glm::vec3(0, 1, 0)
-                                                 : glm::vec3(0, 0, 1);
-  glm::vec3 e1 = glm::normalize(glm::cross(d, ref));
+  // CONTINUOUS perpendicular basis via parallel transport: reproject the stored
+  // axis onto the plane perpendicular to the current string, instead of picking
+  // a world axis each frame (which jumps as the string sweeps a cone -> the
+  // offset circle stuttered). Small string change -> small basis change.
+  glm::vec3 e1 = s.offsetAxis - d * glm::dot(d, s.offsetAxis);
+  if (glm::dot(e1, e1) < 1e-8f) {
+    // stored axis became parallel to the string: reseed from any perpendicular.
+    glm::vec3 ref =
+        (std::abs(d.x) < 0.9f) ? glm::vec3(1, 0, 0) : glm::vec3(0, 0, 1);
+    e1 = glm::cross(d, ref);
+  }
+  e1 = glm::normalize(e1);
+  s.offsetAxis = e1;  // carry the transported frame to the next call
   glm::vec3 e2 = glm::cross(d, e1);
   float ph = s.offsetPhase;  // angle0 + omega*t, advanced in update()
   return node + s.offsetR * (std::cos(ph) * e1 + std::sin(ph) * e2);
