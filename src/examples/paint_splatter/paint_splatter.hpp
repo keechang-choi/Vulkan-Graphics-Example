@@ -113,7 +113,7 @@ static_assert(sizeof(EmitPush) == 80, "EmitPush push-constant size");
 // spoid. World convention: spoids live above the floor at y<0.
 struct Spoid {
   glm::vec3 pos{0.f, -1.25f, 0.f};  // M8: start height halved (was -2.5)
-  float holeRadius = 0.12f;
+  float holeRadius = 0.06f;
   glm::vec3 color{0.2f, 0.4f, 0.9f};
   float emissionVelocity = 2.f;  // initial downward (+Y) speed
   int amount = 300;              // particles per drop (burst mode)
@@ -129,8 +129,10 @@ struct Spoid {
   int nodeIndex = -1;   // attach node in the chain; -1 = tip (last node)
   float offsetR = 0.f;  // offset distance in the plane perpendicular to the
                         // link direction at the attach node (0 = on node)
-  float offsetAngle0 = 0.f;  // start angle in that perpendicular plane (rad)
-  float offsetOmega = 0.f;   // constant spin rate of the offset (rad/s)
+  float offsetAngle0 = 0.f;  // start angle in that perpendicular plane (rad);
+                             // set per-spoid by arrangeSpoidsCircle so multiple
+                             // spoids sit evenly around the ring
+  float offsetOmega = 4.f;   // constant spin rate of the offset (rad/s)
   float offsetPhase = 0.f;   // runtime: angle0 + omega*t, carried across frames
   float paintMass = 1.f;     // paint reservoir; decreases on emit, 0 => stop
 };
@@ -187,10 +189,10 @@ struct PendulumChain {
   std::vector<PendulumNode> nodes;   // [0]=pivot, [1..numLinks]=bobs
   std::vector<float> linkLength;  // rest |node_i - node_{i-1}|, i=1..numLinks
   // config (UI-editable):
-  int numLinks = 2;            // n: 1 = simple, 2 = double pendulum (default)
+  int numLinks = 1;            // n: 1 = simple (default), 2 = double pendulum
   float totalLength = 1.5f;    // sum of links (split uniformly into n)
   std::vector<float> bobMass;  // per bob; built on reset, default uniform 1.0
-  float airDamping = 0.1f;     // global velocity damping /s (air resistance)
+  float airDamping = 0.01f;    // global velocity damping /s (air resistance)
   float jointDamping = 0.05f;  // damping of along-link relative velocity
   int substeps = 8;            // XPBD small-steps
   int iters = 4;               // distance-constraint Gauss-Seidel iters/substep
@@ -438,7 +440,7 @@ private:
   std::unique_ptr<SpoidController> spoidController;
   // --- Phase 2: pendulum -----------------------------------------------------
   enum class SpoidControlMode { Keyboard, Pendulum };
-  SpoidControlMode spoidControlMode = SpoidControlMode::Keyboard;
+  SpoidControlMode spoidControlMode = SpoidControlMode::Pendulum;
   std::vector<PendulumChain> pendulumChains;  // owned here; controller mutates
   static constexpr uint32_t kMaxChainNodes = 32;  // pivot + up to 31 bobs
   bool showChain = true;  // draw link lines + joint sprites
@@ -486,8 +488,11 @@ private:
   // along the hole's motion this frame (so a fast-moving stroke stays connected
   // instead of breaking into dots). No physical tank -- the soft-constraint
   // fluid + gravity form the falling ribbon. Takes over from autoEmit when on.
-  bool streamMode = false;    // opt-in (toggle in ImGui); burst is the default
-  float streamRate = 2000.f;  // particles per second per streaming spoid
+  bool streamMode = true;     // default ON (pairs with the pendulum default)
+  float streamRate = 1000.f;  // particles per second per streaming spoid
+  // Phase 2: paint reservoir drain per emitted particle (UI-tunable). 0 = the
+  // reservoir never depletes (paint never runs out).
+  float massDrainRate = 0.f;
   // Particle pool exhaustion warning (set when a drop is rejected/clamped).
   bool poolFull = false;
 

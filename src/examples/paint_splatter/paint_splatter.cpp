@@ -82,13 +82,15 @@ void VgeExample::prepare() {
   graphics.queueFamilyIndex = queueFamilyIndices.graphics;
   compute.queueFamilyIndex = queueFamilyIndices.compute;
 
-  // One spoid above the canvas centre, driven by the keyboard (design §4).
+  // One spoid above the canvas centre. Phase 2: the default control mode is
+  // pendulum (see spoidControlMode default), so build the controller for it.
   {
     Spoid s{};
     s.color = spoidPalette(0);
     spoids.push_back(s);
   }
-  spoidController = std::make_unique<KeyboardSpoidController>();
+  arrangeSpoidsCircle();  // also seeds per-spoid offsetAngle0
+  setSpoidControlMode(spoidControlMode);
 
   createVertexBuffer();
   createIndexBuffer();
@@ -1347,8 +1349,16 @@ void VgeExample::arrangeSpoidsCircle() {
   // Re-level every spoid to the default spawn height (y) too, so
   // adding/removing a spoid resets the whole set to a clean starting layout.
   const float y = -1.25f;  // matches Spoid::pos default (M8: start height /2)
+  // Phase 2: also seed each spoid's rotary-offset start angle evenly around the
+  // ring so that with offsetR>0 the spoids paint an evenly-spaced rosette.
+  auto seedAngle = [&](int i) {
+    spoids[i].offsetAngle0 =
+        glm::two_pi<float>() * static_cast<float>(i) / static_cast<float>(n);
+    spoids[i].offsetPhase = spoids[i].offsetAngle0;
+  };
   if (n == 1) {
     spoids[0].pos = glm::vec3(0.f, y, 0.f);
+    seedAngle(0);
     return;
   }
   const float radius = kDomainHalf * 0.3f;  // compact circle near the centre
@@ -1357,6 +1367,7 @@ void VgeExample::arrangeSpoidsCircle() {
         glm::two_pi<float>() * static_cast<float>(i) / static_cast<float>(n);
     spoids[i].pos =
         glm::vec3(radius * std::cos(ang), y, radius * std::sin(ang));
+    seedAngle(i);
   }
 }
 
@@ -1836,17 +1847,17 @@ void VgeExample::render() {
     // fast stroke stays connected. A fractional accumulator carries the
     // sub-particle remainder so low rates still emit evenly.
     const float dt = frameTimer;
-    const float kDrain = 1.0e-4f;  // reservoir drained per emitted particle
     for (Spoid& s : spoids) {
       if (!isEmitter(s)) continue;
-      if (s.paintMass <= 0.f) continue;  // empty reservoir -> no emission
+      // massDrainRate==0 => the reservoir never depletes, so don't gate on it.
+      if (massDrainRate > 0.f && s.paintMass <= 0.f) continue;  // empty
       s.emitAccum += streamRate * dt;
       int n = static_cast<int>(s.emitAccum);
       if (n > 0) {
         s.emitAccum -= static_cast<float>(n);
         enqueueDrop(s.pos, s.holeRadius, s.color, s.emissionVelocity,
                     s.concentration, n, s.prevPos);
-        s.paintMass -= kDrain * static_cast<float>(n);
+        s.paintMass -= massDrainRate * static_cast<float>(n);
       }
     }
   } else if (autoEmit && !spoids.empty()) {
@@ -2364,6 +2375,10 @@ void VgeExample::onUpdateUIOverlay() {
     ImGui::Checkbox("stream mode (continuous)", &streamMode);
     ImGui::DragFloat("stream rate (/s)", &streamRate, 20.f, 0.f, 20000.f,
                      "%.0f");
+    // Phase 2: paint reservoir drain per emitted particle. 0 = paint never runs
+    // out; raise it so each spoid's paintMass (1.0) depletes over time.
+    ImGui::DragFloat("mass drain rate", &massDrainRate, 1.0e-5f, 0.f, 1.0e-2f,
+                     "%.5f");
     // M8: spawn shape. Ball -> holeRadius drives droplet size; lattice ->
     // amount drives size (fresh droplet exactly at rest density).
     ImGui::Checkbox("spherical spawn (ball)", &sphericalSpawn);
