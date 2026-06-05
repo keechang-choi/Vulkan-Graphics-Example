@@ -195,9 +195,9 @@ struct PendulumChain {
   int substeps = 8;            // XPBD small-steps
   int iters = 4;               // distance-constraint Gauss-Seidel iters/substep
   // initial state (chain starts as a straight line displaced from +Y vertical):
-  float initTheta = 0.6f;  // rad from the +Y (down) axis
-  float initPhi = 0.f;     // rad azimuth in X-Z
-  float initSpeed = 0.f;   // initial tangential speed at the tip (world u/s)
+  float initTheta = 0.9f;  // rad from the +Y (down) axis
+  float initPhi = 0.1f;    // rad azimuth in X-Z
+  float initSpeed = 1.f;   // initial tangential speed at the tip (world u/s)
 };
 
 // Drives spoids along an n-link PBD pendulum. The example owns the chains and a
@@ -207,10 +207,13 @@ struct PendulumChain {
 class PendulumSpoidController : public SpoidController {
 public:
   PendulumSpoidController(std::vector<PendulumChain>& chains,
-                          const float& gravity)
-      : chains(chains), gravity(gravity) {}
+                          const float& gravity, const float& ceilingHeight)
+      : chains(chains), gravity(gravity), ceilingHeight(ceilingHeight) {}
   std::vector<PendulumChain>& chains;
   const float& gravity;
+  // = the example's kDomainHeight (scaled). Lower bound for the bob y-clamp so
+  // the safety clamp tracks the world scale instead of a hard-coded floor.
+  const float& ceilingHeight;
   void update(float dt, std::vector<Spoid>& spoids, const InputState& in,
               std::vector<int>& emitDrops) override;
 
@@ -418,14 +421,17 @@ private:
   float seedJitterXZ = 0.0f;  // random horizontal seed velocity (0 = clean dam)
   bool restartRequested = false;
   static constexpr float kFixedDt = 1.0f / 120.0f;
-  static constexpr float kDomainHeight = 3.0f;  // floor y=0 .. cmin.y=-height
+  // Domain extents. Phase 2: NON-const, recomputed = base * worldScale in
+  // computeScaledDims() so the whole scene scales relative to the fixed-size
+  // particles. Base values are the literals in computeScaledDims().
+  float kDomainHeight = 3.0f;  // floor y=0 .. cmin.y=-height
   // M4 test: confine the fluid (collision walls + neighbor grid) to a small box
   // in x,z so a dam-break forms a dense, visible pool. The canvas quad itself
   // stays kCanvasWorld.
   static constexpr float kFluidHalf = 1.0f;
   // M5: droplets need the full canvas footprint, so the simulation domain
   // (collision walls + neighbor grid) spans the whole canvas in x,z.
-  static constexpr float kDomainHalf = 2.0f;  // == kCanvasWorld * 0.5
+  float kDomainHalf = 2.0f;  // == kCanvasWorld * 0.5 (scaled by worldScale)
 
   // ---- emit / spoids (M5) ----
   std::vector<Spoid> spoids;
@@ -605,7 +611,21 @@ private:
   int solverIters = 2;  // M8: fewer iters per substep (reference uses 2)
   bool colorByDensity = false;  // debug: tint particles by rho/rho0
 
-  static constexpr float kCanvasWorld = 4.0f;
+  float kCanvasWorld = 4.0f;  // canvas side length (scaled by worldScale)
+
+  // --- Phase 2: world scale --------------------------------------------------
+  // Multiplies the canvas + sim domain + grid + pendulum geometry, NOT the
+  // particle spacing / smoothing radius h / rho0 -- so the M8 fluid tuning is
+  // preserved and particles simply look smaller on a bigger canvas. Applied on
+  // Restart. Grid buffers are pre-sized for kMaxWorldScale so no live buffer
+  // realloc / descriptor rewrite is needed (only gridDim/numCells change).
+  static constexpr float kMaxWorldScale = 4.0f;
+  float worldScale = 1.0f;         // UI knob; takes effect on Restart
+  float appliedWorldScale = 1.0f;  // scale currently baked into the geometry
+  uint32_t maxNumCells = 0;        // grid buffer capacity (sized for max scale)
+  // Recompute kCanvasWorld/kDomainHalf/kDomainHeight (= base * worldScale) and
+  // gridDim/numCells/maxNumCells. Pure CPU; does not touch GPU resources.
+  void computeScaledDims();
 };
 
 }  // namespace vge

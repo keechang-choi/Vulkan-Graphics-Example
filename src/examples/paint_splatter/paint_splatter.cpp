@@ -291,6 +291,23 @@ void VgeExample::seedParticles() {
 // barrier exactly like a fresh start (keeps validation clean).
 void VgeExample::restartSimulation() {
   device.waitIdle();
+  // Phase 2: apply a pending world-scale change. Grid buffers are pre-sized to
+  // maxNumCells, so we only recompute the extents + grid dims and rebuild the
+  // canvas quad (device-local, safe after waitIdle). canvasMin/Max are
+  // rederived from kDomainHalf/kDomainHeight each frame in updateComputeUbo();
+  // gridDim is set once here and carried by the per-frame whole-struct copy.
+  if (worldScale != appliedWorldScale) {
+    computeScaledDims();
+    createVertexBuffer();  // rebuild the canvas quad at the new kCanvasWorld
+    compute.ubo.gridDim = glm::ivec4(gridDim, static_cast<int>(numCells));
+    for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
+      std::memcpy(compute.uniformBuffers[i]->getMappedData(), &compute.ubo,
+                  sizeof(ComputeUbo));
+    }
+    std::cout << "[paint_splatter] worldScale=" << appliedWorldScale
+              << " gridDim=(" << gridDim.x << "," << gridDim.y << ","
+              << gridDim.z << ") numCells=" << numCells << std::endl;
+  }
   // M5: clear the canvas of live fluid (emit will repopulate). The SSBO slots
   // are simply abandoned by setting the live count to 0; no reseed needed.
   numParticles = 0;
@@ -337,6 +354,13 @@ void VgeExample::restartSimulation() {
     spoids[i].color = spoidPalette(i);
   }
   arrangeSpoidsCircle();
+  // Phase 2: also return the pendulum to its initial state (rebuild the chain
+  // from config + reset each spoid's rotary offset phase) so Restart gives a
+  // fresh swing, mirroring the keyboard-mode spoid reposition above.
+  if (spoidControlMode == SpoidControlMode::Pendulum) {
+    resetPendulum();
+    for (Spoid& s : spoids) s.offsetPhase = s.offsetAngle0;
+  }
 }
 
 // Per-frame host-visible marker buffers (one Particle slot per spoid) drawn as
@@ -879,11 +903,15 @@ void VgeExample::createGridBuffers() {
   cellOffsetBuffers.reserve(MAX_CONCURRENT_FRAMES);
   sortedIdBuffers.reserve(MAX_CONCURRENT_FRAMES);
   deltaPBuffers.reserve(MAX_CONCURRENT_FRAMES);
+  // Phase 2: size the per-cell buffers to maxNumCells (capacity at the largest
+  // worldScale) so changing the scale on Restart only updates gridDim/numCells,
+  // never reallocates these buffers or rewrites their descriptors.
+  const uint32_t cellCap = std::max(numCells, maxNumCells);
   for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
     cellCountBuffers.push_back(
-        makeBuf(numCells, true));  // zeroed via fillBuffer
-    cellStartBuffers.push_back(makeBuf(numCells + 1u, false));
-    cellOffsetBuffers.push_back(makeBuf(numCells + 1u, false));
+        makeBuf(cellCap, true));  // zeroed via fillBuffer
+    cellStartBuffers.push_back(makeBuf(cellCap + 1u, false));
+    cellOffsetBuffers.push_back(makeBuf(cellCap + 1u, false));
     sortedIdBuffers.push_back(makeBuf(kMaxParticles, false));
     // deltaP: one vec4 per particle
     deltaPBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
@@ -936,17 +964,49 @@ static float kSpikyConst(float h) {
   return 45.f / (glm::pi<float>() * std::pow(h, 6.f));
 }
 
+// Phase 2 world scale: recompute the canvas + simulation domain + neighbor grid
+// from base extents * worldScale. The smoothing radius h (and thus the particle
+// size) is NOT scaled, so a bigger world simply holds more, smaller-looking
+// particles and the M8 fluid tuning (h / rho0 / spacing) is preserved. Pure
+// CPU: sets kCanvasWorld/kDomainHalf/kDomainHeight, gridDim/numCells (current
+// scale), and maxNumCells (capacity at kMaxWorldScale, used to pre-size grid
+// buffers so no realloc/descriptor rewrite is needed when the scale changes on
+// Restart).
+void VgeExample::computeScaledDims() {
+  // Base (unscaled) extents -- the original compile-time literals.
+  constexpr float kBaseCanvasWorld = 4.0f;
+  constexpr float kBaseDomainHalf = 2.0f;  // == kBaseCanvasWorld * 0.5
+  constexpr float kBaseDomainHeight = 3.0f;
+  const float s = glm::clamp(worldScale, 1.0f, kMaxWorldScale);
+  worldScale = s;
+  appliedWorldScale = s;
+  kCanvasWorld = kBaseCanvasWorld * s;
+  kDomainHalf = kBaseDomainHalf * s;
+  kDomainHeight = kBaseDomainHeight * s;
+  const float h = kSmoothingRadius;  // grid cell size = h (unscaled)
+  gridDim = glm::ivec3(static_cast<int>(std::ceil((2.f * kDomainHalf) / h)),
+                       static_cast<int>(std::ceil(kDomainHeight / h)),
+                       static_cast<int>(std::ceil((2.f * kDomainHalf) / h)));
+  numCells = static_cast<uint32_t>(gridDim.x) * gridDim.y * gridDim.z;
+  // Capacity at the largest allowed scale (grid buffers are sized to this
+  // once).
+  const glm::ivec3 maxDim(
+      static_cast<int>(std::ceil((2.f * kBaseDomainHalf * kMaxWorldScale) / h)),
+      static_cast<int>(std::ceil((kBaseDomainHeight * kMaxWorldScale) / h)),
+      static_cast<int>(
+          std::ceil((2.f * kBaseDomainHalf * kMaxWorldScale) / h)));
+  maxNumCells = static_cast<uint32_t>(maxDim.x) * maxDim.y * maxDim.z;
+}
+
 void VgeExample::prepareCompute() {
   computeFirstUse.assign(MAX_CONCURRENT_FRAMES, 1);
 
   // --- Grid dimensions from the fluid domain + smoothing radius ---
   // M5: the domain spans the full canvas in x,z (droplets land anywhere).
+  computeScaledDims();             // sets kDomainHalf/Height/kCanvasWorld +
+                                   // gridDim/numCells
   const float half = kDomainHalf;  // domain half-extent in x,z
   const float h = kSmoothingRadius;
-  gridDim = glm::ivec3(static_cast<int>(std::ceil((2.f * half) / h)),
-                       static_cast<int>(std::ceil(kDomainHeight / h)),
-                       static_cast<int>(std::ceil((2.f * half) / h)));
-  numCells = static_cast<uint32_t>(gridDim.x) * gridDim.y * gridDim.z;
   std::cout << "[paint_splatter] gridDim=(" << gridDim.x << "," << gridDim.y
             << "," << gridDim.z << ")  numCells=" << numCells << std::endl;
 
@@ -1420,8 +1480,9 @@ void PendulumSpoidController::stepChain(PendulumChain& c, float dt) {
       PendulumNode& nd = c.nodes[i];
       float sp = glm::length(nd.vel);
       if (sp > maxSpeed) nd.vel *= maxSpeed / sp;
-      // floor y=0, ceiling y=-3 (kDomainHeight). keep bobs above the floor.
-      nd.pos.y = glm::clamp(nd.pos.y, -3.0f + 0.05f, -0.1f);
+      // floor y=0, ceiling y=-ceilingHeight (= kDomainHeight, scaled). keep
+      // bobs above the floor; the bound tracks the world scale.
+      nd.pos.y = glm::clamp(nd.pos.y, -ceilingHeight + 0.05f, -0.1f);
     }
   }
 }
@@ -1430,8 +1491,8 @@ void VgeExample::setSpoidControlMode(SpoidControlMode mode) {
   spoidControlMode = mode;
   if (mode == SpoidControlMode::Pendulum) {
     resetPendulum();
-    spoidController =
-        std::make_unique<PendulumSpoidController>(pendulumChains, gravity);
+    spoidController = std::make_unique<PendulumSpoidController>(
+        pendulumChains, gravity, kDomainHeight);
   } else {
     spoidController = std::make_unique<KeyboardSpoidController>();
   }
@@ -2349,6 +2410,14 @@ void VgeExample::onUpdateUIOverlay() {
     ImGui::DragFloat("gravity (+Y)", &gravity, 0.05f, 0.f, 30.f, "%.2f");
     ImGui::Checkbox("fixed dt (1/120)", &useFixedDt);
     ImGui::DragFloat("seed jitter xz", &seedJitterXZ, 0.01f, 0.f, 5.f, "%.2f");
+    // Phase 2: world scale. Multiplies the canvas + sim domain + grid (NOT the
+    // particle size); applied on Restart. The label flags a pending change.
+    ImGui::DragFloat("world scale", &worldScale, 0.05f, 1.0f, kMaxWorldScale,
+                     "%.2f");
+    if (worldScale != appliedWorldScale) {
+      ImGui::SameLine();
+      ImGui::TextDisabled("(Restart to apply)");
+    }
     if (uiOverlay->button("Restart")) {
       restartRequested = true;
     }
