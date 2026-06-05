@@ -1316,7 +1316,13 @@ void VgeExample::updateSpoids() {
   spaceWasDown = space;
 
   std::vector<int> emitDrops;
-  spoidController->update(frameTimer, spoids, in, emitDrops);
+  // Drive the controller with the same fixed dt as the fluid when useFixedDt is
+  // on. The pendulum predict is symplectic Euler, whose bounded-energy property
+  // only holds at a CONSTANT step -- variable frameTimer makes it drift (and be
+  // fps-dependent). A fixed step also keeps the swing in lock-step with the
+  // PBF.
+  const float controllerDt = useFixedDt ? kFixedDt : frameTimer;
+  spoidController->update(controllerDt, spoids, in, emitDrops);
 
   // Spoids may move OUTSIDE the canvas footprint (so a stroke can enter/leave
   // the painting) -- only a generous outer bound stops them being lost. y stays

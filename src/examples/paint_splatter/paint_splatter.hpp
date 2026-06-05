@@ -588,7 +588,7 @@ private:
   // UNBOUNDED signed constraint (C never drops below -1 physically), now safe
   // because the soft epsCFM already keeps the pull gentle. 0 = compression-only
   // (no cohesion).
-  float cohesionFloor = 1.0f;
+  float cohesionFloor = 2.0f;  // raised for stronger droplet cohesion
   // Per-iteration Δp clamp (pbf_delta), as a multiple of h. <=0 disables it.
   // Default 0.2 preserves the old clamp; lower it toward 0 for a stronger crown
   // once substeps keep the sim stable (M8).
@@ -601,7 +601,7 @@ private:
   float scorrK = 3.0e-6f;     // artificial pressure strength (reference ~3e-6)
   float scorrDqRatio = 0.3f;  // scorrDq = ratio * h (reference corr_h = 0.30)
   float scorrN = 4.f;
-  float xsphC = 0.05f;  // XSPH viscosity (reference viscosity_coeff = 0.050)
+  float xsphC = 0.1f;  // XSPH viscosity (raised for more coherent motion)
   // Gentle per-substep drag (M8): the reference uses v*=0.999/substep. High
   // values (the old 8.0) dissipate the impact energy that launches a crown and
   // cap terminal velocity (~0.75) -- settling of DEPOSITED paint is drying's
@@ -633,8 +633,8 @@ private:
   // Restart. Grid buffers are pre-sized for kMaxWorldScale so no live buffer
   // realloc / descriptor rewrite is needed (only gridDim/numCells change).
   static constexpr float kMaxWorldScale = 4.0f;
-  float worldScale = 1.0f;         // UI knob; takes effect on Restart
-  float appliedWorldScale = 1.0f;  // scale currently baked into the geometry
+  float worldScale = 1.5f;         // UI knob; takes effect on Restart
+  float appliedWorldScale = 1.5f;  // scale currently baked into the geometry
   uint32_t maxNumCells = 0;        // grid buffer capacity (sized for max scale)
   // Recompute kCanvasWorld/kDomainHalf/kDomainHeight (= base * worldScale) and
   // gridDim/numCells/maxNumCells. Pure CPU; does not touch GPU resources.
