@@ -401,8 +401,10 @@ void VgeExample::createChainBuffers() {
         vk::BufferUsageFlagBits::eVertexBuffer, VMA_MEMORY_USAGE_AUTO,
         VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
             VMA_ALLOCATION_CREATE_MAPPED_BIT));
+    // 2 verts per link + 2 per spoid arm (node -> spoid emission point).
     lineBuffers.push_back(std::make_unique<vgeu::VgeuBuffer>(
-        globalAllocator->getAllocator(), sizeof(Particle), kMaxChainNodes * 2,
+        globalAllocator->getAllocator(), sizeof(Particle),
+        (kMaxChainNodes + kMaxSpoids) * 2,
         vk::BufferUsageFlagBits::eVertexBuffer, VMA_MEMORY_USAGE_AUTO,
         VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
             VMA_ALLOCATION_CREATE_MAPPED_BIT));
@@ -1914,11 +1916,32 @@ void VgeExample::render() {
     // fast stroke stays connected. A fractional accumulator carries the
     // sub-particle remainder so low rates still emit evenly.
     const float dt = frameTimer;
+    const bool dynFlow = flowFromDynamics &&
+                         spoidControlMode == SpoidControlMode::Pendulum &&
+                         !pendulumChains.empty();
+    // Torricelli-style outflow factor at a spoid's attach node: sqrt(g_eff/g)
+    // with g_eff = |g - a_centripetal|, a_centripetal = (v^2/L) toward pivot.
+    auto flowFactor = [&](const Spoid& s) -> float {
+      if (!dynFlow) return 1.f;
+      const PendulumChain& c = pendulumChains[0];
+      int ni = (s.nodeIndex < 0) ? static_cast<int>(c.nodes.size()) - 1
+                                 : s.nodeIndex;
+      ni = std::max(1, std::min(ni, static_cast<int>(c.nodes.size()) - 1));
+      const glm::vec3 toPivot = c.nodes[ni - 1].pos - c.nodes[ni].pos;
+      float L = glm::length(toPivot);
+      if (L < 1e-4f) return 1.f;
+      float v = glm::length(c.nodes[ni].vel);
+      glm::vec3 aCent =
+          (v * v / L) * (toPivot / L);  // centripetal, toward pivot
+      float gEff = glm::length(glm::vec3(0.f, gravity, 0.f) - aCent);
+      float g = std::max(gravity, 1e-3f);
+      return std::max(0.f, 1.f + flowGain * (std::sqrt(gEff / g) - 1.f));
+    };
     for (Spoid& s : spoids) {
       if (!isEmitter(s)) continue;
       // massDrainRate==0 => the reservoir never depletes, so don't gate on it.
       if (massDrainRate > 0.f && s.paintMass <= 0.f) continue;  // empty
-      s.emitAccum += streamRate * dt;
+      s.emitAccum += streamRate * flowFactor(s) * dt;
       int n = static_cast<int>(s.emitAccum);
       if (n > 0) {
         s.emitAccum -= static_cast<float>(n);
@@ -2358,8 +2381,23 @@ void VgeExample::buildCommandBuffers() {
         lv[2 * i + 1].pos = glm::vec4(c.nodes[i + 1].pos, 1.f);
         lv[2 * i + 1].color = glm::vec4(0.7f, 0.7f, 0.7f, 1.f);
       }
+      // spoid arms: a line from each spoid's attach node to its emission point
+      // (the offset spoid position), drawn in the spoid's colour like a link.
+      uint32_t vc = links * 2;
+      const uint32_t lineCap = (kMaxChainNodes + kMaxSpoids) * 2;
+      for (const Spoid& s : spoids) {
+        if (vc + 2 > lineCap) break;
+        int ni =
+            (s.nodeIndex < 0) ? static_cast<int>(nodeCount) - 1 : s.nodeIndex;
+        ni = std::max(1, std::min(ni, static_cast<int>(nodeCount) - 1));
+        lv[vc].pos = glm::vec4(c.nodes[ni].pos, 1.f);
+        lv[vc].color = glm::vec4(glm::vec3(s.color), 1.f);
+        lv[vc + 1].pos = glm::vec4(s.pos, 1.f);
+        lv[vc + 1].color = glm::vec4(glm::vec3(s.color), 1.f);
+        vc += 2;
+      }
       vk::DeviceSize off(0);
-      // lines
+      // lines (chain links + spoid arms)
       drawCmdBuffers[currentFrameIndex].bindPipeline(
           vk::PipelineBindPoint::eGraphics, *linePipeline);
       drawCmdBuffers[currentFrameIndex].bindDescriptorSets(
@@ -2367,7 +2405,7 @@ void VgeExample::buildCommandBuffers() {
           {*descriptorSets[currentFrameIndex]}, nullptr);
       drawCmdBuffers[currentFrameIndex].bindVertexBuffers(
           0, lineBuffers[currentFrameIndex]->getBuffer(), off);
-      drawCmdBuffers[currentFrameIndex].draw(links * 2, 1, 0, 0);
+      drawCmdBuffers[currentFrameIndex].draw(vc, 1, 0, 0);
       // joints (marker pipeline)
       drawCmdBuffers[currentFrameIndex].bindPipeline(
           vk::PipelineBindPoint::eGraphics, *markerPipeline);
@@ -2446,6 +2484,10 @@ void VgeExample::onUpdateUIOverlay() {
     // out; raise it so each spoid's paintMass (1.0) depletes over time.
     ImGui::DragFloat("mass drain rate", &massDrainRate, 1.0e-5f, 0.f, 1.0e-2f,
                      "%.5f");
+    // Phase 2: physical outflow (more paint at the fast bottom of the swing).
+    ImGui::Checkbox("flow from dynamics", &flowFromDynamics);
+    if (flowFromDynamics)
+      ImGui::DragFloat("flow gain", &flowGain, 0.02f, 0.f, 5.f, "%.2f");
     // M8: spawn shape. Ball -> holeRadius drives droplet size; lattice ->
     // amount drives size (fresh droplet exactly at rest density).
     ImGui::Checkbox("spherical spawn (ball)", &sphericalSpawn);
@@ -2567,8 +2609,8 @@ void VgeExample::onUpdateUIOverlay() {
                     selectedSpoidUi);
         // applyAll(field): copy the just-edited field to all spoids when in
         // edit-ALL mode. Per-field so it doesn't clobber the other params.
-        if (ImGui::DragFloat("hole radius (ball)", &s.holeRadius, 0.002f, 0.02f,
-                             0.5f, "%.3f") &&
+        if (ImGui::DragFloat("hole radius (ball)", &s.holeRadius, 0.0005f,
+                             0.001f, 0.5f, "%.4f") &&
             editAllSpoids)
           for (auto& o : spoids) o.holeRadius = s.holeRadius;
         if (ImGui::DragFloat("emission vel", &s.emissionVelocity, 0.02f, 0.f,

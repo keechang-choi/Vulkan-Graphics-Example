@@ -113,7 +113,7 @@ static_assert(sizeof(EmitPush) == 80, "EmitPush push-constant size");
 // spoid. World convention: spoids live above the floor at y<0.
 struct Spoid {
   glm::vec3 pos{0.f, -1.25f, 0.f};  // M8: start height halved (was -2.5)
-  float holeRadius = 0.02f;
+  float holeRadius = 0.01f;
   glm::vec3 color{0.2f, 0.4f, 0.9f};
   float emissionVelocity = 2.f;  // initial downward (+Y) speed
   int amount = 300;              // particles per drop (burst mode)
@@ -370,7 +370,7 @@ private:
   // high-alpha order-dependent alpha-over makes a two-colour texel oscillate
   // (A-over-B vs B-over-A). A small alpha makes the order variance negligible
   // and also keeps concentration/blending visible (no instant saturation).
-  float depositStrength = 0.01f;  // stamp alpha = concentration * this
+  float depositStrength = 0.15f;  // stamp alpha = concentration * this
   float depositHeight = 0.08f;  // deposit when pos.y >= -this (near floor y=0)
   float depositRadius = 0.01f;  // canvas stamp radius in WORLD units (M6)
   // Drying makes a near-floor particle freeze in place (paint setting): its
@@ -513,6 +513,13 @@ private:
   // Phase 2: paint reservoir drain per emitted particle (UI-tunable). 0 = the
   // reservoir never depletes (paint never runs out).
   float massDrainRate = 0.f;
+  // Phase 2: physically-motivated outflow. Real flow through a hole follows
+  // Torricelli v_exit ~ sqrt(g_eff), and for a swinging bob g_eff = |g - a_bob|
+  // with a_bob dominated by the centripetal term v^2/L (up toward the pivot).
+  // So outflow peaks at the fast bottom of the swing and dips at the turning
+  // points. When on, streamRate is scaled by 1 + flowGain*(sqrt(g_eff/g) - 1).
+  bool flowFromDynamics = true;  // default ON (physical outflow)
+  float flowGain = 1.f;          // 0 = constant; >1 exaggerates the variation
   // Particle pool exhaustion warning (set when a drop is rejected/clamped).
   bool poolFull = false;
 
