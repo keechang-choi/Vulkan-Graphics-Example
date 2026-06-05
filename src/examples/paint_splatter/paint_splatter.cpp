@@ -62,6 +62,9 @@ void VgeExample::getEnabledFeatures() {
       physicalDevice.getFeatures().shaderClipDistance;
   // largePoints may be needed for point sizes > 1
   enabledFeatures.largePoints = physicalDevice.getFeatures().largePoints;
+  // wideLines: chain/spoid line thickness > 1 (clamped to 1 if unsupported).
+  wideLinesEnabled = physicalDevice.getFeatures().wideLines;
+  enabledFeatures.wideLines = wideLinesEnabled;
 }
 
 void VgeExample::initVulkan() {
@@ -873,8 +876,10 @@ void VgeExample::createLinePipeline() {
   vk::PipelineColorBlendStateCreateInfo colorBlendSCI(
       vk::PipelineColorBlendStateCreateFlags(), false, vk::LogicOp::eNoOp,
       colorBlendAttachmentState, {{1.0f, 1.0f, 1.0f, 1.0f}});
-  std::array<vk::DynamicState, 2> dynamicStates = {vk::DynamicState::eViewport,
-                                                   vk::DynamicState::eScissor};
+  // eLineWidth so the chain/spoid line thickness is adjustable at draw time.
+  std::array<vk::DynamicState, 3> dynamicStates = {
+      vk::DynamicState::eViewport, vk::DynamicState::eScissor,
+      vk::DynamicState::eLineWidth};
   vk::PipelineDynamicStateCreateInfo dynamicSCI(
       vk::PipelineDynamicStateCreateFlags(), dynamicStates);
 
@@ -1560,9 +1565,13 @@ void VgeExample::currentCameraPose(glm::vec3& eye, glm::vec3& target,
                                    glm::vec3& up) const {
   eye = camera.getPosition();
   const glm::mat4 iv = camera.getInverseView();
-  const glm::vec3 fwd = -glm::vec3(iv[2]);  // world forward (camera looks -Z)
-  up = glm::vec3(iv[1]);                    // camera up (engine -Y convention)
-  float dist = glm::length(eye);            // look-at distance ~ to the canvas
+  // Engine camera is LEFT-handed (lookAtLH): the inverse-view forward column is
+  // +Z (col[2]). The previous -col[2] put the look target BEHIND the camera, so
+  // the tween started from a flipped view ("current position not reflected").
+  // setViewTarget() also negates its up argument, so feed back -col[1].
+  const glm::vec3 fwd = glm::vec3(iv[2]);
+  up = -glm::vec3(iv[1]);
+  float dist = glm::length(eye);  // look-at distance ~ to the canvas centre
   if (dist < 0.5f) dist = 4.f;
   target = eye + fwd * dist;
 }
@@ -2400,6 +2409,9 @@ void VgeExample::buildCommandBuffers() {
       // lines (chain links + spoid arms)
       drawCmdBuffers[currentFrameIndex].bindPipeline(
           vk::PipelineBindPoint::eGraphics, *linePipeline);
+      // eLineWidth is dynamic; clamp to 1 when wideLines is unsupported.
+      drawCmdBuffers[currentFrameIndex].setLineWidth(
+          wideLinesEnabled ? std::max(1.f, chainLineWidth) : 1.f);
       drawCmdBuffers[currentFrameIndex].bindDescriptorSets(
           vk::PipelineBindPoint::eGraphics, *pipelineLayout, 0,
           {*descriptorSets[currentFrameIndex]}, nullptr);
@@ -2508,6 +2520,9 @@ void VgeExample::onUpdateUIOverlay() {
       PendulumChain& c = pendulumChains[0];
       if (ImGui::CollapsingHeader("Pendulum", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Checkbox("show chain", &showChain);
+        if (wideLinesEnabled)
+          ImGui::DragFloat("line width", &chainLineWidth, 0.1f, 1.f, 10.f,
+                           "%.1f");
         bool rebuild = false;
         rebuild |= ImGui::DragInt("links (n)", &c.numLinks, 0.1f, 1,
                                   static_cast<int>(kMaxChainNodes) - 1);

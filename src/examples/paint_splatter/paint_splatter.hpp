@@ -370,7 +370,7 @@ private:
   // high-alpha order-dependent alpha-over makes a two-colour texel oscillate
   // (A-over-B vs B-over-A). A small alpha makes the order variance negligible
   // and also keeps concentration/blending visible (no instant saturation).
-  float depositStrength = 0.15f;  // stamp alpha = concentration * this
+  float depositStrength = 0.01f;  // stamp alpha = concentration * this
   float depositHeight = 0.08f;  // deposit when pos.y >= -this (near floor y=0)
   float depositRadius = 0.01f;  // canvas stamp radius in WORLD units (M6)
   // Drying makes a near-floor particle freeze in place (paint setting): its
@@ -458,7 +458,9 @@ private:
   SpoidControlMode spoidControlMode = SpoidControlMode::Pendulum;
   std::vector<PendulumChain> pendulumChains;  // owned here; controller mutates
   static constexpr uint32_t kMaxChainNodes = 32;  // pivot + up to 31 bobs
-  bool showChain = true;  // draw link lines + joint sprites
+  bool showChain = true;          // draw link lines + joint sprites
+  float chainLineWidth = 2.f;     // link + spoid-arm line thickness (px)
+  bool wideLinesEnabled = false;  // device supports lineWidth > 1 (set on init)
   // Per-frame host-visible buffers for chain visualization (Particle stride, so
   // they reuse the marker/line pipelines' vertex input). jointMarkerBuffers:
   // one point per node. lineBuffers: two points per link (eLineList).
@@ -490,9 +492,9 @@ private:
   // compute<->graphics ping-pong (host-written each frame).
   std::vector<std::unique_ptr<vgeu::VgeuBuffer>> markerBuffers;
   bool showSpoids = true;
-  bool spaceWasDown = false;   // edge-detect the emit key
-  int selectedSpoidUi = 0;     // which spoid the ImGui param sliders edit
-  bool editAllSpoids = false;  // edit mode: apply param edits to ALL spoids
+  bool spaceWasDown = false;  // edge-detect the emit key
+  int selectedSpoidUi = 0;    // which spoid the ImGui param sliders edit
+  bool editAllSpoids = true;  // edit mode: apply param edits to ALL spoids
   // Task 9: hardcoded auto-drop (a single fixed emitter) to verify the emit
   // pass before the spoid UI exists; off by default now that spoids drive it.
   bool autoEmit = true;  // default-on: spoids auto-drop so the scene is alive
@@ -509,7 +511,7 @@ private:
   // instead of breaking into dots). No physical tank -- the soft-constraint
   // fluid + gravity form the falling ribbon. Takes over from autoEmit when on.
   bool streamMode = true;    // default ON (pairs with the pendulum default)
-  float streamRate = 700.f;  // particles per second per streaming spoid
+  float streamRate = 300.f;  // particles per second per streaming spoid
   // Phase 2: paint reservoir drain per emitted particle (UI-tunable). 0 = the
   // reservoir never depletes (paint never runs out).
   float massDrainRate = 0.f;
