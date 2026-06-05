@@ -113,7 +113,7 @@ static_assert(sizeof(EmitPush) == 80, "EmitPush push-constant size");
 // spoid. World convention: spoids live above the floor at y<0.
 struct Spoid {
   glm::vec3 pos{0.f, -1.25f, 0.f};  // M8: start height halved (was -2.5)
-  float holeRadius = 0.06f;
+  float holeRadius = 0.02f;
   glm::vec3 color{0.2f, 0.4f, 0.9f};
   float emissionVelocity = 2.f;  // initial downward (+Y) speed
   int amount = 300;              // particles per drop (burst mode)
@@ -126,9 +126,9 @@ struct Spoid {
   glm::vec3 prevPos{0.f, -1.25f, 0.f};
   float emitAccum = 0.f;
   // --- Phase 2: pendulum attachment (used only by PendulumSpoidController) ---
-  int nodeIndex = -1;   // attach node in the chain; -1 = tip (last node)
-  float offsetR = 0.f;  // offset distance in the plane perpendicular to the
-                        // link direction at the attach node (0 = on node)
+  int nodeIndex = -1;    // attach node in the chain; -1 = tip (last node)
+  float offsetR = 0.5f;  // offset distance in the plane perpendicular to the
+                         // link direction at the attach node (0 = on node)
   float offsetAngle0 = 0.f;  // start angle in that perpendicular plane (rad);
                              // set per-spoid by arrangeSpoidsCircle so multiple
                              // spoids sit evenly around the ring
@@ -190,16 +190,24 @@ struct PendulumChain {
   std::vector<float> linkLength;  // rest |node_i - node_{i-1}|, i=1..numLinks
   // config (UI-editable):
   int numLinks = 1;            // n: 1 = simple (default), 2 = double pendulum
-  float totalLength = 1.5f;    // sum of links (split uniformly into n)
+  float totalLength = 2.0f;    // sum of links (split uniformly into n)
   std::vector<float> bobMass;  // per bob; built on reset, default uniform 1.0
-  float airDamping = 0.01f;    // global velocity damping /s (air resistance)
-  float jointDamping = 0.05f;  // damping of along-link relative velocity
+  float airDamping = 0.f;      // global velocity damping /s (air resistance)
+  float jointDamping = 0.f;    // damping of along-link relative velocity
   int substeps = 8;            // XPBD small-steps
   int iters = 4;               // distance-constraint Gauss-Seidel iters/substep
   // initial state (chain starts as a straight line displaced from +Y vertical):
-  float initTheta = 0.9f;  // rad from the +Y (down) axis
-  float initPhi = 0.1f;    // rad azimuth in X-Z
-  float initSpeed = 1.f;   // initial tangential speed at the tip (world u/s)
+  float initTheta = 1.3f;  // rad from the +Y (down) axis
+  float initPhi = 0.5f;    // rad azimuth in X-Z
+  // initial tip velocity, split into the two tangent directions of the bob's
+  // sphere at the start pose (both perpendicular to the string, world u/s):
+  //  - radial  = meridional e_theta (swings in the vertical plane,
+  //  toward/through
+  //              the bottom centre) -> a normal back-and-forth swing.
+  //  - tangential = azimuthal e_phi (circles around the +Y axis) -> a conical /
+  //                 precessing swing that pairs with the rotary offset.
+  float initSpeedRadial = 0.f;
+  float initSpeedTangential = 2.0f;
 };
 
 // Drives spoids along an n-link PBD pendulum. The example owns the chains and a
@@ -355,9 +363,9 @@ private:
   // high-alpha order-dependent alpha-over makes a two-colour texel oscillate
   // (A-over-B vs B-over-A). A small alpha makes the order variance negligible
   // and also keeps concentration/blending visible (no instant saturation).
-  float depositStrength = 0.03f;  // stamp alpha = concentration * this
+  float depositStrength = 0.015f;  // stamp alpha = concentration * this
   float depositHeight = 0.08f;  // deposit when pos.y >= -this (near floor y=0)
-  float depositRadius = 0.02f;  // canvas stamp radius in WORLD units (M6)
+  float depositRadius = 0.01f;  // canvas stamp radius in WORLD units (M6)
   // Drying makes a near-floor particle freeze in place (paint setting): its
   // velocity is scaled toward 0 as wetness (pos.w) -> 0. 0 = no freeze, 1 =
   // fully tie motion to wetness.
@@ -488,8 +496,8 @@ private:
   // along the hole's motion this frame (so a fast-moving stroke stays connected
   // instead of breaking into dots). No physical tank -- the soft-constraint
   // fluid + gravity form the falling ribbon. Takes over from autoEmit when on.
-  bool streamMode = true;     // default ON (pairs with the pendulum default)
-  float streamRate = 1000.f;  // particles per second per streaming spoid
+  bool streamMode = true;    // default ON (pairs with the pendulum default)
+  float streamRate = 700.f;  // particles per second per streaming spoid
   // Phase 2: paint reservoir drain per emitted particle (UI-tunable). 0 = the
   // reservoir never depletes (paint never runs out).
   float massDrainRate = 0.f;

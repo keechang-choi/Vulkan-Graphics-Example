@@ -1398,12 +1398,15 @@ void VgeExample::resetPendulum() {
     float m = c.bobMass[i - 1];
     c.nodes[i].invMass = (m > 0.f) ? 1.0f / m : 0.f;  // m<=0 => pinned
   }
-  // initial tangential push at the tip (perpendicular to the last link).
-  if (c.initSpeed != 0.f && n >= 1) {
-    glm::vec3 ref =
-        (std::abs(dir.x) < 0.9f) ? glm::vec3(1, 0, 0) : glm::vec3(0, 0, 1);
-    glm::vec3 tangent = glm::normalize(glm::cross(dir, ref));
-    c.nodes[n].vel = tangent * c.initSpeed;
+  // initial tip velocity, decomposed in the bob's sphere tangent plane at the
+  // start pose: meridional e_theta (radial/中心방향, swings in the vertical
+  // plane) + azimuthal e_phi (tangential/접선방향, circles about +Y). Both are
+  // unit, perpendicular to the string, so neither fights the length constraint.
+  if (n >= 1 && (c.initSpeedRadial != 0.f || c.initSpeedTangential != 0.f)) {
+    const float sp = std::sin(c.initPhi), cp = std::cos(c.initPhi);
+    const glm::vec3 eTheta(ct * cp, -st, ct * sp);  // d(dir)/dtheta
+    const glm::vec3 ePhi(-sp, 0.f, cp);             // d(dir)/dphi (normalized)
+    c.nodes[n].vel = eTheta * c.initSpeedRadial + ePhi * c.initSpeedTangential;
   }
 }
 
@@ -1420,10 +1423,15 @@ glm::vec3 PendulumSpoidController::emissionPoint(const PendulumChain& c,
   float dl = glm::length(d);
   if (dl < 1e-6f) return node;
   d /= dl;
-  // orthonormal basis of the plane perpendicular to the string. Swap the
-  // reference axis when d is nearly parallel to it (singularity guard).
-  glm::vec3 ref =
-      (std::abs(d.x) < 0.9f) ? glm::vec3(1, 0, 0) : glm::vec3(0, 0, 1);
+  // orthonormal basis of the plane perpendicular to the string. Pick the world
+  // axis LEAST aligned with d as the reference, so the basis stays well
+  // conditioned across the whole swing -- in particular through theta~90 where
+  // the old abs(d.x)<0.9 test flipped the basis (the spoid's offset circle
+  // glitched there). cross(d, ref) is never near-zero with this choice.
+  glm::vec3 ad(std::abs(d.x), std::abs(d.y), std::abs(d.z));
+  glm::vec3 ref = (ad.x <= ad.y && ad.x <= ad.z) ? glm::vec3(1, 0, 0)
+                  : (ad.y <= ad.z)               ? glm::vec3(0, 1, 0)
+                                                 : glm::vec3(0, 0, 1);
   glm::vec3 e1 = glm::normalize(glm::cross(d, ref));
   glm::vec3 e2 = glm::cross(d, e1);
   float ph = s.offsetPhase;  // angle0 + omega*t, advanced in update()
@@ -2409,12 +2417,16 @@ void VgeExample::onUpdateUIOverlay() {
                                     0.f, 3.14f, "%.2f");
         rebuild |= ImGui::DragFloat("init phi (rad)", &c.initPhi, 0.01f, 0.f,
                                     6.28f, "%.2f");
-        rebuild |= ImGui::DragFloat("init speed", &c.initSpeed, 0.01f, 0.f,
-                                    10.f, "%.2f");
-        ImGui::DragFloat("air damping (/s)", &c.airDamping, 0.005f, 0.f, 5.f,
-                         "%.3f");
-        ImGui::DragFloat("joint damping", &c.jointDamping, 0.005f, 0.f, 1.f,
-                         "%.3f");
+        rebuild |= ImGui::DragFloat("init speed radial", &c.initSpeedRadial,
+                                    0.01f, -10.f, 10.f, "%.2f");
+        rebuild |=
+            ImGui::DragFloat("init speed tangential", &c.initSpeedTangential,
+                             0.01f, -10.f, 10.f, "%.2f");
+        // finer steps + more decimals: small damping changes are visible.
+        ImGui::DragFloat("air damping (/s)", &c.airDamping, 0.0002f, 0.f, 5.f,
+                         "%.4f");
+        ImGui::DragFloat("joint damping", &c.jointDamping, 0.0002f, 0.f, 1.f,
+                         "%.4f");
         ImGui::DragInt("substeps", &c.substeps, 0.2f, 1, 32);
         ImGui::DragInt("constraint iters", &c.iters, 0.1f, 1, 16);
         // per-node mass (mass<=0 => pinned). Resize to numLinks lazily.
