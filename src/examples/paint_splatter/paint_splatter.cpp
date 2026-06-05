@@ -5,6 +5,8 @@
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 // stb_image_write: the implementation is compiled once in vgeu_gltf.cpp
 // (STB_IMAGE_WRITE_IMPLEMENTATION there); here we only need the declarations.
 #include "stb_image_write.h"
@@ -1559,66 +1561,57 @@ void VgeExample::setSpoidControlMode(SpoidControlMode mode) {
   }
 }
 
-// The live camera pose as (eye, target, up). target is a point along the view
-// direction so the actual look direction (not an assumed origin) is preserved.
-void VgeExample::currentCameraPose(glm::vec3& eye, glm::vec3& target,
-                                   glm::vec3& up) const {
+// Live camera eye + orientation quaternion (from the inverse-view 3x3, which is
+// a proper rotation for both setViewYXZ and lookAt-derived views).
+void VgeExample::currentCameraEyeQuat(glm::vec3& eye, glm::quat& quat) const {
   eye = camera.getPosition();
-  const glm::mat4 iv = camera.getInverseView();
-  // Engine camera is LEFT-handed (lookAtLH): the inverse-view forward column is
-  // +Z (col[2]). The previous -col[2] put the look target BEHIND the camera, so
-  // the tween started from a flipped view ("current position not reflected").
-  // setViewTarget() also negates its up argument, so feed back -col[1].
-  const glm::vec3 fwd = glm::vec3(iv[2]);
-  up = -glm::vec3(iv[1]);
-  float dist = glm::length(eye);  // look-at distance ~ to the canvas centre
-  if (dist < 0.5f) dist = 4.f;
-  target = eye + fwd * dist;
+  quat = glm::quat_cast(glm::mat3(camera.getInverseView()));
+}
+
+// Orientation quaternion for a look-at pose, matching setViewTarget's basis
+// (which builds lookAtLH(eye, target, -up)).
+glm::quat VgeExample::lookQuat(const glm::vec3& eye, const glm::vec3& target,
+                               const glm::vec3& up) const {
+  const glm::mat4 view = glm::lookAtLH(eye, target, -up);
+  return glm::quat_cast(glm::mat3(glm::inverse(view)));
 }
 
 void VgeExample::startTopViewAnim() {
-  // "from" = the pose currently ON SCREEN, so both directions ease from it.
-  //  - mid-tween: the interpolated pose.
-  //  - locked at top: the held top pose (cameraAnim.to*). NOTE: while locked
-  //  the
-  //    camera object holds the free-fly pose at UI time (the controller set it
-  //    last frame), so currentCameraPose() would be WRONG here -- that made the
-  //    return jump instead of animate.
-  //  - idle (free-fly): the live camera pose.
-  glm::vec3 nowEye, nowTarget, nowUp;
+  // "from" = the pose currently ON SCREEN (eye + orientation), so both
+  // directions ease from it. While locked the camera object holds the free-fly
+  // pose at UI time (the controller set it last frame), so the held top pose
+  // (cameraAnim.to*) must be used there, not the live camera.
+  glm::vec3 nowEye;
+  glm::quat nowQuat;
   if (cameraAnim.active) {
     float u = glm::clamp(cameraAnim.t / cameraAnim.duration, 0.f, 1.f);
     float e = u * u * (3.f - 2.f * u);
     nowEye = glm::mix(cameraAnim.fromEye, cameraAnim.toEye, e);
-    nowTarget = glm::mix(cameraAnim.fromTarget, cameraAnim.toTarget, e);
-    nowUp = glm::mix(cameraAnim.fromUp, cameraAnim.toUp, e);
+    nowQuat = glm::slerp(cameraAnim.fromQuat, cameraAnim.toQuat, e);
   } else if (cameraAnim.locked) {
     nowEye = cameraAnim.toEye;  // the held top pose
-    nowTarget = cameraAnim.toTarget;
-    nowUp = cameraAnim.toUp;
+    nowQuat = cameraAnim.toQuat;
   } else {
-    currentCameraPose(nowEye, nowTarget, nowUp);
+    currentCameraEyeQuat(nowEye, nowQuat);
   }
   const bool atOrToTop =
       cameraAnim.locked || (cameraAnim.active && cameraAnim.toTop);
   cameraAnim.fromEye = nowEye;
-  cameraAnim.fromTarget = nowTarget;
-  cameraAnim.fromUp = nowUp;
+  cameraAnim.fromQuat = nowQuat;
   if (atOrToTop) {
     // RETURN: animate back to the free-fly controller's current pose.
-    glm::vec3 e2, t2, u2;
-    currentCameraPose(e2, t2, u2);
-    cameraAnim.toEye = e2;
-    cameraAnim.toTarget = t2;
-    cameraAnim.toUp = u2;
+    currentCameraEyeQuat(cameraAnim.toEye, cameraAnim.toQuat);
     cameraAnim.toTop = false;
   } else {
     // GO TO TOP: overhead, framed to the (scaled) canvas. world -Y is "up".
     cameraAnim.toEye = glm::vec3(0.f, -1.5f * kCanvasWorld, 0.f);
-    cameraAnim.toTarget = glm::vec3(0.f);
-    cameraAnim.toUp = glm::vec3(0.f, 0.f, -1.f);
+    cameraAnim.toQuat =
+        lookQuat(cameraAnim.toEye, glm::vec3(0.f), glm::vec3(0.f, 0.f, -1.f));
     cameraAnim.toTop = true;
   }
+  // shortest-arc slerp: flip the destination if it is on the far hemisphere.
+  if (glm::dot(cameraAnim.fromQuat, cameraAnim.toQuat) < 0.f)
+    cameraAnim.toQuat = -cameraAnim.toQuat;
   cameraAnim.t = 0.f;
   cameraAnim.active = true;
   cameraAnim.locked = false;
@@ -1626,15 +1619,15 @@ void VgeExample::startTopViewAnim() {
 
 void VgeExample::updateCameraAnim() {
   if (!cameraAnim.active && !cameraAnim.locked) return;
-  glm::vec3 eye = cameraAnim.toEye, target = cameraAnim.toTarget,
-            up = cameraAnim.toUp;
+  glm::vec3 eye = cameraAnim.toEye;
+  glm::quat quat = cameraAnim.toQuat;
   if (cameraAnim.active) {
     cameraAnim.t += frameTimer;
     float u = glm::clamp(cameraAnim.t / cameraAnim.duration, 0.f, 1.f);
     float e = u * u * (3.f - 2.f * u);  // smoothstep ease in/out
     eye = glm::mix(cameraAnim.fromEye, cameraAnim.toEye, e);
-    target = glm::mix(cameraAnim.fromTarget, cameraAnim.toTarget, e);
-    up = glm::mix(cameraAnim.fromUp, cameraAnim.toUp, e);
+    quat =
+        glm::slerp(cameraAnim.fromQuat, cameraAnim.toQuat, e);  // uniform spin
     if (u >= 1.f) {
       cameraAnim.active = false;
       // hold the top view; when returning, hand control back to the controller.
@@ -1642,7 +1635,10 @@ void VgeExample::updateCameraAnim() {
     }
   }
   if (cameraAnim.active || cameraAnim.locked) {
-    camera.setViewTarget(eye, target, up);
+    // inverseView = translate(eye) * rotation(quat); view is its inverse.
+    const glm::mat4 invView =
+        glm::translate(glm::mat4(1.f), eye) * glm::mat4_cast(quat);
+    camera.setViewMatrix(glm::inverse(invView));
   }
 }
 

@@ -6,6 +6,7 @@
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 // std
 #include <memory>
@@ -113,7 +114,7 @@ static_assert(sizeof(EmitPush) == 80, "EmitPush push-constant size");
 // spoid. World convention: spoids live above the floor at y<0.
 struct Spoid {
   glm::vec3 pos{0.f, -1.25f, 0.f};  // M8: start height halved (was -2.5)
-  float holeRadius = 0.01f;
+  float holeRadius = 0.02f;
   glm::vec3 color{0.2f, 0.4f, 0.9f};
   float emissionVelocity = 2.f;  // initial downward (+Y) speed
   int amount = 300;              // particles per drop (burst mode)
@@ -477,15 +478,20 @@ private:
     bool locked = false;  // holding the top view after the forward tween
     bool toTop = true;    // direction: true = going to top, false = returning
     float t = 0.f, duration = 1.0f;
-    // full poses (eye, target, up) so BOTH the position and the look direction
-    // interpolate smoothly, in either direction.
-    glm::vec3 fromEye{0.f}, fromTarget{0.f}, fromUp{0.f, -1.f, 0.f};
-    glm::vec3 toEye{0.f}, toTarget{0.f}, toUp{0.f, 0.f, -1.f};
+    // Pose = eye + orientation quaternion. The orientation is SLERP-ed (uniform
+    // angular rate) while the eye eases, so the camera rotates smoothly
+    // together with the move instead of swinging hard at the end (which
+    // separate eye/target/up lerps caused).
+    glm::vec3 fromEye{0.f}, toEye{0.f};
+    glm::quat fromQuat{1.f, 0.f, 0.f, 0.f}, toQuat{1.f, 0.f, 0.f, 0.f};
   } cameraAnim;
   void startTopViewAnim();
   void updateCameraAnim();
-  void currentCameraPose(glm::vec3& eye, glm::vec3& target,
-                         glm::vec3& up) const;
+  // current camera eye + orientation quaternion (from the live inverse-view).
+  void currentCameraEyeQuat(glm::vec3& eye, glm::quat& quat) const;
+  // orientation quaternion for a look-at pose (matches setViewTarget's basis).
+  glm::quat lookQuat(const glm::vec3& eye, const glm::vec3& target,
+                     const glm::vec3& up) const;
   static constexpr uint32_t kMaxSpoids = 16;
   // Per-frame host-visible marker buffers (Particle stride) so the spoids can
   // be drawn as points with the existing particle pipeline. Not part of the
@@ -610,7 +616,7 @@ private:
   // complianceXPBD (alpha) ~= epsCFM * dt^2 at the default 3 substeps (1/360
   // s), so the default look is unchanged but it stays consistent as `substeps`
   // changes.
-  bool xpbdCompliance = true;
+  bool xpbdCompliance = false;
   float complianceXPBD = 0.77f;
   // Bounded signed density constraint (M8): under-dense particles get a bounded
   // attractive pull (cohesion) toward rest density; the floor caps it so a
@@ -618,7 +624,7 @@ private:
   // UNBOUNDED signed constraint (C never drops below -1 physically), now safe
   // because the soft epsCFM already keeps the pull gentle. 0 = compression-only
   // (no cohesion).
-  float cohesionFloor = 2.0f;  // raised for stronger droplet cohesion
+  float cohesionFloor = 1.0f;  // raised for stronger droplet cohesion
   // Per-iteration Δp clamp (pbf_delta), as a multiple of h. <=0 disables it.
   // Default 0.2 preserves the old clamp; lower it toward 0 for a stronger crown
   // once substeps keep the sim stable (M8).
@@ -631,7 +637,7 @@ private:
   float scorrK = 3.0e-6f;     // artificial pressure strength (reference ~3e-6)
   float scorrDqRatio = 0.3f;  // scorrDq = ratio * h (reference corr_h = 0.30)
   float scorrN = 4.f;
-  float xsphC = 0.1f;  // XSPH viscosity (raised for more coherent motion)
+  float xsphC = 0.05f;  // XSPH viscosity (raised for more coherent motion)
   // Gentle per-substep drag (M8): the reference uses v*=0.999/substep. High
   // values (the old 8.0) dissipate the impact energy that launches a crown and
   // cap terminal velocity (~0.75) -- settling of DEPOSITED paint is drying's
