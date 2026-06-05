@@ -602,7 +602,16 @@ private:
   // epsCFM=100 was STIFF (<< 660) -> big lambda -> Delta p / sub_dt blew up on
   // emit ("first explosion" / "too fast"). Lower it toward ~1e3 for a stiffer,
   // crisper crown.
-  float epsCFM = 1.0e5f;  // CFM relaxation (reference: 1e5)
+  float epsCFM = 1.0e5f;  // CFM relaxation (reference: 1e5); used when
+                          // xpbdCompliance is OFF (fixed PBF behaviour)
+  // XPBD: when on, the constraint coefficient is alpha/dt^2 (substep dt)
+  // instead of the fixed epsCFM, so the effective stiffness -- and the
+  // spawn-relief ejection velocity -- no longer depend on the substep count.
+  // complianceXPBD (alpha) ~= epsCFM * dt^2 at the default 3 substeps (1/360
+  // s), so the default look is unchanged but it stays consistent as `substeps`
+  // changes.
+  bool xpbdCompliance = true;
+  float complianceXPBD = 0.77f;
   // Bounded signed density constraint (M8): under-dense particles get a bounded
   // attractive pull (cohesion) toward rest density; the floor caps it so a
   // sub-monolayer cannot run away. cohesionFloor=1.0 == the reference's

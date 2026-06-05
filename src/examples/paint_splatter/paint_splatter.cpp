@@ -1762,7 +1762,18 @@ void VgeExample::updateComputeUbo() {
   compute.ubo.canvasMax = glm::vec4(kDomainHalf, 0.f, kDomainHalf, 0.f);
   // Live-tunable PBF params (grid dims / kernel constants fixed in prepare).
   compute.ubo.rho0 = rho0;
-  compute.ubo.epsCFM = epsCFM;
+  // XPBD: the constraint solve uses lambda = -C / (sumGradC2 + eps). To make
+  // the effective stiffness time-step independent, eps must be the XPBD
+  // compliance alpha-tilde = alpha / dt^2 (substep dt). Then changing
+  // `substeps` no longer changes how hard the solver pushes (and how violently
+  // a spawn over-density ejects). The fixed-eps path is the old PBF CFM
+  // behaviour for comparison.
+  if (xpbdCompliance) {
+    const float sdt = compute.ubo.dt;  // substep dt (set above)
+    compute.ubo.epsCFM = complianceXPBD / (sdt * sdt);
+  } else {
+    compute.ubo.epsCFM = epsCFM;
+  }
   compute.ubo.scorrK = scorrK;
   compute.ubo.scorrDq = scorrDqRatio * compute.ubo.h;
   compute.ubo.scorrN = scorrN;
@@ -2690,10 +2701,19 @@ void VgeExample::onUpdateUIOverlay() {
       ImGui::DragInt("solverIters", &solverIters, 1.f, 1, 6);
       ImGui::DragFloat("solver relax", &solverRelax, 0.005f, 0.05f, 1.f,
                        "%.3f");
-      // epsCFM is the SOFTNESS knob: high (~1e5) = soft/stable, low (~1e3) =
-      // stiff/crisp-but-poppy. Logarithmic so 1..1e6 is reachable.
-      ImGui::DragFloat("epsCFM (soft<-)", &epsCFM, 100.f, 1.f, 1.0e6f, "%.0f",
-                       ImGuiSliderFlags_Logarithmic);
+      // XPBD: scale the constraint coeff by 1/dt^2 so stiffness (and the spawn
+      // ejection) is substep-independent. When on, tune `compliance` instead of
+      // epsCFM; when off, the fixed epsCFM (PBF CFM) is used.
+      ImGui::Checkbox("XPBD compliance (1/dt^2)", &xpbdCompliance);
+      if (xpbdCompliance) {
+        ImGui::DragFloat("compliance (soft->)", &complianceXPBD, 0.01f, 0.f,
+                         50.f, "%.3f");
+      } else {
+        // epsCFM is the SOFTNESS knob: high (~1e5) = soft/stable, low (~1e3) =
+        // stiff/crisp-but-poppy. Logarithmic so 1..1e6 is reachable.
+        ImGui::DragFloat("epsCFM (soft<-)", &epsCFM, 100.f, 1.f, 1.0e6f, "%.0f",
+                         ImGuiSliderFlags_Logarithmic);
+      }
       // M8 cohesion/crown dials
       ImGui::DragFloat("cohesion floor", &cohesionFloor, 0.01f, 0.f, 1.f,
                        "%.3f");
