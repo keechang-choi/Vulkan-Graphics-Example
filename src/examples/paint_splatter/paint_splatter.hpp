@@ -225,8 +225,8 @@ struct PendulumChain {
   // ratio ~ sqrt((vDepth+lowerLen)/lowerLen).
   bool blackburn = false;
   float anchorSep = 1.0f;  // 2s: horizontal gap between anchors A,B (along X)
-  float vDepth = 1.5f;     // h: junction depth below the anchor line
-  float lowerLen = 0.5f;   // L: junction -> bob
+  float vDepth = 0.5f;     // h: junction depth below the anchor line
+  float lowerLen = 1.5f;   // L: junction -> bob
   glm::vec3 pivotB{0.f};   // anchor B (computed on reset; A = `pivot`-derived)
   float upperLenB = 0.f;   // rest |J - B| (computed on reset)
 };
@@ -639,7 +639,7 @@ private:
   // UNBOUNDED signed constraint (C never drops below -1 physically), now safe
   // because the soft epsCFM already keeps the pull gentle. 0 = compression-only
   // (no cohesion).
-  float cohesionFloor = 1.0f;  // raised for stronger droplet cohesion
+  float cohesionFloor = 2.0f;  // raised for stronger droplet cohesion
   // Per-iteration Δp clamp (pbf_delta), as a multiple of h. <=0 disables it.
   // Default 0.2 preserves the old clamp; lower it toward 0 for a stronger crown
   // once substeps keep the sim stable (M8).
@@ -652,7 +652,7 @@ private:
   float scorrK = 3.0e-6f;     // artificial pressure strength (reference ~3e-6)
   float scorrDqRatio = 0.3f;  // scorrDq = ratio * h (reference corr_h = 0.30)
   float scorrN = 4.f;
-  float xsphC = 0.05f;  // XSPH viscosity (raised for more coherent motion)
+  float xsphC = 0.15f;  // XSPH viscosity (raised for more coherent motion)
   // Gentle per-substep drag (M8): the reference uses v*=0.999/substep. High
   // values (the old 8.0) dissipate the impact energy that launches a crown and
   // cap terminal velocity (~0.75) -- settling of DEPOSITED paint is drying's
@@ -670,9 +670,9 @@ private:
   // close/piled particles oscillate ("flicker") and softens close-range
   // popping.
   float solverRelax = 0.3f;
-  int substeps = 3;  // M8: XPBD small-steps (stability from many small dt,
+  int substeps = 1;  // M8: XPBD small-steps (stability from many small dt,
                      // not from grinding iters at a big dt; reference uses 5)
-  int solverIters = 2;  // M8: fewer iters per substep (reference uses 2)
+  int solverIters = 1;  // M8: fewer iters per substep (reference uses 2)
   bool colorByDensity = false;  // debug: tint particles by rho/rho0
 
   float kCanvasWorld = 4.0f;  // canvas side length (scaled by worldScale)

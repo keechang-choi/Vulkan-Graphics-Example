@@ -41,3 +41,4 @@ screenshots/*
 .config
 run_err.txt
 run_out.txt
+build_output.txt
