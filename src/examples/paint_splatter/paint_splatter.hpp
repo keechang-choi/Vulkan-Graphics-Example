@@ -516,6 +516,10 @@ private:
   bool spaceWasDown = false;  // edge-detect the emit key
   int selectedSpoidUi = 0;    // which spoid the ImGui param sliders edit
   bool editAllSpoids = true;  // edit mode: apply param edits to ALL spoids
+  // arrangeSpoidsCircle radius, as a fraction of kDomainHalf (UI-tunable). 0.3
+  // reproduces the original hardcoded compact ring near the centre; >1 spreads
+  // the spoids past the canvas edge.
+  float spoidArrangeRadiusFrac = 0.3f;
   // Task 9: hardcoded auto-drop (a single fixed emitter) to verify the emit
   // pass before the spoid UI exists; off by default now that spoids drive it.
   bool autoEmit = true;  // default-on: spoids auto-drop so the scene is alive

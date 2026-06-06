@@ -1387,7 +1387,8 @@ void VgeExample::arrangeSpoidsCircle() {
     seedAngle(0);
     return;
   }
-  const float radius = kDomainHalf * 0.3f;  // compact circle near the centre
+  const float radius =
+      kDomainHalf * spoidArrangeRadiusFrac;  // UI-tunable ring radius
   for (int i = 0; i < n; i++) {
     const float ang =
         glm::two_pi<float>() * static_cast<float>(i) / static_cast<float>(n);
@@ -2712,6 +2713,12 @@ void VgeExample::onUpdateUIOverlay() {
         }
         arrangeSpoidsCircle();
       }
+      // Initial-layout ring radius (fraction of half-domain). Dragging it
+      // re-runs the circular arrangement so the spoids re-spread (and re-level)
+      // live.
+      if (ImGui::DragFloat("arrange radius (xhalf)", &spoidArrangeRadiusFrac,
+                           0.005f, 0.f, 1.5f, "%.3f"))
+        arrangeSpoidsCircle();
 
       if (selectedSpoidUi >= 0 &&
           selectedSpoidUi < static_cast<int>(spoids.size())) {
